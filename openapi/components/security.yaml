@@ -1,0 +1,7 @@
+bearerAuth:
+  type: http
+  scheme: bearer
+  bearerFormat: JWT
+  description: >
+    Bearer JWT issued by Google Identity Platform after successful
+    email OTP authentication.

@@ -1,59 +1,86 @@
 UserResponse:
   type: object
+  description: Authenticated application user.
   required:
-    - userId
-    - firstName
-    - lastName
-    - corporateEmail
+    - id
+    - email
+    - status
   properties:
-    userId:
+    id:
       type: string
-      format: uuid
+      description: Unique identifier of the application user.
+      example: "01JABC123XYZ"
 
-    firstName:
-      type: string
-
-    lastName:
-      type: string
-
-    companyName:
-      type: string
-
-    jobTitle:
-      type: string
-
-    country:
-      type: string
-
-    corporateEmail:
+    email:
       type: string
       format: email
+      description: Email address associated with the authenticated identity.
+      example: "user@example.com"
 
-    emailVerified:
-      type: boolean
-
-    trialStartDate:
+    displayName:
       type: string
-      format: date-time
+      maxLength: 100
+      description: Display name of the user.
+      example: "John Doe"
 
-    trialEndDate:
-      type: string
-      format: date-time
+    status:
+      $ref: '#/UserStatus'
+
+    roles:
+      type: array
+      description: Roles assigned to the user.
+      items:
+        type: string
+      example:
+        - USER
+
 
 UpdateUserRequest:
   type: object
+  description: Request to update the current user's profile.
   properties:
-    firstName:
+    displayName:
       type: string
+      minLength: 1
+      maxLength: 100
+      description: Display name of the user.
+      example: "John Doe"
 
-    lastName:
-      type: string
 
-    companyName:
-      type: string
+UserStatus:
+  type: string
+  description: Current status of the application user.
+  enum:
+    - ACTIVE
+    - INACTIVE
+    - SUSPENDED
+  example: ACTIVE
 
-    jobTitle:
-      type: string
 
-    country:
+ErrorResponse:
+  type: object
+  description: Standard error response returned by the API.
+  required:
+    - code
+    - message
+  properties:
+    code:
       type: string
+      description: Application-specific error code.
+      example: "USER_NOT_FOUND"
+
+    message:
+      type: string
+      description: Human-readable error message.
+      example: "User was not found."
+
+    timestamp:
+      type: string
+      format: date-time
+      description: Time when the error occurred.
+      example: "2026-08-20T10:30:00Z"
+
+    path:
+      type: string
+      description: API path that generated the error.
+      example: "/api/v1/users/me"

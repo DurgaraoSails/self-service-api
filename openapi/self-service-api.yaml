@@ -25,13 +25,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                $ref: './components/schemas.yaml#/UserResponse'
 
         '401':
-          description: Unauthorized
+          $ref: './components/responses.yaml#/Unauthorized'
 
         '500':
-          description: Internal server error
+          $ref: './components/responses.yaml#/InternalServerError'
 
     put:
       summary: Update current authenticated user
@@ -43,7 +43,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateUserRequest'
+              $ref: './components/schemas.yaml#/UpdateUserRequest'
 
       responses:
         '200':
@@ -51,60 +51,18 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                $ref: './components/schemas.yaml#/UserResponse'
 
         '400':
-          description: Invalid request
+          $ref: './components/responses.yaml#/BadRequest'
 
         '401':
-          description: Unauthorized
+          $ref: './components/responses.yaml#/Unauthorized'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
 
 components:
-
   securitySchemes:
-
     bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: >
-        JWT issued by Google Identity Platform after successful
-        email OTP authentication.
-
-  schemas:
-
-    UserResponse:
-      type: object
-      required:
-        - id
-        - email
-        - status
-      properties:
-        id:
-          type: string
-          example: "01JABC123"
-        email:
-          type: string
-          format: email
-          example: user@example.com
-        displayName:
-          type: string
-          example: John Doe
-        status:
-          type: string
-          enum:
-            - ACTIVE
-            - INACTIVE
-        roles:
-          type: array
-          items:
-            type: string
-          example:
-            - USER
-
-    UpdateUserRequest:
-      type: object
-      properties:
-        displayName:
-          type: string
-          maxLength: 100
+      $ref: './components/security.yaml#/bearerAuth'
