@@ -1,0 +1,16 @@
+name: Check PR Source Branch
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate that PR comes from develop
+        if: github.head_ref != 'develop'
+        run: |
+          echo "Error: Only pull requests originating from 'develop' can be merged into 'main'."
+          exit 1
