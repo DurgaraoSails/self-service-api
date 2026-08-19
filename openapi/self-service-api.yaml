@@ -1,0 +1,110 @@
+openapi: 3.0.3
+
+info:
+  title: Self Service API
+  description: Self Service application REST API
+  version: 1.0.0
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /users/me:
+    get:
+      summary: Get current authenticated user
+      operationId: getCurrentUser
+      tags:
+        - User
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+        '401':
+          description: Unauthorized
+
+        '500':
+          description: Internal server error
+
+    put:
+      summary: Update current authenticated user
+      operationId: updateCurrentUser
+      tags:
+        - User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+        '400':
+          description: Invalid request
+
+        '401':
+          description: Unauthorized
+
+components:
+
+  securitySchemes:
+
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT issued by Google Identity Platform after successful
+        email OTP authentication.
+
+  schemas:
+
+    UserResponse:
+      type: object
+      required:
+        - id
+        - email
+        - status
+      properties:
+        id:
+          type: string
+          example: "01JABC123"
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        displayName:
+          type: string
+          example: John Doe
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - INACTIVE
+        roles:
+          type: array
+          items:
+            type: string
+          example:
+            - USER
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          maxLength: 100

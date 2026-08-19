@@ -1,0 +1,59 @@
+UserResponse:
+  type: object
+  required:
+    - userId
+    - firstName
+    - lastName
+    - corporateEmail
+  properties:
+    userId:
+      type: string
+      format: uuid
+
+    firstName:
+      type: string
+
+    lastName:
+      type: string
+
+    companyName:
+      type: string
+
+    jobTitle:
+      type: string
+
+    country:
+      type: string
+
+    corporateEmail:
+      type: string
+      format: email
+
+    emailVerified:
+      type: boolean
+
+    trialStartDate:
+      type: string
+      format: date-time
+
+    trialEndDate:
+      type: string
+      format: date-time
+
+UpdateUserRequest:
+  type: object
+  properties:
+    firstName:
+      type: string
+
+    lastName:
+      type: string
+
+    companyName:
+      type: string
+
+    jobTitle:
+      type: string
+
+    country:
+      type: string
