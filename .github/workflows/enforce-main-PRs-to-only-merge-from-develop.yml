@@ -1,4 +1,4 @@
-name: Check PR Source Branch
+name: Check PR Source Branch for main branch
 
 on:
   pull_request:
