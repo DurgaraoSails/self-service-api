@@ -11,6 +11,7 @@ import com.sails.ai.selfserviceapi.email.EmailService;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.entity.UserStatus;
 import com.sails.ai.selfserviceapi.user.repository.UserRepository;
+import com.sails.ai.selfserviceapi.user.service.UserService;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class OtpService {
 
     private final UserRepository userRepository;
+    private final UserService userService;
     private final OtpVerificationRepository otpVerificationRepository;
     private final OtpAttemptCounter otpAttemptCounter;
     private final OtpHasher otpHasher;
@@ -30,12 +32,14 @@ public class OtpService {
     private final SecureRandom secureRandom = new SecureRandom();
 
     public OtpService(UserRepository userRepository,
+                       UserService userService,
                        OtpVerificationRepository otpVerificationRepository,
                        OtpAttemptCounter otpAttemptCounter,
                        OtpHasher otpHasher,
                        OtpProperties properties,
                        EmailService emailService) {
         this.userRepository = userRepository;
+        this.userService = userService;
         this.otpVerificationRepository = otpVerificationRepository;
         this.otpAttemptCounter = otpAttemptCounter;
         this.otpHasher = otpHasher;
@@ -45,7 +49,7 @@ public class OtpService {
 
     @Transactional
     public int requestOtp(String email) {
-        User user = findActiveUserOrThrow(email);
+        User user = userService.getEligibleForOtpByEmail(email);
         enforceHourlyRateLimit(user.getId());
         supersedePendingOtp(user.getId());
 
@@ -56,7 +60,7 @@ public class OtpService {
 
     @Transactional
     public int resendOtp(String email) {
-        User user = findActiveUserOrThrow(email);
+        User user = userService.getEligibleForOtpByEmail(email);
 
         OtpVerification current = otpVerificationRepository
                 .findFirstByUserIdAndStatusOrderByGeneratedAtDesc(user.getId(), OtpStatus.PENDING)
@@ -79,8 +83,8 @@ public class OtpService {
     }
 
     @Transactional
-    public String verifyOtp(String email, String code) {
-        User user = findActiveUserOrThrow(email);
+    public void verifyOtp(String email, String code) {
+        User user = userService.getEligibleForOtpByEmail(email);
 
         OtpVerification current = otpVerificationRepository
                 .findFirstByUserIdAndStatusOrderByGeneratedAtDesc(user.getId(), OtpStatus.PENDING)
@@ -111,19 +115,13 @@ public class OtpService {
         current.setVerifiedAt(Instant.now());
         otpVerificationRepository.save(current);
 
-        user.setLastLoginDate(Instant.now());
-        userRepository.save(user);
-
-        return user.getId();
-    }
-
-    private User findActiveUserOrThrow(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "No account found for this email."));
-        if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "EMAIL_NOT_VERIFIED", "Verify your email before requesting a login code.");
+        Instant now = Instant.now();
+        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
+            user.setStatus(UserStatus.ACTIVE);
+            user.setEmailVerifiedAt(now);
         }
-        return user;
+        user.setLastLoginDate(now);
+        userRepository.save(user);
     }
 
     private void enforceHourlyRateLimit(String userId) {

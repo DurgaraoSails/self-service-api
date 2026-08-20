@@ -1,1 +1,4 @@
-OIDC_ISSUER_URI=<Google Identity Platform issuer>
+jwt:
+  # TODO: confirm the actual Google Secret Manager mount path with ops before deploy.
+  private-key-path: file:/mnt/secrets/jwt/private-key.pem
+  public-key-path: file:/mnt/secrets/jwt/public-key.pem

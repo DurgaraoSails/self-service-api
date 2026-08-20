@@ -4,11 +4,11 @@ Backend service for the Self-Service Experience Portal, providing secure REST AP
 | Concern                 | Technology                   |
 | ----------------------- |------------------------------|
 | Frontend                | Angular                      |
-| Authentication          | **Google Identity Platform** |
-| Login mechanism         | **Email OTP**                |
-| Authentication protocol | **OIDC / OAuth 2.0**         |
-| Access token            | Identity Platform JWT/ID token |
-| API security            | Spring Security OAuth2 Resource Server |
+| Authentication          | **Self-issued JWT (RS256)**  |
+| Login mechanism         | **Email + OTP** (interim: email-only via `POST /auth/tokens` until the OTP service ships) |
+| Authentication protocol | Self-issued bearer JWT       |
+| Access token            | self-service-api RS256 JWT (`POST /auth/tokens`, refreshed via `POST /auth/refresh`) |
+| API security            | Spring Security OAuth2 Resource Server (static RSA public key) |
 | Backend                 | Spring Boot                  |
 | Database                | Cloud SQL PostgreSQL         |
 | ORM                     | Spring Data JPA / Hibernate  |

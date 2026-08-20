@@ -13,6 +13,118 @@ security:
 
 paths:
 
+  /auth/register:
+    post:
+      summary: Register a new user account and send the first verification code
+      operationId: register
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/user.yaml#/RegisterRequest'
+      responses:
+        '201':
+          description: Account created; verification code sent
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/otp.yaml#/OtpRequestResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
+        '429':
+          $ref: './components/responses.yaml#/TooManyRequests'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/tokens:
+    post:
+      summary: Issue a token pair for an email (interim login, pending email + OTP verification)
+      operationId: issueTokens
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/auth.yaml#/IssueTokenRequest'
+
+      responses:
+        '200':
+          description: Access and refresh token pair
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/auth.yaml#/TokenResponse'
+
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/refresh:
+    post:
+      summary: Exchange a refresh token for a new access/refresh token pair
+      operationId: refreshToken
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/auth.yaml#/RefreshTokenRequest'
+
+      responses:
+        '200':
+          description: New access and refresh token pair
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/auth.yaml#/TokenResponse'
+
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/logout:
+    post:
+      summary: Revoke a refresh token
+      operationId: logout
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/auth.yaml#/LogoutRequest'
+
+      responses:
+        '204':
+          description: Refresh token revoked (idempotent, always returned even if the token was already invalid)
+
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /users/me:
     get:
       summary: Get current authenticated user
@@ -25,7 +137,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: './components/schemas.yaml#/UserResponse'
+                $ref: './components/schemas/user.yaml#/UserResponse'
 
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
@@ -43,7 +155,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: './components/schemas.yaml#/UpdateUserRequest'
+              $ref: './components/schemas/user.yaml#/UpdateUserRequest'
 
       responses:
         '200':
@@ -51,7 +163,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: './components/schemas.yaml#/UserResponse'
+                $ref: './components/schemas/user.yaml#/UserResponse'
 
         '400':
           $ref: './components/responses.yaml#/BadRequest'
@@ -74,14 +186,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: './components/schemas.yaml#/OtpRequestRequest'
+              $ref: './components/schemas/otp.yaml#/OtpRequestRequest'
       responses:
         '200':
           description: OTP request processed
           content:
             application/json:
               schema:
-                $ref: './components/schemas.yaml#/OtpRequestResponse'
+                $ref: './components/schemas/otp.yaml#/OtpRequestResponse'
         '400':
           $ref: './components/responses.yaml#/BadRequest'
         '403':
@@ -105,14 +217,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: './components/schemas.yaml#/OtpRequestRequest'
+              $ref: './components/schemas/otp.yaml#/OtpRequestRequest'
       responses:
         '200':
           description: OTP resent
           content:
             application/json:
               schema:
-                $ref: './components/schemas.yaml#/OtpRequestResponse'
+                $ref: './components/schemas/otp.yaml#/OtpRequestResponse'
         '400':
           $ref: './components/responses.yaml#/BadRequest'
         '404':
@@ -134,14 +246,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: './components/schemas.yaml#/OtpVerifyRequest'
+              $ref: './components/schemas/otp.yaml#/OtpVerifyRequest'
       responses:
         '200':
-          description: OTP verified
+          description: OTP verified; access and refresh token pair issued
           content:
             application/json:
               schema:
-                $ref: './components/schemas.yaml#/OtpVerifyResponse'
+                $ref: './components/schemas/auth.yaml#/TokenResponse'
         '400':
           $ref: './components/responses.yaml#/BadRequest'
         '404':

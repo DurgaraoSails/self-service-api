@@ -1,0 +1,64 @@
+TokenResponse:
+  type: object
+  description: Issued access/refresh token pair.
+  required:
+    - accessToken
+    - refreshToken
+    - tokenType
+    - expiresIn
+  properties:
+    accessToken:
+      type: string
+      description: Signed RS256 JWT access token.
+
+    refreshToken:
+      type: string
+      description: Opaque refresh token used to obtain a new token pair via /auth/refresh.
+
+    tokenType:
+      type: string
+      description: Type of the access token, per RFC 6750.
+      example: "Bearer"
+
+    expiresIn:
+      type: integer
+      format: int64
+      description: Access token lifetime in seconds from the time of issuance.
+      example: 1800
+
+
+IssueTokenRequest:
+  type: object
+  description: >
+    Interim login request, used until email + OTP verification is available.
+    Treats the supplied email as already-verified identity.
+  required:
+    - email
+  properties:
+    email:
+      type: string
+      format: email
+      description: Email address to issue tokens for.
+      example: "user@example.com"
+
+
+RefreshTokenRequest:
+  type: object
+  description: Request to exchange a refresh token for a new token pair.
+  required:
+    - refreshToken
+  properties:
+    refreshToken:
+      type: string
+      description: The refresh token previously issued.
+
+
+LogoutRequest:
+  type: object
+  description: Request to revoke a refresh token.
+  required:
+    - refreshToken
+  properties:
+    refreshToken:
+      type: string
+      description: The refresh token to revoke.

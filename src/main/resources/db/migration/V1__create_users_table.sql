@@ -9,6 +9,7 @@ CREATE TABLE users (
     display_name       VARCHAR(100),
     status             VARCHAR(30) NOT NULL DEFAULT 'PENDING_VERIFICATION',
     roles              TEXT[] NOT NULL DEFAULT '{}',
+    tenant_id          VARCHAR(100),
     trial_start_date   TIMESTAMPTZ,
     trial_end_date     TIMESTAMPTZ,
     last_login_date    TIMESTAMPTZ,
@@ -17,3 +18,5 @@ CREATE TABLE users (
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_users_tenant_id ON users (tenant_id) WHERE tenant_id IS NOT NULL;

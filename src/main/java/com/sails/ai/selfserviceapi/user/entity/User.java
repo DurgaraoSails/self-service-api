@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.user.entity;
 
+import com.github.f4b6a3.ulid.UlidCreator;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,7 +12,6 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -56,6 +56,9 @@ public class User {
     @Column(name = "roles", nullable = false, columnDefinition = "text[]")
     private List<String> roles = new ArrayList<>();
 
+    @Column(name = "tenant_id", length = 100)
+    private String tenantId;
+
     @Column(name = "trial_start_date")
     private Instant trialStartDate;
 
@@ -80,7 +83,7 @@ public class User {
     @PrePersist
     void onCreate() {
         if (id == null) {
-            id = UUID.randomUUID().toString();
+            id = UlidCreator.getUlid().toString();
         }
         Instant now = Instant.now();
         createdAt = now;
