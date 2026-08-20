@@ -1,3 +1,10 @@
+ZITADEL's official Compose files : 
+---------------------------------
+curl.exe -fsSLO https://raw.githubusercontent.com/zitadel/zitadel/main/deploy/compose/docker-compose.yml
+curl.exe -fsSLO https://raw.githubusercontent.com/zitadel/zitadel/main/deploy/compose/.env.example
+copy .env.example .env
+
+
 From : self-service-api/infrastructure/zitadel/
 Run : docker compose up -d --wait
 
