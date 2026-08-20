@@ -44,3 +44,19 @@ InternalServerError:
     application/json:
       schema:
         $ref: './schemas.yaml#/ErrorResponse'
+
+
+TooManyRequests:
+  description: Too many requests — rate limit exceeded.
+  content:
+    application/json:
+      schema:
+        $ref: './schemas.yaml#/ErrorResponse'
+
+
+Locked:
+  description: The resource is locked (e.g. too many failed attempts).
+  content:
+    application/json:
+      schema:
+        $ref: './schemas.yaml#/ErrorResponse'

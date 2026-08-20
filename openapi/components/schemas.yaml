@@ -51,10 +51,74 @@ UserStatus:
   type: string
   description: Current status of the application user.
   enum:
+    - PENDING_VERIFICATION
     - ACTIVE
     - INACTIVE
     - SUSPENDED
   example: ACTIVE
+
+
+OtpRequestRequest:
+  type: object
+  description: Request to send or resend a one-time login code to the user's email.
+  required:
+    - email
+  properties:
+    email:
+      type: string
+      format: email
+      description: Corporate email address to send the OTP to.
+      example: "user@example.com"
+
+
+OtpRequestResponse:
+  type: object
+  description: Acknowledgement that an OTP request was processed.
+  required:
+    - message
+  properties:
+    message:
+      type: string
+      description: Human-readable confirmation message.
+      example: "A verification code has been sent to your email."
+    expiresInSeconds:
+      type: integer
+      description: Seconds until the issued code expires.
+      example: 600
+
+
+OtpVerifyRequest:
+  type: object
+  description: Request to verify a one-time login code.
+  required:
+    - email
+    - code
+  properties:
+    email:
+      type: string
+      format: email
+      example: "user@example.com"
+    code:
+      type: string
+      pattern: '^[0-9]{6}$'
+      description: 6-digit numeric one-time code.
+      example: "123456"
+
+
+OtpVerifyResponse:
+  type: object
+  description: Result of a successful OTP verification.
+  required:
+    - verified
+    - userId
+  properties:
+    verified:
+      type: boolean
+      example: true
+    userId:
+      type: string
+      description: Identifier of the verified user.
+      example: "8f14e45f-ceea-4a4b-9c1e-2c1a7e2b3d4a"
 
 
 ErrorResponse:
