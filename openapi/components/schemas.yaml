@@ -51,6 +51,7 @@ UserStatus:
   type: string
   description: Current status of the application user.
   enum:
+    - PENDING_VERIFICATION
     - ACTIVE
     - INACTIVE
     - SUSPENDED
