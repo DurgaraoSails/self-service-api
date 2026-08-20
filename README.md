@@ -17,9 +17,3 @@ Backend service for the Self-Service Experience Portal, providing secure REST AP
 | API contract            | OpenAPI                      |
 | API documentation       | Springdoc OpenAPI            |
 
-
-ZITADEL's official Compose files : 
----------------------------------
-curl.exe -fsSLO https://raw.githubusercontent.com/zitadel/zitadel/main/deploy/compose/docker-compose.yml
-curl.exe -fsSLO https://raw.githubusercontent.com/zitadel/zitadel/main/deploy/compose/.env.example
-copy .env.example .env
