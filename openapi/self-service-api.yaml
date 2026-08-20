@@ -62,6 +62,95 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /auth/otp/request:
+    post:
+      summary: Request a one-time login code
+      operationId: requestOtp
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas.yaml#/OtpRequestRequest'
+      responses:
+        '200':
+          description: OTP request processed
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas.yaml#/OtpRequestResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '429':
+          $ref: './components/responses.yaml#/TooManyRequests'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/otp/resend:
+    post:
+      summary: Resend the current one-time login code
+      operationId: resendOtp
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas.yaml#/OtpRequestRequest'
+      responses:
+        '200':
+          description: OTP resent
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas.yaml#/OtpRequestResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '429':
+          $ref: './components/responses.yaml#/TooManyRequests'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/otp/verify:
+    post:
+      summary: Verify a one-time login code
+      operationId: verifyOtp
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas.yaml#/OtpVerifyRequest'
+      responses:
+        '200':
+          description: OTP verified
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas.yaml#/OtpVerifyResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '423':
+          $ref: './components/responses.yaml#/Locked'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
 components:
   securitySchemes:
     bearerAuth:

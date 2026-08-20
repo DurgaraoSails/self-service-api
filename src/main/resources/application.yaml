@@ -18,6 +18,13 @@ spring:
       ddl-auto: validate
     open-in-view: false
 
+otp:
+  hash-secret: ${OTP_HASH_SECRET:local-dev-otp-secret-change-me}
+  expiry-minutes: 10
+  max-attempts: 5
+  max-resends: 3
+  max-requests-per-hour: 5
+
 server:
   port: 8080
 
