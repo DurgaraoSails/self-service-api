@@ -137,6 +137,10 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<!-- Some Windows locales report a timezone name Postgres's tzdata rejects at connect time; forces UTC instead. -->
+					<jvmArguments>-Duser.timezone=UTC</jvmArguments>
+				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
