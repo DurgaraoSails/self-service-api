@@ -72,6 +72,15 @@ The endpoint fires an email and returns an acknowledgement; it does not write a 
 the contact-sales request. No sales-lead tracking/CRM concept exists in this codebase, and building
 one wasn't requested — deliberately deferred rather than added speculatively.
 
+**Local SMTP credentials loaded from a gitignored `secrets/smtp.properties`, not re-exported per
+session.** Mirrors the existing JWT-key convention (`secrets/` is gitignored; `scripts/generate-jwt-keys.sh`
+writes real keys there). `application.yaml` adds `spring.config.import: optional:file:./secrets/smtp.properties`;
+`SMTP_USERNAME`/`SMTP_PASSWORD` resolve from that file when present, or fall back to the
+already-empty-by-default environment variables otherwise — so prod/CI, where the file doesn't
+exist, is unaffected. `secrets/README.md` documents both secrets (JWT keys, SMTP creds) and is the
+one file under `secrets/` that *is* committed, via a `.gitignore` exception
+(`secrets/*` + `!secrets/README.md`).
+
 **Contact Sales includes profile info only, no feature-usage data.**
 The app currently has no functionality beyond registration/login/OTP and no usage-tracking of any
 kind — there is nothing real to report. Building usage-tracking to populate a "features used" list
@@ -126,5 +135,6 @@ No change to existing `/auth/*` endpoints' request/response shapes — only the 
 
 ## Changelog
 
+- 2026-08-21 — Added local-only SMTP credential loading via `spring.config.import: optional:file:./secrets/smtp.properties`, plus `secrets/README.md` (committed, via a `.gitignore` exception) documenting both this and the existing JWT-key secrets. Verified end-to-end: a full app boot (Flyway validate/migrate, Hikari connect, all beans wired) succeeded with `secrets/smtp.properties` present, reaching the same point as an earlier successful run before failing only at an unrelated, pre-existing local Tomcat/loopback-socket issue specific to this dev machine's sandboxed shell.
 - 2026-08-21 — Implemented: `SmtpEmailService` (`@Profile("!local")`) + `AppMailProperties`, `LoggingEmailService` gated to `@Profile("local")`, `spring-boot-starter-mail` added, Gmail SMTP defaults wired into `application.yaml`. Contact Sales: `openapi/components/schemas/support.yaml`, `POST /support/contact-sales` in `openapi/self-service-api.yaml`, `SupportController`/`SupportService`/`SupportProperties`. Unit-tested (`SmtpEmailServiceTest`, `SupportServiceTest`) with Mockito — message construction, the `MailException` → `ApiException` mapping, and email body assembly all verified. Full `mvn compile`/`test` pass. Live SMTP send and an end-to-end HTTP call to `/support/contact-sales` were not exercised in this session — the local dev machine's embedded Tomcat can't open a loopback socket in the sandboxed shell used here (`java.io.IOException: Unable to establish loopback connection`, unrelated to this feature); the Spring context itself was confirmed to wire up cleanly end-to-end (Flyway, JPA, all new beans) short of that OS-level networking step.
 - 2026-08-21 — Initial draft, written before implementation.
