@@ -111,7 +111,7 @@ All new endpoints are unprefixed (`/auth/...`), public (`security: []`, overridi
 
 `TokenResponse`: `{accessToken, refreshToken, tokenType: "Bearer", expiresIn}`.
 
-**JWT claims** (access token): `sub` (user id), `email`, `roles`, `tenantId` (when present), `iss=self-service-api`, `iat`, `exp`, `jti`.
+**JWT claims** (access token): `sub` (user id), `email`, `roles`, `tenantId` (when present), `trialEndDate` (when present, epoch seconds — added by the trial-access-enforcement feature, see `docs/specs/trial-access-enforcement.md`), `iss=self-service-api`, `iat`, `exp`, `jti`.
 
 **Default TTLs**: access token 30 minutes, refresh token 7 days (both configurable via `jwt.access-token-ttl` / `jwt.refresh-token-ttl`).
 
@@ -131,6 +131,7 @@ All new endpoints are unprefixed (`/auth/...`), public (`security: []`, overridi
 
 ## Changelog
 
+- 2026-08-21 — Added a conditional `trialEndDate` claim (epoch seconds) to the access token, as part of the trial-access-enforcement feature — see `docs/specs/trial-access-enforcement.md` for the full rationale (avoids a DB round-trip to check trial status on every request, same principle as the existing conditional `tenantId` claim).
 - 2026-08-20 — Initial draft, written before implementation, capturing all decisions made in the planning discussion.
 - 2026-08-20 — During implementation: split `openapi/components/schemas.yaml` into per-domain files (`schemas/common.yaml`, `schemas/user.yaml`, `schemas/auth.yaml`). Revised the interim-endpoint gating mechanism from a bean-level `@Profile("!prod")` to an `Environment.matchesProfiles("prod")` check inside `AuthController.issueTokens` (returns 404), since `AuthController` implements the single generated `AuthApi` interface covering all three `/auth/*` operations and splitting it into two beans purely to gate one operation wasn't worth the duplication.
 - 2026-08-20 — Implemented the registration flow and wired OTP verification to real token issuance: `POST /auth/register` (`UserService.registerUser`, throws `UserAlreadyExistsException` → `409`), `UserService.getEligibleForOtpByEmail` (replaces `OtpService`'s direct use of `getActiveByEmail`, allowing `PENDING_VERIFICATION` alongside `ACTIVE`), `OtpService.verifyOtp` now promotes `PENDING_VERIFICATION` → `ACTIVE` + sets `emailVerifiedAt` before returning, and `AuthController.verifyOtp` now calls `AuthService.issueTokensForVerifiedEmail` and returns `TokenResponse` instead of the removed `OtpVerifyResponse`. Compiles clean (52 generated+hand-written sources, all 9 `/auth/*` + `/users/me` operations). Not yet re-verified live end-to-end against Postgres (local dev DB volume needs a reset since the users table schema changed again).
