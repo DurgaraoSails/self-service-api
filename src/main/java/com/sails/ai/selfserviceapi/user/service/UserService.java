@@ -1,11 +1,14 @@
 package com.sails.ai.selfserviceapi.user.service;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
+import com.sails.ai.selfserviceapi.user.config.TrialProperties;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.entity.UserStatus;
 import com.sails.ai.selfserviceapi.user.exception.UserAlreadyExistsException;
 import com.sails.ai.selfserviceapi.user.exception.UserNotFoundException;
 import com.sails.ai.selfserviceapi.user.repository.UserRepository;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -16,9 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final TrialProperties trialProperties;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, TrialProperties trialProperties) {
         this.userRepository = userRepository;
+        this.trialProperties = trialProperties;
     }
 
     public User getById(String id) {
@@ -65,6 +70,8 @@ public class UserService {
             throw new UserAlreadyExistsException();
         }
 
+        Instant trialStart = Instant.now();
+
         User user = new User();
         user.setFirstName(firstName);
         user.setLastName(lastName);
@@ -73,6 +80,8 @@ public class UserService {
         user.setCountry(country);
         user.setEmail(email);
         user.setRoles(new ArrayList<>(List.of("USER")));
+        user.setTrialStartDate(trialStart);
+        user.setTrialEndDate(trialStart.plus(trialProperties.lengthDays(), ChronoUnit.DAYS));
         return userRepository.save(user);
     }
 

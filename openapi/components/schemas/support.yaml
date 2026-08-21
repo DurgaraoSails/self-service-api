@@ -1,0 +1,20 @@
+ContactSalesRequest:
+  type: object
+  description: Request to have the sales team follow up with the current user.
+  properties:
+    message:
+      type: string
+      maxLength: 2000
+      description: Optional free-text context from the user for the sales team.
+      example: "We're evaluating this for a 200-seat rollout, please reach out."
+
+
+ContactSalesResponse:
+  type: object
+  description: Acknowledgement that the sales team has been notified.
+  required:
+    - message
+  properties:
+    message:
+      type: string
+      example: "Thanks! Our sales team will be in touch shortly."

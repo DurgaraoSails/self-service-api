@@ -142,6 +142,9 @@ paths:
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
 
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
@@ -170,6 +173,42 @@ paths:
 
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
+
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /support/contact-sales:
+    post:
+      summary: Notify the sales team that the current user wants to be contacted
+      operationId: contactSales
+      tags:
+        - Support
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/support.yaml#/ContactSalesRequest'
+
+      responses:
+        '200':
+          description: Sales team notified
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/support.yaml#/ContactSalesResponse'
+
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
 
         '500':
           $ref: './components/responses.yaml#/InternalServerError'

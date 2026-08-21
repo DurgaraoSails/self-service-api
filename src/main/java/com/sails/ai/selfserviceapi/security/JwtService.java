@@ -36,6 +36,10 @@ public class JwtService {
             builder.claim("tenantId", user.getTenantId());
         }
 
+        if (user.getTrialEndDate() != null) {
+            builder.claim("trialEndDate", user.getTrialEndDate().getEpochSecond());
+        }
+
         return builder.signWith(jwtPrivateKey, Jwts.SIG.RS256).compact();
     }
 
