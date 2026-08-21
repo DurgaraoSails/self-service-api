@@ -3,16 +3,43 @@ package com.sails.ai.selfserviceapi.user.controller;
 import com.sails.ai.selfserviceapi.generated.api.UserApi;
 import com.sails.ai.selfserviceapi.generated.model.UpdateUserRequest;
 import com.sails.ai.selfserviceapi.generated.model.UserResponse;
+import com.sails.ai.selfserviceapi.generated.model.UserStatus;
+import com.sails.ai.selfserviceapi.user.entity.User;
+import com.sails.ai.selfserviceapi.user.service.UserService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.RestController;
 
+@RestController
 public class UserController implements UserApi {
+
+    private final UserService userService;
+
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+
     @Override
     public ResponseEntity<UserResponse> getCurrentUser() {
-        return null;
+        User user = userService.getById(currentUserId());
+        return ResponseEntity.ok(toResponse(user));
     }
 
     @Override
     public ResponseEntity<UserResponse> updateCurrentUser(UpdateUserRequest updateUserRequest) {
-        return null;
+        User user = userService.updateDisplayName(currentUserId(), updateUserRequest.getDisplayName());
+        return ResponseEntity.ok(toResponse(user));
+    }
+
+    private String currentUserId() {
+        Jwt jwt = (Jwt) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return jwt.getSubject();
+    }
+
+    private UserResponse toResponse(User user) {
+        return new UserResponse(user.getId(), user.getEmail(), UserStatus.valueOf(user.getStatus().name()))
+                .displayName(user.getDisplayName())
+                .roles(user.getRoles());
     }
 }

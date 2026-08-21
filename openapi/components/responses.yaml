@@ -3,7 +3,7 @@ BadRequest:
   content:
     application/json:
       schema:
-        $ref: './schemas.yaml#/ErrorResponse'
+        $ref: './schemas/common.yaml#/ErrorResponse'
 
 
 Unauthorized:
@@ -11,7 +11,7 @@ Unauthorized:
   content:
     application/json:
       schema:
-        $ref: './schemas.yaml#/ErrorResponse'
+        $ref: './schemas/common.yaml#/ErrorResponse'
 
 
 Forbidden:
@@ -19,7 +19,7 @@ Forbidden:
   content:
     application/json:
       schema:
-        $ref: './schemas.yaml#/ErrorResponse'
+        $ref: './schemas/common.yaml#/ErrorResponse'
 
 
 NotFound:
@@ -27,7 +27,7 @@ NotFound:
   content:
     application/json:
       schema:
-        $ref: './schemas.yaml#/ErrorResponse'
+        $ref: './schemas/common.yaml#/ErrorResponse'
 
 
 Conflict:
@@ -35,7 +35,7 @@ Conflict:
   content:
     application/json:
       schema:
-        $ref: './schemas.yaml#/ErrorResponse'
+        $ref: './schemas/common.yaml#/ErrorResponse'
 
 
 InternalServerError:
@@ -43,7 +43,7 @@ InternalServerError:
   content:
     application/json:
       schema:
-        $ref: './schemas.yaml#/ErrorResponse'
+        $ref: './schemas/common.yaml#/ErrorResponse'
 
 
 TooManyRequests:
@@ -51,7 +51,7 @@ TooManyRequests:
   content:
     application/json:
       schema:
-        $ref: './schemas.yaml#/ErrorResponse'
+        $ref: './schemas/common.yaml#/ErrorResponse'
 
 
 Locked:
@@ -59,4 +59,4 @@ Locked:
   content:
     application/json:
       schema:
-        $ref: './schemas.yaml#/ErrorResponse'
+        $ref: './schemas/common.yaml#/ErrorResponse'

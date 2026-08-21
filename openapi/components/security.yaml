@@ -3,5 +3,7 @@ bearerAuth:
   scheme: bearer
   bearerFormat: JWT
   description: >
-    Bearer JWT issued by Google Identity Platform after successful
-    email OTP authentication.
+    Bearer JWT self-issued by self-service-api (RS256), signed with a
+    locally-held RSA private key. Obtained via POST /auth/tokens and
+    refreshed via POST /auth/refresh. Currently minted via an interim
+    email-based login, pending the email + OTP verification flow.

@@ -1,12 +1,11 @@
 spring:
+  # Local-dev-only SMTP secrets (gitignored, generated locally — see secrets/README.md).
+  # Absent in prod/CI, so real deploys still rely purely on SMTP_USERNAME/SMTP_PASSWORD env vars.
+  config:
+    import: optional:file:./secrets/smtp.properties
+
   application:
     name: self-service-api
-
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8080}
 
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5433/selfservice}
@@ -18,12 +17,42 @@ spring:
       ddl-auto: validate
     open-in-view: false
 
+  mail:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
+
 otp:
   hash-secret: ${OTP_HASH_SECRET:local-dev-otp-secret-change-me}
   expiry-minutes: 10
   max-attempts: 5
   max-resends: 3
   max-requests-per-hour: 5
+
+jwt:
+  issuer: ${JWT_ISSUER:self-service-api}
+  private-key-path: ${JWT_PRIVATE_KEY_PATH:file:./secrets/jwt/private-key.pem}
+  public-key-path: ${JWT_PUBLIC_KEY_PATH:file:./secrets/jwt/public-key.pem}
+  access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:30m}
+  refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:7d}
+
+trial:
+  length-days: ${TRIAL_LENGTH_DAYS:14}
+
+support:
+  sales-email: ${SALES_EMAIL:sales@example.com}
+
+app:
+  mail:
+    from-address: ${MAIL_FROM_ADDRESS:no-reply@example.com}
+    from-name: ${MAIL_FROM_NAME:Self Service}
 
 server:
   port: 8080
