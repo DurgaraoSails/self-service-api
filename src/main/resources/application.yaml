@@ -1,4 +1,9 @@
 spring:
+  # Local-dev-only SMTP secrets (gitignored, generated locally — see secrets/README.md).
+  # Absent in prod/CI, so real deploys still rely purely on SMTP_USERNAME/SMTP_PASSWORD env vars.
+  config:
+    import: optional:file:./secrets/smtp.properties
+
   application:
     name: self-service-api
 
