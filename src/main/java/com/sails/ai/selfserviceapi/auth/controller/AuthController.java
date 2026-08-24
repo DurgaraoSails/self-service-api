@@ -1,10 +1,12 @@
 package com.sails.ai.selfserviceapi.auth.controller;
 
 import com.sails.ai.selfserviceapi.auth.service.AuthService;
+import com.sails.ai.selfserviceapi.auth.service.LoginResult;
 import com.sails.ai.selfserviceapi.auth.service.OtpService;
 import com.sails.ai.selfserviceapi.auth.service.TokenPair;
 import com.sails.ai.selfserviceapi.generated.api.AuthApi;
 import com.sails.ai.selfserviceapi.generated.model.IssueTokenRequest;
+import com.sails.ai.selfserviceapi.generated.model.LoginResponse;
 import com.sails.ai.selfserviceapi.generated.model.LogoutRequest;
 import com.sails.ai.selfserviceapi.generated.model.OtpRequestRequest;
 import com.sails.ai.selfserviceapi.generated.model.OtpRequestResponse;
@@ -12,6 +14,7 @@ import com.sails.ai.selfserviceapi.generated.model.OtpVerifyRequest;
 import com.sails.ai.selfserviceapi.generated.model.RefreshTokenRequest;
 import com.sails.ai.selfserviceapi.generated.model.RegisterRequest;
 import com.sails.ai.selfserviceapi.generated.model.TokenResponse;
+import com.sails.ai.selfserviceapi.user.service.UserResponseMapper;
 import com.sails.ai.selfserviceapi.user.service.UserService;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
@@ -67,13 +70,13 @@ public class AuthController implements AuthApi {
     }
 
     @Override
-    public ResponseEntity<TokenResponse> verifyOtp(OtpVerifyRequest otpVerifyRequest) {
+    public ResponseEntity<LoginResponse> verifyOtp(OtpVerifyRequest otpVerifyRequest) {
         // Verifying activates a PENDING_VERIFICATION user (registration) or is a no-op status
         // change for an already-ACTIVE one (login) — either way the user is ACTIVE by the time
         // issueTokensForVerifiedEmail looks it up.
         otpService.verifyOtp(otpVerifyRequest.getEmail(), otpVerifyRequest.getCode());
-        TokenPair tokenPair = authService.issueTokensForVerifiedEmail(otpVerifyRequest.getEmail());
-        return ResponseEntity.ok(toResponse(tokenPair));
+        LoginResult loginResult = authService.issueTokensForVerifiedEmail(otpVerifyRequest.getEmail());
+        return ResponseEntity.ok(toLoginResponse(loginResult));
     }
 
     @Override
@@ -86,8 +89,8 @@ public class AuthController implements AuthApi {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 
-        TokenPair tokenPair = authService.issueTokensForVerifiedEmail(issueTokenRequest.getEmail());
-        return ResponseEntity.ok(toResponse(tokenPair));
+        LoginResult loginResult = authService.issueTokensForVerifiedEmail(issueTokenRequest.getEmail());
+        return ResponseEntity.ok(toResponse(loginResult.tokenPair()));
     }
 
     @Override
@@ -108,6 +111,17 @@ public class AuthController implements AuthApi {
                 tokenPair.refreshToken(),
                 tokenPair.tokenType(),
                 tokenPair.expiresIn()
+        );
+    }
+
+    private LoginResponse toLoginResponse(LoginResult loginResult) {
+        TokenPair tokenPair = loginResult.tokenPair();
+        return new LoginResponse(
+                tokenPair.accessToken(),
+                tokenPair.refreshToken(),
+                tokenPair.tokenType(),
+                tokenPair.expiresIn(),
+                UserResponseMapper.toResponse(loginResult.user())
         );
     }
 }

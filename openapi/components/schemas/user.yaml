@@ -4,6 +4,8 @@ UserResponse:
   required:
     - id
     - email
+    - firstName
+    - lastName
     - status
   properties:
     id:
@@ -16,6 +18,18 @@ UserResponse:
       format: email
       description: Email address associated with the authenticated identity.
       example: "user@example.com"
+
+    firstName:
+      type: string
+      maxLength: 100
+      description: First name of the user, as given at registration.
+      example: "Jane"
+
+    lastName:
+      type: string
+      maxLength: 100
+      description: Last name of the user, as given at registration.
+      example: "Doe"
 
     displayName:
       type: string
@@ -33,6 +47,18 @@ UserResponse:
         type: string
       example:
         - USER
+
+    trialStartDate:
+      type: string
+      format: date-time
+      description: When the account's trial period started, in UTC.
+      example: "2026-08-20T10:30:00Z"
+
+    trialEndDate:
+      type: string
+      format: date-time
+      description: When the account's trial period ends, in UTC.
+      example: "2026-09-03T10:30:00Z"
 
 
 UpdateUserRequest:

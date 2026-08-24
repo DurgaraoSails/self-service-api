@@ -1,9 +1,11 @@
 package com.sails.ai.selfserviceapi.config;
 
+import com.sails.ai.selfserviceapi.security.CorsProperties;
 import com.sails.ai.selfserviceapi.security.JwtProperties;
 import com.sails.ai.selfserviceapi.security.TrialAuthorizationManager;
 import com.sails.ai.selfserviceapi.security.TrialExpiredAccessDeniedHandler;
 import java.security.interfaces.RSAPublicKey;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
@@ -19,6 +21,9 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -26,15 +31,18 @@ public class SecurityConfig {
 
     private final RSAPublicKey jwtPublicKey;
     private final JwtProperties jwtProperties;
+    private final CorsProperties corsProperties;
     private final TrialAuthorizationManager trialAuthorizationManager;
     private final TrialExpiredAccessDeniedHandler trialExpiredAccessDeniedHandler;
 
     public SecurityConfig(RSAPublicKey jwtPublicKey,
                            JwtProperties jwtProperties,
+                           CorsProperties corsProperties,
                            TrialAuthorizationManager trialAuthorizationManager,
                            TrialExpiredAccessDeniedHandler trialExpiredAccessDeniedHandler) {
         this.jwtPublicKey = jwtPublicKey;
         this.jwtProperties = jwtProperties;
+        this.corsProperties = corsProperties;
         this.trialAuthorizationManager = trialAuthorizationManager;
         this.trialExpiredAccessDeniedHandler = trialExpiredAccessDeniedHandler;
     }
@@ -72,6 +80,17 @@ public class SecurityConfig {
                 );
 
         return http.build();
+    }
+
+    private CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(corsProperties.allowedOrigins());
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 
     private JwtDecoder jwtDecoder() {

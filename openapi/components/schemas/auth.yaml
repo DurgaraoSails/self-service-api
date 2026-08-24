@@ -27,6 +27,20 @@ TokenResponse:
       example: 1800
 
 
+LoginResponse:
+  description: >
+    Access/refresh token pair issued after successful OTP verification, together with the
+    authenticated user's profile.
+  allOf:
+    - $ref: '#/TokenResponse'
+    - type: object
+      required:
+        - user
+      properties:
+        user:
+          $ref: './user.yaml#/UserResponse'
+
+
 IssueTokenRequest:
   type: object
   description: >
