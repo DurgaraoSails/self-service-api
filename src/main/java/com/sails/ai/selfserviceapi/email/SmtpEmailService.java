@@ -15,8 +15,6 @@ import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
-@Profile("!local")
-@Service
 public class SmtpEmailService implements EmailService {
 
     private static final String LOGO_RESOURCE_PATH = "templates/email/sails-logo.png";
