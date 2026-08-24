@@ -22,18 +22,26 @@ jobs:
         id: version
         run: |
           BRANCH_NAME="${GITHUB_REF_NAME}"
-
-          # Convert branch name to lowercase
           BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]')
-
+      
           RUN_NUMBER="${GITHUB_RUN_NUMBER}"
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+      
+          IMAGE_TAG="${BRANCH_NAME}-${RUN_NUMBER}-${SHORT_SHA}"
+      
+          GHCR_OWNER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+      
+          GHCR_IMAGE="ghcr.io/${GHCR_OWNER}/self-service-api"
+      
+          DOCKERHUB_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/self-service-api"
+      
+          echo "tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_image=${GHCR_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "dockerhub_image=${DOCKERHUB_IMAGE}" >> "$GITHUB_OUTPUT"
 
-          IMAGE_TAG="${BRANCH_NAME}-${RUN_NUMBER}"
-
-          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
-          echo "tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-
-          echo "Docker image tag: $IMAGE_TAG"
+          echo "Image tag: ${IMAGE_TAG}"
+          echo "GHCR image: ${GHCR_IMAGE}"
+          echo "Docker Hub image: ${DOCKERHUB_IMAGE}"
       - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
@@ -59,8 +67,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
-            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
+            ${{ steps.version.outputs.dockerhub_image }}:${{ steps.version.outputs.tag }}
+            ${{ steps.version.outputs.ghcr_image }}:${{ steps.version.outputs.tag }}
       - name: Display image information
         run: |
           echo "Docker Hub:"
