@@ -288,11 +288,11 @@ paths:
               $ref: './components/schemas/otp.yaml#/OtpVerifyRequest'
       responses:
         '200':
-          description: OTP verified; access and refresh token pair issued
+          description: OTP verified; access and refresh token pair issued, with the user's profile
           content:
             application/json:
               schema:
-                $ref: './components/schemas/auth.yaml#/TokenResponse'
+                $ref: './components/schemas/auth.yaml#/LoginResponse'
         '400':
           $ref: './components/responses.yaml#/BadRequest'
         '404':

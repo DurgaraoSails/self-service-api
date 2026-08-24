@@ -20,10 +20,12 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final TrialProperties trialProperties;
+    private final EmailDomainValidator emailDomainValidator;
 
-    public UserService(UserRepository userRepository, TrialProperties trialProperties) {
+    public UserService(UserRepository userRepository, TrialProperties trialProperties, EmailDomainValidator emailDomainValidator) {
         this.userRepository = userRepository;
         this.trialProperties = trialProperties;
+        this.emailDomainValidator = emailDomainValidator;
     }
 
     public User getById(String id) {
@@ -66,6 +68,8 @@ public class UserService {
      */
     @Transactional
     public User registerUser(String firstName, String lastName, String companyName, String jobTitle, String country, String email) {
+        emailDomainValidator.validate(email);
+
         if (userRepository.findByEmail(email).isPresent()) {
             throw new UserAlreadyExistsException();
         }

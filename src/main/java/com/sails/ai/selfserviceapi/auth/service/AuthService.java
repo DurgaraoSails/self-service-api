@@ -27,9 +27,9 @@ public class AuthService {
      * enforces the same precondition OtpService.verifyOtp already does.
      */
     @Transactional
-    public TokenPair issueTokensForVerifiedEmail(String email) {
+    public LoginResult issueTokensForVerifiedEmail(String email) {
         User user = userService.getActiveByEmail(email);
-        return buildPair(user);
+        return new LoginResult(user, buildPair(user));
     }
 
     @Transactional
