@@ -1,0 +1,443 @@
+openapi: 3.0.3
+
+info:
+  title: Self Service API
+  description: Self Service application REST API
+  version: 1.0.0
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /auth/register:
+    post:
+      summary: Register a new user account and send the first verification code
+      operationId: register
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/user.yaml#/RegisterRequest'
+      responses:
+        '201':
+          description: Account created; verification code sent
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/otp.yaml#/OtpRequestResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
+        '429':
+          $ref: './components/responses.yaml#/TooManyRequests'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/tokens:
+    post:
+      summary: Issue a token pair for an email (interim login, pending email + OTP verification)
+      operationId: issueTokens
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/auth.yaml#/IssueTokenRequest'
+
+      responses:
+        '200':
+          description: Access and refresh token pair
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/auth.yaml#/TokenResponse'
+
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/refresh:
+    post:
+      summary: Exchange a refresh token for a new access/refresh token pair
+      operationId: refreshToken
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/auth.yaml#/RefreshTokenRequest'
+
+      responses:
+        '200':
+          description: New access and refresh token pair
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/auth.yaml#/TokenResponse'
+
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/logout:
+    post:
+      summary: Revoke a refresh token
+      operationId: logout
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/auth.yaml#/LogoutRequest'
+
+      responses:
+        '204':
+          description: Refresh token revoked (idempotent, always returned even if the token was already invalid)
+
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /users/me:
+    get:
+      summary: Get current authenticated user
+      operationId: getCurrentUser
+      tags:
+        - User
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/UserResponse'
+
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    put:
+      summary: Update current authenticated user
+      operationId: updateCurrentUser
+      tags:
+        - User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/user.yaml#/UpdateUserRequest'
+
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/UserResponse'
+
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /support/contact-sales:
+    post:
+      summary: Notify the sales team that the current user wants to be contacted
+      operationId: contactSales
+      tags:
+        - Support
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/support.yaml#/ContactSalesRequest'
+
+      responses:
+        '200':
+          description: Sales team notified
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/support.yaml#/ContactSalesResponse'
+
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/otp/request:
+    post:
+      summary: Request a one-time login code
+      operationId: requestOtp
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/otp.yaml#/OtpRequestRequest'
+      responses:
+        '200':
+          description: OTP request processed
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/otp.yaml#/OtpRequestResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '429':
+          $ref: './components/responses.yaml#/TooManyRequests'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/otp/resend:
+    post:
+      summary: Resend the current one-time login code
+      operationId: resendOtp
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/otp.yaml#/OtpRequestRequest'
+      responses:
+        '200':
+          description: OTP resent
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/otp.yaml#/OtpRequestResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '429':
+          $ref: './components/responses.yaml#/TooManyRequests'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /auth/otp/verify:
+    post:
+      summary: Verify a one-time login code
+      operationId: verifyOtp
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/otp.yaml#/OtpVerifyRequest'
+      responses:
+        '200':
+          description: OTP verified; access and refresh token pair issued, with the user's profile
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/auth.yaml#/LoginResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '423':
+          $ref: './components/responses.yaml#/Locked'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs:
+    get:
+      summary: List all POCs (public summary — no launch/repository links)
+      operationId: getPocs
+      tags:
+        - Poc
+      security: []
+      responses:
+        '200':
+          description: List of POCs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/poc.yaml#/PocSummaryResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    post:
+      summary: Create a new POC
+      operationId: createPoc
+      tags:
+        - Poc
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/poc.yaml#/CreatePocRequest'
+      responses:
+        '201':
+          description: POC created
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}:
+    get:
+      summary: Get a POC by id
+      operationId: getPocById
+      tags:
+        - Poc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: POC details
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    put:
+      summary: Update a POC
+      operationId: updatePoc
+      tags:
+        - Poc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/poc.yaml#/UpdatePocRequest'
+      responses:
+        '200':
+          description: POC updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    delete:
+      summary: Delete a POC
+      operationId: deletePoc
+      tags:
+        - Poc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: POC deleted
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './components/security.yaml#/bearerAuth'

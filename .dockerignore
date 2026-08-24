@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.vscode
+
+target
+*.log
+
+.env
+.env.*
+application-*.yml
+secrets
+scripts
+
+README.md
