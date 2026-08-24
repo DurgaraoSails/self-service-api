@@ -61,7 +61,7 @@ email-domain-validation:
   retries: ${EMAIL_DOMAIN_VALIDATION_RETRIES:1}
 
 support:
-  sales-email: ${SALES_EMAIL:sales@example.com}
+  sales-email: ${SALES_EMAIL:no.reply.sails.poc@gmail.com}
 
 app:
   mail:
