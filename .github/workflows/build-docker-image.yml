@@ -5,7 +5,7 @@ on:
       - main
       - develop
       - SS-Package-Structure
-      - bravo-smtp
+      - brevo-smtp
 permissions:
   contents: write
   packages: write
