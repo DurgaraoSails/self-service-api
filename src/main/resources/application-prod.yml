@@ -1,0 +1,8 @@
+jwt:
+  # TODO: confirm the actual Google Secret Manager mount path with ops before deploy.
+  private-key-path: file:/mnt/secrets/jwt/private-key.pem
+  public-key-path: file:/mnt/secrets/jwt/public-key.pem
+
+# TODO: confirm the SMTP credentials source with ops before deploy (SMTP_USERNAME/SMTP_PASSWORD
+# env vars, likely Secret Manager-backed) — Gmail SMTP is the current default, see
+# docs/specs/transactional-email.md.

@@ -31,3 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local dev secrets (JWT signing keys, SMTP creds — never commit) ###
+secrets/*
+!secrets/README.md
+
+### Local Postgres data volume ###
+infra/selfservice_db/volumes/

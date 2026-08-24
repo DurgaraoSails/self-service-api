@@ -1,0 +1,125 @@
+UserResponse:
+  type: object
+  description: Authenticated application user.
+  required:
+    - id
+    - email
+    - firstName
+    - lastName
+    - status
+  properties:
+    id:
+      type: string
+      description: Unique identifier of the application user.
+      example: "01JABC123XYZ"
+
+    email:
+      type: string
+      format: email
+      description: Email address associated with the authenticated identity.
+      example: "user@example.com"
+
+    firstName:
+      type: string
+      maxLength: 100
+      description: First name of the user, as given at registration.
+      example: "Jane"
+
+    lastName:
+      type: string
+      maxLength: 100
+      description: Last name of the user, as given at registration.
+      example: "Doe"
+
+    displayName:
+      type: string
+      maxLength: 100
+      description: Display name of the user.
+      example: "John Doe"
+
+    status:
+      $ref: '#/UserStatus'
+
+    roles:
+      type: array
+      description: Roles assigned to the user.
+      items:
+        type: string
+      example:
+        - USER
+
+    trialStartDate:
+      type: string
+      format: date-time
+      description: When the account's trial period started, in UTC.
+      example: "2026-08-20T10:30:00Z"
+
+    trialEndDate:
+      type: string
+      format: date-time
+      description: When the account's trial period ends, in UTC.
+      example: "2026-09-03T10:30:00Z"
+
+
+UpdateUserRequest:
+  type: object
+  description: Request to update the current user's profile.
+  properties:
+    displayName:
+      type: string
+      minLength: 1
+      maxLength: 100
+      description: Display name of the user.
+      example: "John Doe"
+
+
+UserStatus:
+  type: string
+  description: Current status of the application user.
+  enum:
+    - PENDING_VERIFICATION
+    - ACTIVE
+    - INACTIVE
+    - SUSPENDED
+  example: ACTIVE
+
+
+RegisterRequest:
+  type: object
+  description: Request to register a new user account.
+  required:
+    - firstName
+    - lastName
+    - companyName
+    - email
+  properties:
+    firstName:
+      type: string
+      maxLength: 100
+      example: "Jane"
+
+    lastName:
+      type: string
+      maxLength: 100
+      example: "Doe"
+
+    companyName:
+      type: string
+      maxLength: 200
+      example: "Acme Corp"
+
+    jobTitle:
+      type: string
+      maxLength: 100
+      example: "Engineering Manager"
+
+    country:
+      type: string
+      maxLength: 100
+      example: "United States"
+
+    email:
+      type: string
+      format: email
+      description: Email address to register and verify.
+      example: "jane.doe@example.com"
