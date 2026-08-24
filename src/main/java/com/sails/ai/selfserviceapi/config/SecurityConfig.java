@@ -6,6 +6,7 @@ import com.sails.ai.selfserviceapi.security.TrialExpiredAccessDeniedHandler;
 import java.security.interfaces.RSAPublicKey;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
 import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.Customizer;
@@ -53,6 +54,8 @@ public class SecurityConfig {
                                 "/public/**",
                                 "/auth/**"
                         )
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/pocs")
                         .permitAll()
                         .requestMatchers("/api/v1/**")
                         .authenticated()
