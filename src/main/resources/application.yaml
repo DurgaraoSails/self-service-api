@@ -12,10 +12,20 @@ spring:
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
 
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
   jpa:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
 
   mail:
     host: ${SMTP_HOST:smtp.gmail.com}
@@ -54,9 +64,6 @@ app:
     from-address: ${MAIL_FROM_ADDRESS:no-reply@example.com}
     from-name: ${MAIL_FROM_NAME:Self Service}
 
-server:
-  port: 8080
-
 management:
   endpoints:
     web:
@@ -64,3 +71,11 @@ management:
         include:
           - health
           - info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+server:
+  address: 0.0.0.0
+  port: ${PORT:8080}
