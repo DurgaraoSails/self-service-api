@@ -302,6 +302,141 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs:
+    get:
+      summary: List all POCs (public summary — no launch/repository links)
+      operationId: getPocs
+      tags:
+        - Poc
+      security: []
+      responses:
+        '200':
+          description: List of POCs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/poc.yaml#/PocSummaryResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    post:
+      summary: Create a new POC
+      operationId: createPoc
+      tags:
+        - Poc
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/poc.yaml#/CreatePocRequest'
+      responses:
+        '201':
+          description: POC created
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}:
+    get:
+      summary: Get a POC by id
+      operationId: getPocById
+      tags:
+        - Poc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: POC details
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    put:
+      summary: Update a POC
+      operationId: updatePoc
+      tags:
+        - Poc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/poc.yaml#/UpdatePocRequest'
+      responses:
+        '200':
+          description: POC updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    delete:
+      summary: Delete a POC
+      operationId: deletePoc
+      tags:
+        - Poc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: POC deleted
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
 components:
   securitySchemes:
     bearerAuth:
