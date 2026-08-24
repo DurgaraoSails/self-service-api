@@ -4,10 +4,17 @@ import com.sails.ai.selfserviceapi.email.EmailService;
 import com.sails.ai.selfserviceapi.support.config.SupportProperties;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.service.UserService;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 @Service
 public class SupportService {
+
+    private static final DateTimeFormatter TRIAL_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
 
     private final UserService userService;
     private final EmailService emailService;
@@ -21,33 +28,29 @@ public class SupportService {
 
     public void contactSales(String userId, String message) {
         User user = userService.getById(userId);
-        emailService.send(properties.salesEmail(), buildSubject(user), buildBody(user, message));
+        emailService.sendTemplate(properties.salesEmail(), buildSubject(user), "contact-sales", buildVariables(user, message));
     }
 
     private String buildSubject(User user) {
         return "Contact Sales request from " + user.getCompanyName();
     }
 
-    private String buildBody(User user, String message) {
-        StringBuilder body = new StringBuilder();
-        body.append("Name: ").append(user.getFirstName()).append(' ').append(user.getLastName()).append('\n');
-        body.append("Email: ").append(user.getEmail()).append('\n');
-        body.append("Company: ").append(user.getCompanyName()).append('\n');
-        if (user.getJobTitle() != null) {
-            body.append("Job title: ").append(user.getJobTitle()).append('\n');
-        }
-        if (user.getCountry() != null) {
-            body.append("Country: ").append(user.getCountry()).append('\n');
-        }
+    private Map<String, Object> buildVariables(User user, String message) {
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("fullName", user.getFirstName() + " " + user.getLastName());
+        variables.put("email", user.getEmail());
+        variables.put("companyName", user.getCompanyName());
+        variables.put("jobTitle", user.getJobTitle());
+        variables.put("country", user.getCountry());
         if (user.getTrialStartDate() != null) {
-            body.append("Trial start: ").append(user.getTrialStartDate()).append('\n');
+            variables.put("trialStartDate", TRIAL_DATE_FORMAT.format(user.getTrialStartDate()));
         }
         if (user.getTrialEndDate() != null) {
-            body.append("Trial end: ").append(user.getTrialEndDate()).append('\n');
+            variables.put("trialEndDate", TRIAL_DATE_FORMAT.format(user.getTrialEndDate()));
         }
         if (message != null && !message.isBlank()) {
-            body.append("\nMessage:\n").append(message).append('\n');
+            variables.put("message", message);
         }
-        return body.toString();
+        return variables;
     }
 }

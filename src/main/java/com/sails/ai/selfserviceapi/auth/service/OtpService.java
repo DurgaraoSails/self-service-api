@@ -15,6 +15,7 @@ import com.sails.ai.selfserviceapi.user.service.UserService;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -159,10 +160,15 @@ public class OtpService {
     }
 
     private void sendOtpEmail(User user, String code) {
-        emailService.send(
+        emailService.sendTemplate(
                 user.getEmail(),
                 "Your verification code",
-                "Your one-time login code is " + code + ". It expires in " + properties.expiryMinutes() + " minutes."
+                "otp-verification",
+                Map.of(
+                        "code", code,
+                        "expiryMinutes", properties.expiryMinutes(),
+                        "recipientName", user.getFirstName()
+                )
         );
     }
 

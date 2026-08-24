@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contact Sales request</title>
+</head>
+<body style="margin:0; padding:0; background-color:#F9FAFB; font-family:Arial, Helvetica, sans-serif;">
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F9FAFB; padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0"
+               style="max-width:560px; width:100%; background-color:#FFFFFF; border:1px solid #E5E7EB; border-radius:8px; overflow:hidden;">
+
+          <!-- Brand accent bar -->
+          <tr>
+            <td style="background-color:#0F766E; font-size:0; line-height:0; padding:0;" height="6">&nbsp;</td>
+          </tr>
+
+          <!-- Header / brand -->
+          <tr>
+            <td style="padding:28px 32px 20px 32px; border-bottom:1px solid #F1F5F9;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="vertical-align:middle; padding-right:10px;">
+                    <img th:src="|cid:${logoContentId}|" src="cid:sailsLogo" alt="Sails Software"
+                         width="64" height="32" style="display:block; width:64px; height:auto;" />
+                  </td>
+                  <td style="vertical-align:middle;">
+                    <span style="font-size:18px; font-weight:bold; color:#0F172A;">Sails Software</span>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:6px 0 0 0; font-size:11px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#0F766E;">
+                New Contact Sales Request
+              </p>
+            </td>
+          </tr>
+
+          <!-- Intro -->
+          <tr>
+            <td style="padding:24px 32px 8px 32px;">
+              <p style="margin:0; font-size:14px; line-height:1.6; color:#475569;">
+                A trial user has asked to be contacted by sales.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Lead details -->
+          <tr>
+            <td style="padding:16px 32px 8px 32px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                     style="background-color:#F0FDFA; border:1px solid #99F6E4; border-radius:8px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:4px 0; font-size:13px; color:#0F766E; width:120px; vertical-align:top;"><strong>Name</strong></td>
+                        <td style="padding:4px 0; font-size:13px; color:#0F172A;" th:text="${fullName}">Jane Doe</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:4px 0; font-size:13px; color:#0F766E; vertical-align:top;"><strong>Email</strong></td>
+                        <td style="padding:4px 0; font-size:13px; color:#0F172A;" th:text="${email}">jane@acme.com</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:4px 0; font-size:13px; color:#0F766E; vertical-align:top;"><strong>Company</strong></td>
+                        <td style="padding:4px 0; font-size:13px; color:#0F172A;" th:text="${companyName}">Acme Corp</td>
+                      </tr>
+                      <tr th:if="${jobTitle != null}">
+                        <td style="padding:4px 0; font-size:13px; color:#0F766E; vertical-align:top;"><strong>Job title</strong></td>
+                        <td style="padding:4px 0; font-size:13px; color:#0F172A;" th:text="${jobTitle}">Engineering Manager</td>
+                      </tr>
+                      <tr th:if="${country != null}">
+                        <td style="padding:4px 0; font-size:13px; color:#0F766E; vertical-align:top;"><strong>Country</strong></td>
+                        <td style="padding:4px 0; font-size:13px; color:#0F172A;" th:text="${country}">United States</td>
+                      </tr>
+                      <tr th:if="${trialStartDate != null}">
+                        <td style="padding:4px 0; font-size:13px; color:#0F766E; vertical-align:top;"><strong>Trial start</strong></td>
+                        <td style="padding:4px 0; font-size:13px; color:#0F172A;" th:text="${trialStartDate}">2026-08-01</td>
+                      </tr>
+                      <tr th:if="${trialEndDate != null}">
+                        <td style="padding:4px 0; font-size:13px; color:#0F766E; vertical-align:top;"><strong>Trial end</strong></td>
+                        <td style="padding:4px 0; font-size:13px; color:#0F172A;" th:text="${trialEndDate}">2026-08-15</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Message -->
+          <tr th:if="${message != null}">
+            <td style="padding:16px 32px 8px 32px;">
+              <p style="margin:0 0 6px 0; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:#94A3B8;">
+                Message
+              </p>
+              <p style="margin:0; font-size:14px; line-height:1.6; color:#334155; white-space:pre-wrap;" th:text="${message}">
+                We'd like a demo.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:24px 32px 20px 32px;">
+              <p style="margin:0; font-size:11px; color:#94A3B8;">
+                Sent automatically from the Sails Software self-service trial portal.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>
