@@ -1,13 +1,15 @@
 package com.sails.ai.selfserviceapi.email;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 // Local-dev-only stand-in for SmtpEmailService — avoids requiring real SMTP creds to run locally.
 @Slf4j
-@Profile("local")
+@ConditionalOnMissingBean(EmailService.class)
 @Service
 public class LoggingEmailService implements EmailService {
 
