@@ -38,3 +38,9 @@ secrets/*
 
 ### Local Postgres data volume ###
 infra/selfservice_db/volumes/
+
+### environment files
+.env
+*.env
+src/main/resources/application-local.yml
+src/main/resources/application-prod.yml
