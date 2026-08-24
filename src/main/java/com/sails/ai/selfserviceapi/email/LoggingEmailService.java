@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 
 // Local-dev-only stand-in for SmtpEmailService — avoids requiring real SMTP creds to run locally.
 @Slf4j
-@ConditionalOnMissingBean(EmailService.class)
+@ConditionalOnMissingBean(SmtpEmailService.class)
 @Service
 public class LoggingEmailService implements EmailService {
 
