@@ -13,7 +13,6 @@ public class RestClientConfig {
 
     @Bean
     public RestClient brevoRestClient() {
-        System.out.println("BREVO_API_KEY = [" + System.getenv("BREVO_API_KEY") + "]");
         return RestClient.builder()
                 .baseUrl("https://api.brevo.com/v3")
                 .defaultHeader("api-key", brevoApiKey)
