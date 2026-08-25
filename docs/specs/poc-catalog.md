@@ -2,11 +2,11 @@
 
 ## Status
 
-In Progress
+Implemented
 
 ## Overview / Purpose
 
-The portal dashboard shows a grid of "POC" (proof-of-concept AI demo) cards — currently a hardcoded array in `self-service-portal/src/app/data/pocs.ts` (`id`, `title`, `description`, `icon`). This feature moves that catalog into `self-service-api`'s database, with a full CRUD API, so POCs can be added/edited/removed without a frontend deploy. This spec covers the backend only; wiring the Angular dashboard to the new API is deferred to a later pass.
+The portal dashboard shows a grid of "POC" (proof-of-concept AI demo) cards — originally a hardcoded array in `self-service-portal/src/app/data/pocs.ts` (`id`, `title`, `description`, `icon`). This feature moves that catalog into `self-service-api`'s database, with a full CRUD API, so POCs can be added/edited/removed without a frontend deploy, and wires the Angular dashboard/details/workspace pages to it — `data/pocs.ts` no longer exists.
 
 ## Requirements
 
@@ -50,13 +50,15 @@ OpenAPI's per-operation `security: []` only affects generated documentation — 
 | container_image | VARCHAR(500) | nullable, registry image reference |
 | demo_type | VARCHAR(50) | nullable |
 | status | VARCHAR(50) NOT NULL DEFAULT 'ACTIVE' | free text for now, see Open Questions |
+| details | TEXT | nullable, longer-form copy for the public details page |
+| guide_steps | TEXT\[\] NOT NULL DEFAULT '{}' | ordered "how to use this POC" steps, public details page |
 | created_at / updated_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
 
 ## API Surface
 
 All new endpoints live under `/pocs`, tagged `Poc` (generates a single `PocApi` interface, same pattern as `Auth`/`User`/`Support`).
 
-- **`GET /pocs`** — public (`security: []` + `SecurityConfig` matcher). Returns `PocSummaryResponse[]` (`id`, `name`, `description`, `iconUrl`, `version`, `owner`, `category`, `technologies`, `demoType`, `status`).
+- **`GET /pocs`** — public (`security: []` + `SecurityConfig` matcher). Returns `PocSummaryResponse[]` (`id`, `name`, `description`, `iconUrl`, `version`, `owner`, `category`, `technologies`, `demoType`, `status`, `details`, `guideSteps`).
 - **`GET /pocs/{id}`** — authenticated. Returns `PocResponse` (adds `appUrl`, `githubUrl`, `containerImage`). `404` if not found.
 - **`POST /pocs`** — authenticated. `CreatePocRequest {name, description, iconUrl?, appUrl?, githubUrl?, version?, owner?, category?, technologies?, containerImage?, demoType?, status?}` → `201` `PocResponse`. `status` defaults to `"ACTIVE"` if omitted.
 - **`PUT /pocs/{id}`** — authenticated. `UpdatePocRequest` (same shape as create — full replace of the mutable fields, not a partial patch) → `200` `PocResponse`. `404` if not found.
@@ -70,11 +72,21 @@ All new endpoints live under `/pocs`, tagged `Poc` (generates a single `PocApi` 
 ## Open Questions / Future Work
 
 - **Admin-only writes**: right now any authenticated (non-expired-trial) user can create/update/delete POCs. Worth revisiting with a role check (`roles` already exists on `User`) once there's an actual admin surface.
-- **Angular UI wiring**: the dashboard, `PocCard`, and `PocWorkspace` components still consume the hardcoded `data/pocs.ts` array. Wiring them to this API (including deciding how `/poc/:id` routing should work against a numeric id) is deferred to a later pass.
-- **Icon upload**: no asset-hosting/upload endpoint exists; `iconUrl` must be populated with an already-hosted URL.
+- **Icon upload**: no asset-hosting/upload endpoint exists; `iconUrl` must be populated with an already-hosted URL. The portal's `PocCard` renders it as an `<img>` when present, falling back to a generic SVG glyph when absent (no POC has a real `iconUrl` set yet).
 - **`status`/`demoType` as closed enums**: both are free-text `VARCHAR` today. If there's a known, stable set of values (mirroring `UserStatus`'s pattern), tightening these into real enums (Java + a DB `CHECK` or Postgres enum type) would catch typos/invalid values at write time.
+
+## Angular UI Wiring
+
+Three portal pages consume this API, split along the same public/authenticated line as the backend:
+
+- **`Dashboard`** (`/dashboard`, public) and **`PocDetails`** (`/poc/:id`, public) both call `PocApi.getPocs()` — the public summary list — and `PocDetails` finds its POC by id client-side rather than a dedicated single-POC public endpoint (none exists; `GET /pocs/{id}` is deliberately authenticated, since it carries `appUrl`/`githubUrl`/`containerImage`). Refetching the whole list to show one POC is a deliberate small tradeoff given the catalog's size, not worth a new endpoint for.
+- **`PocWorkspace`** (`/poc/:id/workspace`, behind `authGuard`) calls `PocApi.getPocById(id)` — the authenticated full response — since it needs `appUrl` to embed the POC's app in an iframe. This is exactly why `appUrl` was gated to authenticated callers in the first place: the one place that needs it is already behind a login wall.
+- The frontend's `Poc` type (previously its own vocabulary: `title`, `url`, a closed `PocIcon` enum) was retired in favor of `PocSummary`/`PocDetail` (`core/poc/poc.models.ts`), which mirror `PocSummaryResponse`/`PocResponse` directly — `id` is now numeric, matching the backend's identity column, and POC routes (`/poc/:id`, `/poc/:id/workspace`) now resolve against that numeric id instead of the old hardcoded string slugs.
+- `details`/`guideSteps` (shown on the public `PocDetails` page) didn't exist in the original backend contract — added here (public, alongside the other display fields) once discovered mid-wiring, following the same reactive-extension pattern as `version`/`owner`/`category`/etc.
+- Seeded the 5 previously-hardcoded POCs into the database (`V7__seed_initial_pocs.sql`) so the dashboard doesn't regress to empty — only fields with real values were populated (mostly just name/description; `sails-process-assistant` also got its real `appUrl`/`details`/`guideSteps`). Everything else (`version`, `owner`, `category`, `technologies`, `iconUrl`, `containerImage`, `demoType`) is left null rather than filled with fabricated placeholder data.
 
 ## Changelog
 
+- 2026-08-25 — Wired the Angular dashboard/details/workspace pages to this API (see "Angular UI Wiring" above) and removed `data/pocs.ts`. Added `details` (`TEXT`) and `guideSteps` (`TEXT[]`) — public fields, migration `V6__add_details_and_guide_steps_to_pocs_table.sql` (additive, not folded into `V4`, since that migration is now committed/shared) — plus a seed migration (`V7__seed_initial_pocs.sql`) for the 5 pre-existing hardcoded POCs. Refactored `PocService.create`/`update` from 12 (now would've been 14) positional same-type parameters into a `PocFields` record, to remove a real transposition-bug risk that had grown past the point the `UserService.registerUser`-style positional-parameter precedent was comfortable.
 - 2026-08-25 — Added `version`, `owner`, `category`, `technologies`, `containerImage`, `demoType`, `status` to match an existing POC contract (fields observed: `name`, `version`, `owner`, `category`, `technologies`, `containerImage`, `demoType`, `status`). Revised `V4__create_pocs_table.sql` in place rather than adding a new migration, since the table hadn't been committed or applied anywhere yet. `containerImage` joined `appUrl`/`githubUrl` as authenticated-only; the rest joined the public `PocSummaryResponse`.
 - 2026-08-24 — Initial draft and implementation: `pocs` table, `PocApi` (list/get/create/update/delete), public `GET /pocs` summary endpoint.
