@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.user.service;
 
+import com.sails.ai.selfserviceapi.generated.model.ThemeMode;
 import com.sails.ai.selfserviceapi.generated.model.UserResponse;
 import com.sails.ai.selfserviceapi.generated.model.UserStatus;
 import com.sails.ai.selfserviceapi.user.entity.User;
@@ -14,7 +15,7 @@ public final class UserResponseMapper {
 
     public static UserResponse toResponse(User user) {
         return new UserResponse(user.getId(), user.getEmail(), user.getFirstName(), user.getLastName(),
-                UserStatus.valueOf(user.getStatus().name()))
+                UserStatus.valueOf(user.getStatus().name()), ThemeMode.valueOf(user.getTheme().name()))
                 .displayName(user.getDisplayName())
                 .roles(user.getRoles())
                 .trialStartDate(toUtcOffset(user.getTrialStartDate()))

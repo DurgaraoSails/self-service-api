@@ -52,6 +52,10 @@ public class User {
     @Column(name = "status", nullable = false, length = 30)
     private UserStatus status = UserStatus.PENDING_VERIFICATION;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "theme", nullable = false, length = 10)
+    private ThemeMode theme = ThemeMode.LIGHT;
+
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "roles", nullable = false, columnDefinition = "text[]")
     private List<String> roles = new ArrayList<>();

@@ -10,14 +10,25 @@ public final class PocResponseMapper {
     }
 
     public static PocSummaryResponse toSummaryResponse(Poc poc) {
-        return new PocSummaryResponse(poc.getId(), poc.getName(), poc.getDescription())
-                .iconUrl(poc.getIconUrl());
+        return new PocSummaryResponse(poc.getId(), poc.getName(), poc.getDescription(), poc.getStatus())
+                .iconUrl(poc.getIconUrl())
+                .version(poc.getVersion())
+                .owner(poc.getOwner())
+                .category(poc.getCategory())
+                .technologies(poc.getTechnologies())
+                .demoType(poc.getDemoType());
     }
 
     public static PocResponse toResponse(Poc poc) {
-        return new PocResponse(poc.getId(), poc.getName(), poc.getDescription())
+        return new PocResponse(poc.getId(), poc.getName(), poc.getDescription(), poc.getStatus())
                 .iconUrl(poc.getIconUrl())
+                .version(poc.getVersion())
+                .owner(poc.getOwner())
+                .category(poc.getCategory())
+                .technologies(poc.getTechnologies())
+                .demoType(poc.getDemoType())
                 .appUrl(poc.getAppUrl())
-                .githubUrl(poc.getGithubUrl());
+                .githubUrl(poc.getGithubUrl())
+                .containerImage(poc.getContainerImage());
     }
 }

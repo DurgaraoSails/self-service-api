@@ -3,6 +3,7 @@ package com.sails.ai.selfserviceapi.user.controller;
 import com.sails.ai.selfserviceapi.generated.api.UserApi;
 import com.sails.ai.selfserviceapi.generated.model.UpdateUserRequest;
 import com.sails.ai.selfserviceapi.generated.model.UserResponse;
+import com.sails.ai.selfserviceapi.user.entity.ThemeMode;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.service.UserResponseMapper;
 import com.sails.ai.selfserviceapi.user.service.UserService;
@@ -28,12 +29,16 @@ public class UserController implements UserApi {
 
     @Override
     public ResponseEntity<UserResponse> updateCurrentUser(UpdateUserRequest updateUserRequest) {
-        User user = userService.updateDisplayName(currentUserId(), updateUserRequest.getDisplayName());
+        User user = userService.updateProfile(currentUserId(), updateUserRequest.getDisplayName(), toEntityTheme(updateUserRequest.getTheme()));
         return ResponseEntity.ok(UserResponseMapper.toResponse(user));
     }
 
     private String currentUserId() {
         Jwt jwt = (Jwt) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         return jwt.getSubject();
+    }
+
+    private ThemeMode toEntityTheme(com.sails.ai.selfserviceapi.generated.model.ThemeMode theme) {
+        return theme == null ? null : ThemeMode.valueOf(theme.name());
     }
 }

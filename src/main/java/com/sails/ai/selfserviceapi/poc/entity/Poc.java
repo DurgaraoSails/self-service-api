@@ -9,8 +9,12 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "pocs")
@@ -37,6 +41,28 @@ public class Poc {
 
     @Column(name = "github_url", length = 500)
     private String githubUrl;
+
+    @Column(name = "version", length = 50)
+    private String version;
+
+    @Column(name = "owner", length = 200)
+    private String owner;
+
+    @Column(name = "category", length = 100)
+    private String category;
+
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "technologies", nullable = false, columnDefinition = "text[]")
+    private List<String> technologies = new ArrayList<>();
+
+    @Column(name = "container_image", length = 500)
+    private String containerImage;
+
+    @Column(name = "demo_type", length = 50)
+    private String demoType;
+
+    @Column(name = "status", nullable = false, length = 50)
+    private String status = "ACTIVE";
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

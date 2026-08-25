@@ -2,6 +2,7 @@ package com.sails.ai.selfserviceapi.user.service;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.user.config.TrialProperties;
+import com.sails.ai.selfserviceapi.user.entity.ThemeMode;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.entity.UserStatus;
 import com.sails.ai.selfserviceapi.user.exception.UserAlreadyExistsException;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,20 +65,24 @@ public class UserService {
     }
 
     /**
-     * Registers a new user (status defaults to PENDING_VERIFICATION). Throws if the email is
-     * already registered — registration never silently reactivates or logs in an existing user.
+     * Registers a new user (status defaults to PENDING_VERIFICATION), or re-registers over an
+     * existing but never-verified one. An email only counts as "already registered" once it has
+     * completed OTP verification (emailVerifiedAt is set) — an unverified PENDING_VERIFICATION
+     * row from an abandoned signup is overwritten in place (same id, fresh trial window) rather
+     * than blocking the new attempt with a 409.
      */
     @Transactional
     public User registerUser(String firstName, String lastName, String companyName, String jobTitle, String country, String email) {
         emailDomainValidator.validate(email);
 
-        if (userRepository.findByEmail(email).isPresent()) {
+        Optional<User> existingByEmail = userRepository.findByEmail(email);
+        if (existingByEmail.isPresent() && existingByEmail.get().getEmailVerifiedAt() != null) {
             throw new UserAlreadyExistsException();
         }
 
         Instant trialStart = Instant.now();
 
-        User user = new User();
+        User user = existingByEmail.orElseGet(User::new);
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setCompanyName(companyName);
@@ -89,10 +95,20 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    /**
+     * Updates only the fields that are non-null — PUT /users/me is a partial update over the
+     * mutable profile fields, not a full-replace: toggling the theme must not wipe out a
+     * previously-set displayName (and vice versa) just because the caller didn't resend it.
+     */
     @Transactional
-    public User updateDisplayName(String id, String displayName) {
+    public User updateProfile(String id, String displayName, ThemeMode theme) {
         User user = getById(id);
-        user.setDisplayName(displayName);
+        if (displayName != null) {
+            user.setDisplayName(displayName);
+        }
+        if (theme != null) {
+            user.setTheme(theme);
+        }
         return userRepository.save(user);
     }
 }

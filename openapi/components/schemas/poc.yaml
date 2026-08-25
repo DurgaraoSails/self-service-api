@@ -1,12 +1,13 @@
 PocSummaryResponse:
   type: object
   description: >
-    Public summary of a POC shown on the dashboard catalog. Deliberately excludes the launch
-    and repository links, which are only returned to authenticated callers.
+    Public summary of a POC shown on the dashboard catalog. Deliberately excludes the launch,
+    repository, and container-image references, which are only returned to authenticated callers.
   required:
     - id
     - name
     - description
+    - status
   properties:
     id:
       type: integer
@@ -32,9 +33,52 @@ PocSummaryResponse:
       description: Public URL of the POC's icon image (e.g. hosted in a storage bucket).
       example: "https://cdn.example.com/pocs/contract-agent/icon.svg"
 
+    version:
+      type: string
+      maxLength: 50
+      description: Version of the POC.
+      example: "1.2.0"
+
+    owner:
+      type: string
+      maxLength: 200
+      description: Team or person that owns the POC.
+      example: "AI Team"
+
+    category:
+      type: string
+      maxLength: 100
+      description: Category the POC belongs to.
+      example: "Generative AI"
+
+    technologies:
+      type: array
+      description: Technologies used to build the POC.
+      items:
+        type: string
+      example:
+        - "Python"
+        - "FastAPI"
+        - "PostgreSQL"
+        - "LLM"
+
+    demoType:
+      type: string
+      maxLength: 50
+      description: How the demo is presented.
+      example: "interactive"
+
+    status:
+      type: string
+      maxLength: 50
+      description: Lifecycle status of the POC.
+      example: "ACTIVE"
+
 
 PocResponse:
-  description: Full POC details, including the launch and repository links. Requires authentication.
+  description: >
+    Full POC details, including the launch, repository, and container-image references.
+    Requires authentication.
   allOf:
     - $ref: '#/PocSummaryResponse'
     - type: object
@@ -50,6 +94,12 @@ PocResponse:
           maxLength: 500
           description: URL of the POC's source repository.
           example: "https://github.com/example-org/contract-agent"
+
+        containerImage:
+          type: string
+          maxLength: 500
+          description: Container image reference the POC is deployed from.
+          example: "registry/company/rag-assistant:1.2.0"
 
 
 CreatePocRequest:
@@ -84,6 +134,47 @@ CreatePocRequest:
       maxLength: 500
       example: "https://github.com/example-org/contract-agent"
 
+    version:
+      type: string
+      maxLength: 50
+      example: "1.2.0"
+
+    owner:
+      type: string
+      maxLength: 200
+      example: "AI Team"
+
+    category:
+      type: string
+      maxLength: 100
+      example: "Generative AI"
+
+    technologies:
+      type: array
+      items:
+        type: string
+      example:
+        - "Python"
+        - "FastAPI"
+        - "PostgreSQL"
+        - "LLM"
+
+    containerImage:
+      type: string
+      maxLength: 500
+      example: "registry/company/rag-assistant:1.2.0"
+
+    demoType:
+      type: string
+      maxLength: 50
+      example: "interactive"
+
+    status:
+      type: string
+      maxLength: 50
+      description: Defaults to "ACTIVE" if omitted.
+      example: "ACTIVE"
+
 
 UpdatePocRequest:
   type: object
@@ -116,3 +207,44 @@ UpdatePocRequest:
       type: string
       maxLength: 500
       example: "https://github.com/example-org/contract-agent"
+
+    version:
+      type: string
+      maxLength: 50
+      example: "1.2.0"
+
+    owner:
+      type: string
+      maxLength: 200
+      example: "AI Team"
+
+    category:
+      type: string
+      maxLength: 100
+      example: "Generative AI"
+
+    technologies:
+      type: array
+      items:
+        type: string
+      example:
+        - "Python"
+        - "FastAPI"
+        - "PostgreSQL"
+        - "LLM"
+
+    containerImage:
+      type: string
+      maxLength: 500
+      example: "registry/company/rag-assistant:1.2.0"
+
+    demoType:
+      type: string
+      maxLength: 50
+      example: "interactive"
+
+    status:
+      type: string
+      maxLength: 50
+      description: Defaults to "ACTIVE" if omitted.
+      example: "ACTIVE"
