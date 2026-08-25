@@ -7,6 +7,7 @@ UserResponse:
     - firstName
     - lastName
     - status
+    - theme
   properties:
     id:
       type: string
@@ -60,10 +61,15 @@ UserResponse:
       description: When the account's trial period ends, in UTC.
       example: "2026-09-03T10:30:00Z"
 
+    theme:
+      $ref: '#/ThemeMode'
+
 
 UpdateUserRequest:
   type: object
-  description: Request to update the current user's profile.
+  description: >
+    Request to update the current user's profile. Only the fields present in the request body
+    are changed — omitted fields are left as-is.
   properties:
     displayName:
       type: string
@@ -71,6 +77,18 @@ UpdateUserRequest:
       maxLength: 100
       description: Display name of the user.
       example: "John Doe"
+
+    theme:
+      $ref: '#/ThemeMode'
+
+
+ThemeMode:
+  type: string
+  description: The user's preferred UI theme.
+  enum:
+    - light
+    - dark
+  example: light
 
 
 UserStatus:

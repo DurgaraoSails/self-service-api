@@ -2,6 +2,7 @@ package com.sails.ai.selfserviceapi.user.service;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.user.config.TrialProperties;
+import com.sails.ai.selfserviceapi.user.entity.ThemeMode;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.entity.UserStatus;
 import com.sails.ai.selfserviceapi.user.exception.UserAlreadyExistsException;
@@ -94,10 +95,20 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    /**
+     * Updates only the fields that are non-null — PUT /users/me is a partial update over the
+     * mutable profile fields, not a full-replace: toggling the theme must not wipe out a
+     * previously-set displayName (and vice versa) just because the caller didn't resend it.
+     */
     @Transactional
-    public User updateDisplayName(String id, String displayName) {
+    public User updateProfile(String id, String displayName, ThemeMode theme) {
         User user = getById(id);
-        user.setDisplayName(displayName);
+        if (displayName != null) {
+            user.setDisplayName(displayName);
+        }
+        if (theme != null) {
+            user.setTheme(theme);
+        }
         return userRepository.save(user);
     }
 }
