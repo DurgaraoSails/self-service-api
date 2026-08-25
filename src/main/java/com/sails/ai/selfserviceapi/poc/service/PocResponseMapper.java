@@ -16,7 +16,9 @@ public final class PocResponseMapper {
                 .owner(poc.getOwner())
                 .category(poc.getCategory())
                 .technologies(poc.getTechnologies())
-                .demoType(poc.getDemoType());
+                .demoType(poc.getDemoType())
+                .details(poc.getDetails())
+                .guideSteps(poc.getGuideSteps());
     }
 
     public static PocResponse toResponse(Poc poc) {
@@ -27,6 +29,8 @@ public final class PocResponseMapper {
                 .category(poc.getCategory())
                 .technologies(poc.getTechnologies())
                 .demoType(poc.getDemoType())
+                .details(poc.getDetails())
+                .guideSteps(poc.getGuideSteps())
                 .appUrl(poc.getAppUrl())
                 .githubUrl(poc.getGithubUrl())
                 .containerImage(poc.getContainerImage());

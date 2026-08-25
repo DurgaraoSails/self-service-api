@@ -64,6 +64,13 @@ public class Poc {
     @Column(name = "status", nullable = false, length = 50)
     private String status = "ACTIVE";
 
+    @Column(name = "details")
+    private String details;
+
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "guide_steps", nullable = false, columnDefinition = "text[]")
+    private List<String> guideSteps = new ArrayList<>();
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
