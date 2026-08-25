@@ -29,22 +29,16 @@ public class PocService {
     }
 
     @Transactional
-    public Poc create(String name, String description, String iconUrl, String appUrl, String githubUrl,
-                       String version, String owner, String category, List<String> technologies,
-                       String containerImage, String demoType, String status) {
+    public Poc create(PocFields fields) {
         Poc poc = new Poc();
-        applyFields(poc, name, description, iconUrl, appUrl, githubUrl, version, owner, category,
-                technologies, containerImage, demoType, status);
+        applyFields(poc, fields);
         return pocRepository.save(poc);
     }
 
     @Transactional
-    public Poc update(Long id, String name, String description, String iconUrl, String appUrl, String githubUrl,
-                       String version, String owner, String category, List<String> technologies,
-                       String containerImage, String demoType, String status) {
+    public Poc update(Long id, PocFields fields) {
         Poc poc = getById(id);
-        applyFields(poc, name, description, iconUrl, appUrl, githubUrl, version, owner, category,
-                technologies, containerImage, demoType, status);
+        applyFields(poc, fields);
         return pocRepository.save(poc);
     }
 
@@ -56,20 +50,20 @@ public class PocService {
         pocRepository.deleteById(id);
     }
 
-    private void applyFields(Poc poc, String name, String description, String iconUrl, String appUrl,
-                              String githubUrl, String version, String owner, String category,
-                              List<String> technologies, String containerImage, String demoType, String status) {
-        poc.setName(name);
-        poc.setDescription(description);
-        poc.setIconUrl(iconUrl);
-        poc.setAppUrl(appUrl);
-        poc.setGithubUrl(githubUrl);
-        poc.setVersion(version);
-        poc.setOwner(owner);
-        poc.setCategory(category);
-        poc.setTechnologies(technologies != null ? technologies : new ArrayList<>());
-        poc.setContainerImage(containerImage);
-        poc.setDemoType(demoType);
-        poc.setStatus(status != null ? status : DEFAULT_STATUS);
+    private void applyFields(Poc poc, PocFields fields) {
+        poc.setName(fields.name());
+        poc.setDescription(fields.description());
+        poc.setIconUrl(fields.iconUrl());
+        poc.setAppUrl(fields.appUrl());
+        poc.setGithubUrl(fields.githubUrl());
+        poc.setVersion(fields.version());
+        poc.setOwner(fields.owner());
+        poc.setCategory(fields.category());
+        poc.setTechnologies(fields.technologies() != null ? fields.technologies() : new ArrayList<>());
+        poc.setContainerImage(fields.containerImage());
+        poc.setDemoType(fields.demoType());
+        poc.setStatus(fields.status() != null ? fields.status() : DEFAULT_STATUS);
+        poc.setDetails(fields.details());
+        poc.setGuideSteps(fields.guideSteps() != null ? fields.guideSteps() : new ArrayList<>());
     }
 }
