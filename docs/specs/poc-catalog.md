@@ -10,9 +10,9 @@ The portal dashboard shows a grid of "POC" (proof-of-concept AI demo) cards — 
 
 ## Requirements
 
-- Store POC entries: name, description, an icon image URL, an app URL, and a GitHub URL.
+- Store POC entries: name, description, an icon image URL, an app URL, a GitHub URL, version, owner, category, technologies used, a container image reference, demo type, and a lifecycle status.
 - A way to list all POCs, and to create/read/update/delete individual POCs.
-- The list endpoint must be callable without authentication (it feeds the dashboard, which renders the POC grid regardless of login state), but must not leak the app/GitHub launch links to anonymous callers — only name, description, and icon.
+- The list endpoint must be callable without authentication (it feeds the dashboard, which renders the POC grid regardless of login state), but must not leak the app/GitHub launch links or the container image reference to anonymous callers — only the display fields (name, description, icon, version, owner, category, technologies, demo type, status).
 - Every other operation (get one by id, create, update, delete) requires a bearer token, consistent with the rest of the API.
 
 ## Architecture Decisions
@@ -25,6 +25,9 @@ The public list only returns `id`, `name`, `description`, `iconUrl` — enough t
 
 **`icon_url` stores a URL, not an uploaded file.**
 The API assumes the icon image already lives somewhere with a public URL (e.g. an S3/GCS/Azure Blob bucket) and just stores/returns that URL. Upload/asset-hosting is out of scope here.
+
+**`containerImage` is gated the same as `appUrl`/`githubUrl`, the rest of the metadata is public.**
+`version`, `owner`, `category`, `technologies`, `demoType`, and `status` were added to match an existing POC contract used elsewhere (fields like `name`, `version`, `owner`, `category`, `technologies`, `containerImage`, `demoType`, `status`). All of them are descriptive/display metadata for the same public dashboard card as name/description, so they're on `PocSummaryResponse` too. `containerImage` is the one exception — like `appUrl`/`githubUrl`, it's an internal deployment reference (an image registry path), not display content, so it only appears on the authenticated `PocResponse`. `status` defaults to `"ACTIVE"` (both a DB `NOT NULL DEFAULT` and a `PocService` fallback when a caller omits it on create/update) and is treated as free text rather than a closed enum for now — only one example value was available, and getting the full valid set wrong would mean another migration; worth tightening once the real value set is known (see Open Questions).
 
 **Runtime auth for the public list needed an explicit `SecurityConfig` matcher, not just OpenAPI `security: []`.**
 OpenAPI's per-operation `security: []` only affects generated documentation — Spring Security's actual authorization comes from `SecurityConfig.securityFilterChain()`'s own `requestMatchers(...)`. Everything not explicitly `permitAll()`-listed falls through to `.anyRequest().access(AuthorizationManagers.allOf(AuthenticatedAuthorizationManager.authenticated(), trialAuthorizationManager))`. Added `.requestMatchers(HttpMethod.GET, "/pocs").permitAll()`, scoped to `GET` only so `POST /pocs` and all of `/pocs/{id}` stay authenticated. (This exact class of mismatch — OpenAPI claiming public, Spring Security actually rejecting — is what broke CORS earlier in this repo's history; see the CORS changelog entry in `docs/specs/jwt-authentication.md`.)
@@ -40,15 +43,22 @@ OpenAPI's per-operation `security: []` only affects generated documentation — 
 | icon_url | VARCHAR(500) | nullable, public URL to an icon image |
 | app_url | VARCHAR(500) | nullable, deployed POC app URL |
 | github_url | VARCHAR(500) | nullable, source repo URL |
+| version | VARCHAR(50) | nullable |
+| owner | VARCHAR(200) | nullable, owning team/person |
+| category | VARCHAR(100) | nullable |
+| technologies | TEXT\[\] NOT NULL DEFAULT '{}' | |
+| container_image | VARCHAR(500) | nullable, registry image reference |
+| demo_type | VARCHAR(50) | nullable |
+| status | VARCHAR(50) NOT NULL DEFAULT 'ACTIVE' | free text for now, see Open Questions |
 | created_at / updated_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
 
 ## API Surface
 
 All new endpoints live under `/pocs`, tagged `Poc` (generates a single `PocApi` interface, same pattern as `Auth`/`User`/`Support`).
 
-- **`GET /pocs`** — public (`security: []` + `SecurityConfig` matcher). Returns `PocSummaryResponse[]` (`id`, `name`, `description`, `iconUrl`).
-- **`GET /pocs/{id}`** — authenticated. Returns `PocResponse` (adds `appUrl`, `githubUrl`). `404` if not found.
-- **`POST /pocs`** — authenticated. `CreatePocRequest {name, description, iconUrl?, appUrl?, githubUrl?}` → `201` `PocResponse`.
+- **`GET /pocs`** — public (`security: []` + `SecurityConfig` matcher). Returns `PocSummaryResponse[]` (`id`, `name`, `description`, `iconUrl`, `version`, `owner`, `category`, `technologies`, `demoType`, `status`).
+- **`GET /pocs/{id}`** — authenticated. Returns `PocResponse` (adds `appUrl`, `githubUrl`, `containerImage`). `404` if not found.
+- **`POST /pocs`** — authenticated. `CreatePocRequest {name, description, iconUrl?, appUrl?, githubUrl?, version?, owner?, category?, technologies?, containerImage?, demoType?, status?}` → `201` `PocResponse`. `status` defaults to `"ACTIVE"` if omitted.
 - **`PUT /pocs/{id}`** — authenticated. `UpdatePocRequest` (same shape as create — full replace of the mutable fields, not a partial patch) → `200` `PocResponse`. `404` if not found.
 - **`DELETE /pocs/{id}`** — authenticated. `204`, idempotent-on-404 is *not* assumed here (unlike `/auth/logout`) — deleting a nonexistent id returns `404`.
 
@@ -62,7 +72,9 @@ All new endpoints live under `/pocs`, tagged `Poc` (generates a single `PocApi` 
 - **Admin-only writes**: right now any authenticated (non-expired-trial) user can create/update/delete POCs. Worth revisiting with a role check (`roles` already exists on `User`) once there's an actual admin surface.
 - **Angular UI wiring**: the dashboard, `PocCard`, and `PocWorkspace` components still consume the hardcoded `data/pocs.ts` array. Wiring them to this API (including deciding how `/poc/:id` routing should work against a numeric id) is deferred to a later pass.
 - **Icon upload**: no asset-hosting/upload endpoint exists; `iconUrl` must be populated with an already-hosted URL.
+- **`status`/`demoType` as closed enums**: both are free-text `VARCHAR` today. If there's a known, stable set of values (mirroring `UserStatus`'s pattern), tightening these into real enums (Java + a DB `CHECK` or Postgres enum type) would catch typos/invalid values at write time.
 
 ## Changelog
 
+- 2026-08-25 — Added `version`, `owner`, `category`, `technologies`, `containerImage`, `demoType`, `status` to match an existing POC contract (fields observed: `name`, `version`, `owner`, `category`, `technologies`, `containerImage`, `demoType`, `status`). Revised `V4__create_pocs_table.sql` in place rather than adding a new migration, since the table hadn't been committed or applied anywhere yet. `containerImage` joined `appUrl`/`githubUrl` as authenticated-only; the rest joined the public `PocSummaryResponse`.
 - 2026-08-24 — Initial draft and implementation: `pocs` table, `PocApi` (list/get/create/update/delete), public `GET /pocs` summary endpoint.
