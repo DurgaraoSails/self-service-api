@@ -16,7 +16,7 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class BrevoEmailService  implements EmailService {
-    private static final String LOGO_URL = "https://yourdomain.com/static/logo.png";
+    private static final String LOGO_URL = "https://domain.com/static/logo.png";
     private final RestClient brevoRestClient;
     private final AppMailProperties mailProperties;
     private final TemplateEngine templateEngine;
