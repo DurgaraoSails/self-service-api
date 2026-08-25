@@ -43,7 +43,14 @@ public class PocController implements PocApi {
                 createPocRequest.getDescription(),
                 createPocRequest.getIconUrl(),
                 createPocRequest.getAppUrl(),
-                createPocRequest.getGithubUrl()
+                createPocRequest.getGithubUrl(),
+                createPocRequest.getVersion(),
+                createPocRequest.getOwner(),
+                createPocRequest.getCategory(),
+                createPocRequest.getTechnologies(),
+                createPocRequest.getContainerImage(),
+                createPocRequest.getDemoType(),
+                createPocRequest.getStatus()
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(PocResponseMapper.toResponse(poc));
     }
@@ -56,7 +63,14 @@ public class PocController implements PocApi {
                 updatePocRequest.getDescription(),
                 updatePocRequest.getIconUrl(),
                 updatePocRequest.getAppUrl(),
-                updatePocRequest.getGithubUrl()
+                updatePocRequest.getGithubUrl(),
+                updatePocRequest.getVersion(),
+                updatePocRequest.getOwner(),
+                updatePocRequest.getCategory(),
+                updatePocRequest.getTechnologies(),
+                updatePocRequest.getContainerImage(),
+                updatePocRequest.getDemoType(),
+                updatePocRequest.getStatus()
         );
         return ResponseEntity.ok(PocResponseMapper.toResponse(poc));
     }

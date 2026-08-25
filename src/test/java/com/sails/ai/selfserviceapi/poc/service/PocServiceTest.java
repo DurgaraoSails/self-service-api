@@ -68,18 +68,45 @@ class PocServiceTest {
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Poc created = pocService.create(
-                "Contract Agent",
-                "Review & generate contracts.",
+                "RAG Assistant",
+                "Enterprise retrieval-augmented generation assistant.",
                 "https://cdn.example.com/icon.svg",
-                "https://contract-agent.example.com",
-                "https://github.com/example-org/contract-agent"
+                "https://rag-assistant.example.com",
+                "https://github.com/example-org/rag-assistant",
+                "1.2.0",
+                "AI Team",
+                "Generative AI",
+                List.of("Python", "FastAPI", "PostgreSQL", "LLM"),
+                "registry/company/rag-assistant:1.2.0",
+                "interactive",
+                "ACTIVE"
         );
 
-        assertThat(created.getName()).isEqualTo("Contract Agent");
-        assertThat(created.getDescription()).isEqualTo("Review & generate contracts.");
+        assertThat(created.getName()).isEqualTo("RAG Assistant");
+        assertThat(created.getDescription()).isEqualTo("Enterprise retrieval-augmented generation assistant.");
         assertThat(created.getIconUrl()).isEqualTo("https://cdn.example.com/icon.svg");
-        assertThat(created.getAppUrl()).isEqualTo("https://contract-agent.example.com");
-        assertThat(created.getGithubUrl()).isEqualTo("https://github.com/example-org/contract-agent");
+        assertThat(created.getAppUrl()).isEqualTo("https://rag-assistant.example.com");
+        assertThat(created.getGithubUrl()).isEqualTo("https://github.com/example-org/rag-assistant");
+        assertThat(created.getVersion()).isEqualTo("1.2.0");
+        assertThat(created.getOwner()).isEqualTo("AI Team");
+        assertThat(created.getCategory()).isEqualTo("Generative AI");
+        assertThat(created.getTechnologies()).containsExactly("Python", "FastAPI", "PostgreSQL", "LLM");
+        assertThat(created.getContainerImage()).isEqualTo("registry/company/rag-assistant:1.2.0");
+        assertThat(created.getDemoType()).isEqualTo("interactive");
+        assertThat(created.getStatus()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void createDefaultsStatusToActiveAndTechnologiesToEmptyWhenOmitted() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Poc created = pocService.create(
+                "Contract Agent", "Review & generate contracts.", null, null, null,
+                null, null, null, null, null, null, null
+        );
+
+        assertThat(created.getStatus()).isEqualTo("ACTIVE");
+        assertThat(created.getTechnologies()).isEmpty();
     }
 
     @Test
@@ -94,7 +121,14 @@ class PocServiceTest {
                 "New description.",
                 "https://cdn.example.com/new-icon.svg",
                 "https://renamed.example.com",
-                "https://github.com/example-org/renamed"
+                "https://github.com/example-org/renamed",
+                "2.0.0",
+                "Platform Team",
+                "Automation",
+                List.of("Java", "Spring Boot"),
+                "registry/company/renamed:2.0.0",
+                "video",
+                "INACTIVE"
         );
 
         assertThat(updated.getName()).isEqualTo("Renamed Agent");
@@ -102,13 +136,21 @@ class PocServiceTest {
         assertThat(updated.getIconUrl()).isEqualTo("https://cdn.example.com/new-icon.svg");
         assertThat(updated.getAppUrl()).isEqualTo("https://renamed.example.com");
         assertThat(updated.getGithubUrl()).isEqualTo("https://github.com/example-org/renamed");
+        assertThat(updated.getVersion()).isEqualTo("2.0.0");
+        assertThat(updated.getOwner()).isEqualTo("Platform Team");
+        assertThat(updated.getCategory()).isEqualTo("Automation");
+        assertThat(updated.getTechnologies()).containsExactly("Java", "Spring Boot");
+        assertThat(updated.getContainerImage()).isEqualTo("registry/company/renamed:2.0.0");
+        assertThat(updated.getDemoType()).isEqualTo("video");
+        assertThat(updated.getStatus()).isEqualTo("INACTIVE");
     }
 
     @Test
     void updateThrowsWhenMissing() {
         when(pocRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> pocService.update(99L, "n", "d", null, null, null))
+        assertThatThrownBy(() -> pocService.update(99L, "n", "d", null, null, null,
+                null, null, null, null, null, null, null))
                 .isInstanceOf(PocNotFoundException.class);
     }
 
