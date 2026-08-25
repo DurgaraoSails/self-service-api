@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,20 +64,24 @@ public class UserService {
     }
 
     /**
-     * Registers a new user (status defaults to PENDING_VERIFICATION). Throws if the email is
-     * already registered — registration never silently reactivates or logs in an existing user.
+     * Registers a new user (status defaults to PENDING_VERIFICATION), or re-registers over an
+     * existing but never-verified one. An email only counts as "already registered" once it has
+     * completed OTP verification (emailVerifiedAt is set) — an unverified PENDING_VERIFICATION
+     * row from an abandoned signup is overwritten in place (same id, fresh trial window) rather
+     * than blocking the new attempt with a 409.
      */
     @Transactional
     public User registerUser(String firstName, String lastName, String companyName, String jobTitle, String country, String email) {
         emailDomainValidator.validate(email);
 
-        if (userRepository.findByEmail(email).isPresent()) {
+        Optional<User> existingByEmail = userRepository.findByEmail(email);
+        if (existingByEmail.isPresent() && existingByEmail.get().getEmailVerifiedAt() != null) {
             throw new UserAlreadyExistsException();
         }
 
         Instant trialStart = Instant.now();
 
-        User user = new User();
+        User user = existingByEmail.orElseGet(User::new);
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setCompanyName(companyName);
