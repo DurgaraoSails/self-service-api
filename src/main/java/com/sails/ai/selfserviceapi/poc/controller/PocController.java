@@ -6,6 +6,7 @@ import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdatePocRequest;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.service.PocFields;
 import com.sails.ai.selfserviceapi.poc.service.PocResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
 import java.util.List;
@@ -38,7 +39,7 @@ public class PocController implements PocApi {
 
     @Override
     public ResponseEntity<PocResponse> createPoc(CreatePocRequest createPocRequest) {
-        Poc poc = pocService.create(
+        PocFields fields = new PocFields(
                 createPocRequest.getName(),
                 createPocRequest.getDescription(),
                 createPocRequest.getIconUrl(),
@@ -50,15 +51,17 @@ public class PocController implements PocApi {
                 createPocRequest.getTechnologies(),
                 createPocRequest.getContainerImage(),
                 createPocRequest.getDemoType(),
-                createPocRequest.getStatus()
+                createPocRequest.getStatus(),
+                createPocRequest.getDetails(),
+                createPocRequest.getGuideSteps()
         );
+        Poc poc = pocService.create(fields);
         return ResponseEntity.status(HttpStatus.CREATED).body(PocResponseMapper.toResponse(poc));
     }
 
     @Override
     public ResponseEntity<PocResponse> updatePoc(Long id, UpdatePocRequest updatePocRequest) {
-        Poc poc = pocService.update(
-                id,
+        PocFields fields = new PocFields(
                 updatePocRequest.getName(),
                 updatePocRequest.getDescription(),
                 updatePocRequest.getIconUrl(),
@@ -70,8 +73,11 @@ public class PocController implements PocApi {
                 updatePocRequest.getTechnologies(),
                 updatePocRequest.getContainerImage(),
                 updatePocRequest.getDemoType(),
-                updatePocRequest.getStatus()
+                updatePocRequest.getStatus(),
+                updatePocRequest.getDetails(),
+                updatePocRequest.getGuideSteps()
         );
+        Poc poc = pocService.update(id, fields);
         return ResponseEntity.ok(PocResponseMapper.toResponse(poc));
     }
 

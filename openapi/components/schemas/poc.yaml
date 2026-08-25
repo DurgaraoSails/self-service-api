@@ -74,6 +74,20 @@ PocSummaryResponse:
       description: Lifecycle status of the POC.
       example: "ACTIVE"
 
+    details:
+      type: string
+      description: Longer-form description shown on the POC's public details page.
+      example: "An AI-guided assistant that walks teams through internal processes step by step."
+
+    guideSteps:
+      type: array
+      description: Ordered steps shown on the POC's public details page explaining how to use it.
+      items:
+        type: string
+      example:
+        - "Click Launch to open the assistant in your session."
+        - "Describe the process or task you need help with in plain language."
+
 
 PocResponse:
   description: >
@@ -175,6 +189,18 @@ CreatePocRequest:
       description: Defaults to "ACTIVE" if omitted.
       example: "ACTIVE"
 
+    details:
+      type: string
+      example: "An AI-guided assistant that walks teams through internal processes step by step."
+
+    guideSteps:
+      type: array
+      items:
+        type: string
+      example:
+        - "Click Launch to open the assistant in your session."
+        - "Describe the process or task you need help with in plain language."
+
 
 UpdatePocRequest:
   type: object
@@ -248,3 +274,15 @@ UpdatePocRequest:
       maxLength: 50
       description: Defaults to "ACTIVE" if omitted.
       example: "ACTIVE"
+
+    details:
+      type: string
+      example: "An AI-guided assistant that walks teams through internal processes step by step."
+
+    guideSteps:
+      type: array
+      items:
+        type: string
+      example:
+        - "Click Launch to open the assistant in your session."
+        - "Describe the process or task you need help with in plain language."

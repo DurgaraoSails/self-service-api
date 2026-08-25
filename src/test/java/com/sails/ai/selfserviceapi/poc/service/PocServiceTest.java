@@ -63,11 +63,8 @@ class PocServiceTest {
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
-    @Test
-    void createSavesANewPocWithAllFields() {
-        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        Poc created = pocService.create(
+    private static PocFields fullFields() {
+        return new PocFields(
                 "RAG Assistant",
                 "Enterprise retrieval-augmented generation assistant.",
                 "https://cdn.example.com/icon.svg",
@@ -79,8 +76,17 @@ class PocServiceTest {
                 List.of("Python", "FastAPI", "PostgreSQL", "LLM"),
                 "registry/company/rag-assistant:1.2.0",
                 "interactive",
-                "ACTIVE"
+                "ACTIVE",
+                "Longer-form details shown on the public details page.",
+                List.of("Step one.", "Step two.")
         );
+    }
+
+    @Test
+    void createSavesANewPocWithAllFields() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Poc created = pocService.create(fullFields());
 
         assertThat(created.getName()).isEqualTo("RAG Assistant");
         assertThat(created.getDescription()).isEqualTo("Enterprise retrieval-augmented generation assistant.");
@@ -94,19 +100,22 @@ class PocServiceTest {
         assertThat(created.getContainerImage()).isEqualTo("registry/company/rag-assistant:1.2.0");
         assertThat(created.getDemoType()).isEqualTo("interactive");
         assertThat(created.getStatus()).isEqualTo("ACTIVE");
+        assertThat(created.getDetails()).isEqualTo("Longer-form details shown on the public details page.");
+        assertThat(created.getGuideSteps()).containsExactly("Step one.", "Step two.");
     }
 
     @Test
-    void createDefaultsStatusToActiveAndTechnologiesToEmptyWhenOmitted() {
+    void createDefaultsStatusToActiveAndListsToEmptyWhenOmitted() {
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Poc created = pocService.create(
+        Poc created = pocService.create(new PocFields(
                 "Contract Agent", "Review & generate contracts.", null, null, null,
-                null, null, null, null, null, null, null
-        );
+                null, null, null, null, null, null, null, null, null
+        ));
 
         assertThat(created.getStatus()).isEqualTo("ACTIVE");
         assertThat(created.getTechnologies()).isEmpty();
+        assertThat(created.getGuideSteps()).isEmpty();
     }
 
     @Test
@@ -115,8 +124,7 @@ class PocServiceTest {
         when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Poc updated = pocService.update(
-                1L,
+        Poc updated = pocService.update(1L, new PocFields(
                 "Renamed Agent",
                 "New description.",
                 "https://cdn.example.com/new-icon.svg",
@@ -128,8 +136,10 @@ class PocServiceTest {
                 List.of("Java", "Spring Boot"),
                 "registry/company/renamed:2.0.0",
                 "video",
-                "INACTIVE"
-        );
+                "INACTIVE",
+                "Updated details.",
+                List.of("Only step.")
+        ));
 
         assertThat(updated.getName()).isEqualTo("Renamed Agent");
         assertThat(updated.getDescription()).isEqualTo("New description.");
@@ -143,14 +153,16 @@ class PocServiceTest {
         assertThat(updated.getContainerImage()).isEqualTo("registry/company/renamed:2.0.0");
         assertThat(updated.getDemoType()).isEqualTo("video");
         assertThat(updated.getStatus()).isEqualTo("INACTIVE");
+        assertThat(updated.getDetails()).isEqualTo("Updated details.");
+        assertThat(updated.getGuideSteps()).containsExactly("Only step.");
     }
 
     @Test
     void updateThrowsWhenMissing() {
         when(pocRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> pocService.update(99L, "n", "d", null, null, null,
-                null, null, null, null, null, null, null))
+        assertThatThrownBy(() -> pocService.update(99L, new PocFields(
+                "n", "d", null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(PocNotFoundException.class);
     }
 
