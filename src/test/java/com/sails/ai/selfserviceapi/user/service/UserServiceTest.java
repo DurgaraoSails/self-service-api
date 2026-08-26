@@ -24,6 +24,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 class UserServiceTest {
 
@@ -87,34 +88,38 @@ class UserServiceTest {
         return user;
     }
 
+    @SuppressWarnings("unchecked")
+    private void stubFindAll(Page<User> page) {
+        when(userRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
+    }
+
     @Test
-    void listCustomersFiltersByRegistrationDateWhenProvided() {
+    void listCustomersDelegatesToRepositoryAndReturnsThePage() {
+        Pageable pageable = PageRequest.of(0, 30);
+        Page<User> page = new PageImpl<>(List.of(userWithId("u1")));
+        stubFindAll(page);
+
         Instant from = Instant.parse("2026-08-01T00:00:00Z");
         Instant to = Instant.parse("2026-08-31T00:00:00Z");
-        Pageable pageable = PageRequest.of(0, 30);
-        Page<User> page = new PageImpl<>(List.of(userWithId("u1")));
-        when(userRepository.findByCreatedAtBetween(from, to, pageable)).thenReturn(page);
-
-        assertThat(userService.listCustomers(false, from, to, pageable)).isSameAs(page);
+        assertThat(userService.listCustomers(false, from, to, null, pageable)).isSameAs(page);
     }
 
     @Test
-    void listCustomersDefaultsToUnboundedWhenNoDatesProvided() {
+    void listCustomersWorksWithNoFiltersAtAll() {
         Pageable pageable = PageRequest.of(0, 30);
         Page<User> page = new PageImpl<>(List.of(userWithId("u1")));
-        when(userRepository.findAll(pageable)).thenReturn(page);
+        stubFindAll(page);
 
-        assertThat(userService.listCustomers(false, null, null, pageable)).isSameAs(page);
+        assertThat(userService.listCustomers(false, null, null, null, pageable)).isSameAs(page);
     }
 
     @Test
-    void listCustomersIgnoresDateBoundsWhenNeedsAttentionIsTrue() {
+    void listCustomersAppliesSearchAlongsideNeedsAttention() {
         Pageable pageable = PageRequest.of(0, 30);
         Page<User> page = new PageImpl<>(List.of(userWithId("u1")));
-        when(userRepository.findByStatusAndTrialEndDateBetween(eq(UserStatus.ACTIVE), any(Instant.class), any(Instant.class), eq(pageable)))
-                .thenReturn(page);
+        stubFindAll(page);
 
-        Page<User> result = userService.listCustomers(true, Instant.parse("2026-08-01T00:00:00Z"), Instant.parse("2026-08-31T00:00:00Z"), pageable);
+        Page<User> result = userService.listCustomers(true, null, null, "ada", pageable);
 
         assertThat(result).isSameAs(page);
     }

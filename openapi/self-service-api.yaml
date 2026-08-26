@@ -208,6 +208,12 @@ paths:
             type: boolean
             default: false
           description: When true, ignores registeredFrom/registeredTo and returns only ACTIVE users whose trial ends within the next day.
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive substring match against first name, last name, company name, or email. Combines with the other filters.
         - name: page
           in: query
           required: false

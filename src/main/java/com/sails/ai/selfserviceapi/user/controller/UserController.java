@@ -46,12 +46,13 @@ public class UserController implements UserApi {
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CustomerPageResponse> getUsers(OffsetDateTime registeredFrom, OffsetDateTime registeredTo,
-                                                          Boolean needsAttention, Integer page, Integer size) {
+                                                          Boolean needsAttention, String search, Integer page, Integer size) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<User> users = userService.listCustomers(
                 Boolean.TRUE.equals(needsAttention),
                 registeredFrom != null ? registeredFrom.toInstant() : null,
                 registeredTo != null ? registeredTo.toInstant() : null,
+                search,
                 pageRequest
         );
         return ResponseEntity.ok(CustomerResponseMapper.toPageResponse(users));

@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -129,19 +130,22 @@ public class UserService {
     /**
      * Admin Customers list. {@code needsAttention} takes priority over the registration-date bounds
      * when set — an admin clearing their pending-action badge wants everyone who needs it, not just
-     * the ones who also happen to fall in whatever date range was previously selected.
+     * the ones who also happen to fall in whatever date range was previously selected. {@code search}
+     * (first/last name, company, or email) combines with either filter.
      */
-    public Page<User> listCustomers(boolean needsAttention, Instant registeredFrom, Instant registeredTo, Pageable pageable) {
+    public Page<User> listCustomers(boolean needsAttention, Instant registeredFrom, Instant registeredTo, String search, Pageable pageable) {
+        Specification<User> spec = (root, query, cb) -> cb.conjunction();
         if (needsAttention) {
-            return userRepository.findByStatusAndTrialEndDateBetween(
-                    UserStatus.ACTIVE, Instant.now(), needsAttentionCutoff(), pageable);
-        }
-        if (registeredFrom != null || registeredTo != null) {
+            spec = spec.and(UserSpecifications.needsAttention(Instant.now(), needsAttentionCutoff()));
+        } else if (registeredFrom != null || registeredTo != null) {
             Instant from = registeredFrom != null ? registeredFrom : Instant.EPOCH;
             Instant to = registeredTo != null ? registeredTo : Instant.now();
-            return userRepository.findByCreatedAtBetween(from, to, pageable);
+            spec = spec.and(UserSpecifications.registeredBetween(from, to));
         }
-        return userRepository.findAll(pageable);
+        if (search != null && !search.isBlank()) {
+            spec = spec.and(UserSpecifications.matchesSearch(search.trim()));
+        }
+        return userRepository.findAll(spec, pageable);
     }
 
     public long countNeedingAttention() {

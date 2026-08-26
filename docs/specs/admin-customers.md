@@ -17,12 +17,14 @@ lever).
 
 - Admins can see all registered users, paginated (default page size 30).
 - The list is filterable by registration date: last week, last month (default), last year, or a
-  custom range.
+  custom range; combinable with a free-text search across first name, last name, company, or email.
 - Admins can revoke a user's trial (ends it immediately) or extend it to a new date, picked via a
   date picker capped at 14 days from today.
 - A badge shows the count of users whose trial ends within the next day (today or tomorrow), so
   admins notice before those users lose access.
 - Clicking that badge filters straight to those users.
+- Admins don't have trials at all — no trial dates, no revoke/extend actions, and they're never
+  counted toward the "needs attention" badge. The Customers list flags an admin row instead.
 
 ## Architecture Decisions
 
@@ -68,6 +70,25 @@ access-token lifetime, since `trialEndDate` is baked into the JWT at issuance. R
 a trial here changes the `users` row immediately, but the *affected user's own session* won't see the
 new `trialEndDate` until their token is refreshed. This is the same accepted tradeoff, not a new gap.
 
+**Admins are exempt from trial enforcement by having no trial dates at all, not by a role check in
+`TrialAuthorizationManager`.** `OtpService.verifyOtp` now clears `trialStartDate`/`trialEndDate`
+(sets both null) whenever the authenticating user has the `ADMIN` role — on the same login that grants
+the role, and again on every subsequent login (covering an account that was promoted before this
+change shipped). Because `JwtService.issueAccessToken` already only adds the `trialEndDate` claim
+when the value is non-null, and `TrialAuthorizationManager` already treats a missing claim as "allow,"
+both of those existing mechanisms handle the exemption automatically — no changes needed to either.
+This also means admins never match the "needs attention" predicate (`trialEndDate BETWEEN ...` is
+never true against `NULL`), so they can't appear in that badge/filter either.
+
+**Search reuses `JpaSpecificationExecutor`, combined with whichever date/needsAttention predicate is
+active.** `UserRepository`'s two derived paginated finder methods (one for the date range, one for
+needsAttention) were replaced by `Specification<User>` composition (`UserSpecifications`), since
+adding a third independent, combinable filter dimension (search) would otherwise require a
+derived-method combinatorial explosion. `countByStatusAndTrialEndDateBetween` (badge count, no search
+involved) stays a plain derived query — unaffected. Search is a case-insensitive `LIKE '%term%'`
+across `firstName`/`lastName`/`companyName`/`email`, ANDed with whatever date/needsAttention predicate
+is active, not a separate mode.
+
 ## Data Model
 
 No schema change. Reads/writes only `users.trial_start_date`/`users.trial_end_date` (already
@@ -78,11 +99,13 @@ present), `users.created_at` (read-only, for the registration-date filter).
 All new endpoints are admin-only (`@PreAuthorize("hasRole('ADMIN')")`), under the `User` tag.
 
 - **`GET /users`** — `registeredFrom?`, `registeredTo?` (date-time), `needsAttention?` (boolean,
-  default `false`), `page?` (default `0`), `size?` (default `30`). When `needsAttention=true`, the
-  registration-date params are ignored and the result is every `ACTIVE` user whose `trialEndDate`
-  falls within the next day. Otherwise, results are optionally bounded by `registeredFrom`/`registeredTo`
-  (either or both may be omitted — an omitted bound is unbounded on that side). Sorted by `createdAt`
-  descending. Returns `CustomerPageResponse`.
+  default `false`), `search?` (string), `page?` (default `0`), `size?` (default `30`). When
+  `needsAttention=true`, the registration-date params are ignored and the result is every `ACTIVE`
+  user whose `trialEndDate` falls within the next day. Otherwise, results are optionally bounded by
+  `registeredFrom`/`registeredTo` (either or both may be omitted — an omitted bound is unbounded on
+  that side). `search`, when present, is ANDed on top of either of those (case-insensitive substring
+  match against first name, last name, company name, or email). Sorted by `createdAt` descending.
+  Returns `CustomerPageResponse`.
 - **`POST /users/{id}/trial/revoke`** — sets `trialEndDate = now`. `200` `CustomerResponse`. `404` if
   not found.
 - **`POST /users/{id}/trial/extend`** — body `ExtendTrialRequest {trialEndDate}`. `400` if
@@ -112,4 +135,8 @@ All new endpoints are admin-only (`@PreAuthorize("hasRole('ADMIN')")`), under th
 
 ## Changelog
 
+- 2026-08-26 — Added search (first/last name, company, email) and admin trial exemption:
+  `OtpService.verifyOtp` clears trial dates for `ADMIN`-role users on every login;
+  `UserRepository` moved to `JpaSpecificationExecutor` (`UserSpecifications`) so search composes
+  with the existing date-range/needsAttention filters.
 - 2026-08-26 — Initial draft, written before implementation.
