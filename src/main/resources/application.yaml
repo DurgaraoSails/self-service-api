@@ -56,6 +56,9 @@ jwt:
 trial:
   length-days: ${TRIAL_LENGTH_DAYS:14}
 
+admin:
+  emails: ${ADMIN_EMAILS:}
+
 email-domain-validation:
   timeout-millis: ${EMAIL_DOMAIN_VALIDATION_TIMEOUT_MILLIS:2000}
   retries: ${EMAIL_DOMAIN_VALIDATION_RETRIES:1}

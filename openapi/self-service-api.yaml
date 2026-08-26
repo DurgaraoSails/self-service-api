@@ -304,11 +304,23 @@ paths:
 
   /pocs:
     get:
-      summary: List all POCs (public summary — no launch/repository links)
+      summary: List POCs (public summary — no launch/repository links)
+      description: >
+        Anonymous and non-admin callers always see only active, non-deleted POCs. Authenticated
+        admins additionally see hidden POCs, and soft-deleted ones too when includeDeleted=true
+        (ignored for non-admins).
       operationId: getPocs
       tags:
         - Poc
       security: []
+      parameters:
+        - name: includeDeleted
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Only takes effect for authenticated administrators.
       responses:
         '200':
           description: List of POCs
@@ -322,7 +334,7 @@ paths:
           $ref: './components/responses.yaml#/InternalServerError'
 
     post:
-      summary: Create a new POC
+      summary: Create a new POC (admin only)
       operationId: createPoc
       tags:
         - Poc
@@ -378,7 +390,7 @@ paths:
           $ref: './components/responses.yaml#/InternalServerError'
 
     put:
-      summary: Update a POC
+      summary: Update a POC (admin only)
       operationId: updatePoc
       tags:
         - Poc
@@ -414,7 +426,7 @@ paths:
           $ref: './components/responses.yaml#/InternalServerError'
 
     delete:
-      summary: Delete a POC
+      summary: Soft-delete a POC (admin only)
       operationId: deletePoc
       tags:
         - Poc
@@ -427,7 +439,94 @@ paths:
             format: int64
       responses:
         '204':
-          description: POC deleted
+          description: POC soft-deleted
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/hide:
+    post:
+      summary: Hide a POC from the regular dashboard listing (admin only)
+      operationId: hidePoc
+      tags:
+        - Poc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: POC hidden
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/unhide:
+    post:
+      summary: Unhide a POC, restoring it to the regular dashboard listing (admin only)
+      operationId: unhidePoc
+      tags:
+        - Poc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: POC unhidden
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/restore:
+    post:
+      summary: Restore a soft-deleted POC (admin only)
+      operationId: restorePoc
+      tags:
+        - Poc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: POC restored
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocResponse'
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
         '403':

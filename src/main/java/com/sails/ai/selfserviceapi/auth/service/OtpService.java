@@ -8,6 +8,7 @@ import com.sails.ai.selfserviceapi.auth.repository.OtpAttemptSnapshot;
 import com.sails.ai.selfserviceapi.auth.repository.OtpVerificationRepository;
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.email.EmailService;
+import com.sails.ai.selfserviceapi.user.config.AdminProperties;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.entity.UserStatus;
 import com.sails.ai.selfserviceapi.user.repository.UserRepository;
@@ -15,6 +16,8 @@ import com.sails.ai.selfserviceapi.user.service.UserService;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,6 +33,7 @@ public class OtpService {
     private final OtpHasher otpHasher;
     private final OtpProperties properties;
     private final EmailService emailService;
+    private final AdminProperties adminProperties;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public OtpService(UserRepository userRepository,
@@ -38,7 +42,8 @@ public class OtpService {
                        OtpAttemptCounter otpAttemptCounter,
                        OtpHasher otpHasher,
                        OtpProperties properties,
-                       EmailService emailService) {
+                       EmailService emailService,
+                       AdminProperties adminProperties) {
         this.userRepository = userRepository;
         this.userService = userService;
         this.otpVerificationRepository = otpVerificationRepository;
@@ -46,6 +51,7 @@ public class OtpService {
         this.otpHasher = otpHasher;
         this.properties = properties;
         this.emailService = emailService;
+        this.adminProperties = adminProperties;
     }
 
     @Transactional
@@ -120,6 +126,11 @@ public class OtpService {
         if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(now);
+        }
+        if (adminProperties.isAdminEmail(user.getEmail()) && !user.getRoles().contains("ADMIN")) {
+            List<String> roles = new ArrayList<>(user.getRoles());
+            roles.add("ADMIN");
+            user.setRoles(roles);
         }
         user.setLastLoginDate(now);
         userRepository.save(user);
