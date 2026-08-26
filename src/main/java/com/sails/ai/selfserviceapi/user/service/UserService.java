@@ -13,6 +13,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -122,5 +124,53 @@ public class UserService {
             user.setFirstLogin(false);
             userRepository.save(user);
         }
+    }
+        
+    /**
+     * Admin Customers list. {@code needsAttention} takes priority over the registration-date bounds
+     * when set — an admin clearing their pending-action badge wants everyone who needs it, not just
+     * the ones who also happen to fall in whatever date range was previously selected.
+     */
+    public Page<User> listCustomers(boolean needsAttention, Instant registeredFrom, Instant registeredTo, Pageable pageable) {
+        if (needsAttention) {
+            return userRepository.findByStatusAndTrialEndDateBetween(
+                    UserStatus.ACTIVE, Instant.now(), needsAttentionCutoff(), pageable);
+        }
+        if (registeredFrom != null || registeredTo != null) {
+            Instant from = registeredFrom != null ? registeredFrom : Instant.EPOCH;
+            Instant to = registeredTo != null ? registeredTo : Instant.now();
+            return userRepository.findByCreatedAtBetween(from, to, pageable);
+        }
+        return userRepository.findAll(pageable);
+    }
+
+    public long countNeedingAttention() {
+        return userRepository.countByStatusAndTrialEndDateBetween(UserStatus.ACTIVE, Instant.now(), needsAttentionCutoff());
+    }
+
+    @Transactional
+    public User revokeTrial(String id) {
+        User user = getById(id);
+        user.setTrialEndDate(Instant.now());
+        return userRepository.save(user);
+    }
+
+    @Transactional
+    public User extendTrial(String id, Instant newTrialEndDate) {
+        Instant now = Instant.now();
+        if (newTrialEndDate.isBefore(now)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "TRIAL_END_DATE_IN_PAST", "Trial end date must be in the future.");
+        }
+        if (newTrialEndDate.isAfter(now.plus(trialProperties.lengthDays(), ChronoUnit.DAYS))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "TRIAL_EXTENSION_TOO_FAR",
+                    "Trial end date cannot be more than " + trialProperties.lengthDays() + " days from now.");
+        }
+        User user = getById(id);
+        user.setTrialEndDate(newTrialEndDate);
+        return userRepository.save(user);
+    }
+
+    private Instant needsAttentionCutoff() {
+        return Instant.now().plus(1, ChronoUnit.DAYS);
     }
 }

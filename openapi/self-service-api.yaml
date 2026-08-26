@@ -180,6 +180,145 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /users:
+    get:
+      summary: List registered users (admin only), paginated and filterable
+      operationId: getUsers
+      tags:
+        - User
+      parameters:
+        - name: registeredFrom
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Ignored when needsAttention=true.
+        - name: registeredTo
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Ignored when needsAttention=true.
+        - name: needsAttention
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: When true, ignores registeredFrom/registeredTo and returns only ACTIVE users whose trial ends within the next day.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 30
+
+      responses:
+        '200':
+          description: One page of matching users
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/CustomerPageResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /users/trial-alerts/count:
+    get:
+      summary: Count of users whose trial ends within the next day (admin only)
+      operationId: getTrialAlertsCount
+      tags:
+        - User
+      responses:
+        '200':
+          description: Alert count
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/TrialAlertsCountResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /users/{id}/trial/revoke:
+    post:
+      summary: End a user's trial immediately (admin only)
+      operationId: revokeTrial
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Trial revoked
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/CustomerResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /users/{id}/trial/extend:
+    post:
+      summary: Extend a user's trial to a new end date, up to 14 days from now (admin only)
+      operationId: extendTrial
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/user.yaml#/ExtendTrialRequest'
+      responses:
+        '200':
+          description: Trial extended
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/CustomerResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /support/contact-sales:
     post:
       summary: Notify the sales team that the current user wants to be contacted
