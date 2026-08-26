@@ -10,7 +10,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/selfservice}
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    password: ${DB_PASSWORD:admin}
 
     hikari:
       maximum-pool-size: 5
@@ -35,9 +35,9 @@ spring:
     properties:
       mail:
         smtp:
-          auth: ${SMTP_AUTH:true}
+          auth: ${SMTP_AUTH:false}
           starttls:
-            enable: ${SMTP_STARTTLS:true}
+            enable: ${SMTP_STARTTLS:false}
 
 otp:
   hash-secret: ${OTP_HASH_SECRET:local-dev-otp-secret-change-me}
@@ -68,7 +68,7 @@ support:
 
 app:
   mail:
-    from-address: ${MAIL_FROM_ADDRESS:no.reply.sails.poc@gmail.com}
+    from-address: ${MAIL_FROM_ADDRESS:no-reply@example.com}
     from-name: ${MAIL_FROM_NAME:Self Service}
 
 management:

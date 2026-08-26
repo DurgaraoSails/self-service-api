@@ -111,4 +111,16 @@ public class UserService {
         }
         return userRepository.save(user);
     }
+
+    /**
+     * Consumes the one-time first-login signal (used to drive the guided tour) by persisting it
+     * as false. No-op if already cleared, so repeated logins don't issue redundant writes.
+     */
+    @Transactional
+    public void clearFirstLoginFlag(User user) {
+        if (user.isFirstLogin()) {
+            user.setFirstLogin(false);
+            userRepository.save(user);
+        }
+    }
 }

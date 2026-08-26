@@ -109,31 +109,38 @@ RegisterRequest:
     - firstName
     - lastName
     - companyName
+    - jobTitle
+    - country
     - email
   properties:
     firstName:
       type: string
       maxLength: 100
+      pattern: '^\p{L}[\p{L} ''-]*$'
       example: "Jane"
 
     lastName:
       type: string
       maxLength: 100
+      pattern: '^\p{L}[\p{L} ''-]*$'
       example: "Doe"
 
     companyName:
       type: string
       maxLength: 200
+      pattern: '.*\S.*'
       example: "Acme Corp"
 
     jobTitle:
       type: string
       maxLength: 100
+      pattern: '.*\S.*'
       example: "Engineering Manager"
 
     country:
       type: string
       maxLength: 100
+      pattern: '.*\S.*'
       example: "United States"
 
     email:
