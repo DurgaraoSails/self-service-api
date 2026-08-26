@@ -1,0 +1,1 @@
+ALTER TABLE pocs ADD COLUMN deleted_at TIMESTAMPTZ;

@@ -70,8 +70,10 @@ PocSummaryResponse:
 
     status:
       type: string
-      maxLength: 50
-      description: Lifecycle status of the POC.
+      enum: [ACTIVE, HIDDEN]
+      description: >
+        Lifecycle status of the POC. HIDDEN removes it from the regular (non-admin) dashboard
+        listing without deleting it.
       example: "ACTIVE"
 
     details:
@@ -87,6 +89,15 @@ PocSummaryResponse:
       example:
         - "Click Launch to open the assistant in your session."
         - "Describe the process or task you need help with in plain language."
+
+    deletedAt:
+      type: string
+      format: date-time
+      nullable: true
+      description: >
+        When this POC was soft-deleted, or null if it isn't deleted. Always null for non-admin
+        callers, since deleted POCs are excluded from their results entirely.
+      example: null
 
 
 PocResponse:
@@ -185,7 +196,7 @@ CreatePocRequest:
 
     status:
       type: string
-      maxLength: 50
+      enum: [ACTIVE, HIDDEN]
       description: Defaults to "ACTIVE" if omitted.
       example: "ACTIVE"
 
@@ -271,7 +282,7 @@ UpdatePocRequest:
 
     status:
       type: string
-      maxLength: 50
+      enum: [ACTIVE, HIDDEN]
       description: Defaults to "ACTIVE" if omitted.
       example: "ACTIVE"
 

@@ -38,11 +38,27 @@ class PocServiceTest {
     }
 
     @Test
-    void listAllReturnsEveryPoc() {
+    void listForViewerReturnsOnlyActiveNonDeletedForNonAdmins() {
+        List<Poc> pocs = List.of(pocWithId(1L), pocWithId(2L));
+        when(pocRepository.findByStatusAndDeletedAtIsNull("ACTIVE")).thenReturn(pocs);
+
+        assertThat(pocService.listForViewer(false, true)).isEqualTo(pocs);
+    }
+
+    @Test
+    void listForViewerExcludesDeletedForAdminsByDefault() {
+        List<Poc> pocs = List.of(pocWithId(1L));
+        when(pocRepository.findByDeletedAtIsNull()).thenReturn(pocs);
+
+        assertThat(pocService.listForViewer(true, false)).isEqualTo(pocs);
+    }
+
+    @Test
+    void listForViewerIncludesDeletedForAdminsWhenRequested() {
         List<Poc> pocs = List.of(pocWithId(1L), pocWithId(2L));
         when(pocRepository.findAll()).thenReturn(pocs);
 
-        assertThat(pocService.listAll()).isEqualTo(pocs);
+        assertThat(pocService.listForViewer(true, true)).isEqualTo(pocs);
     }
 
     @Test
@@ -167,21 +183,58 @@ class PocServiceTest {
     }
 
     @Test
-    void deleteRemovesAnExistingPoc() {
-        when(pocRepository.existsById(1L)).thenReturn(true);
+    void deleteSoftDeletesAnExistingPoc() {
+        Poc existing = pocWithId(1L);
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         pocService.delete(1L);
 
-        ArgumentCaptor<Long> idCaptor = ArgumentCaptor.forClass(Long.class);
-        verify(pocRepository).deleteById(idCaptor.capture());
-        assertThat(idCaptor.getValue()).isEqualTo(1L);
+        ArgumentCaptor<Poc> pocCaptor = ArgumentCaptor.forClass(Poc.class);
+        verify(pocRepository).save(pocCaptor.capture());
+        assertThat(pocCaptor.getValue().getDeletedAt()).isNotNull();
     }
 
     @Test
     void deleteThrowsWhenMissing() {
-        when(pocRepository.existsById(99L)).thenReturn(false);
+        when(pocRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> pocService.delete(99L))
                 .isInstanceOf(PocNotFoundException.class);
+    }
+
+    @Test
+    void restoreClearsDeletedAt() {
+        Poc existing = pocWithId(1L);
+        existing.setDeletedAt(java.time.Instant.now());
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Poc restored = pocService.restore(1L);
+
+        assertThat(restored.getDeletedAt()).isNull();
+    }
+
+    @Test
+    void hideSetsStatusToHidden() {
+        Poc existing = pocWithId(1L);
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Poc hidden = pocService.hide(1L);
+
+        assertThat(hidden.getStatus()).isEqualTo("HIDDEN");
+    }
+
+    @Test
+    void unhideSetsStatusBackToActive() {
+        Poc existing = pocWithId(1L);
+        existing.setStatus("HIDDEN");
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Poc unhidden = pocService.unhide(1L);
+
+        assertThat(unhidden.getStatus()).isEqualTo("ACTIVE");
     }
 }
