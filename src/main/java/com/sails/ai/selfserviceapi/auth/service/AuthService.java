@@ -29,7 +29,9 @@ public class AuthService {
     @Transactional
     public LoginResult issueTokensForVerifiedEmail(String email) {
         User user = userService.getActiveByEmail(email);
-        return new LoginResult(user, buildPair(user));
+        boolean firstLogin = user.isFirstLogin();
+        userService.clearFirstLoginFlag(user);
+        return new LoginResult(user, buildPair(user), firstLogin);
     }
 
     @Transactional

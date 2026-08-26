@@ -36,9 +36,17 @@ LoginResponse:
     - type: object
       required:
         - user
+        - firstLogin
       properties:
         user:
           $ref: './user.yaml#/UserResponse'
+        firstLogin:
+          type: boolean
+          description: >
+            True only on the user's very first successful login (immediately after
+            registration) — the frontend should show the guided tour when true. Always
+            false afterward, regardless of how many times the user logs in.
+          example: false
 
 
 IssueTokenRequest:

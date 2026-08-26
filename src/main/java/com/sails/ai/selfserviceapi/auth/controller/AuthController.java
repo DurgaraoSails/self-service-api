@@ -121,7 +121,8 @@ public class AuthController implements AuthApi {
                 tokenPair.refreshToken(),
                 tokenPair.tokenType(),
                 tokenPair.expiresIn(),
-                UserResponseMapper.toResponse(loginResult.user())
+                UserResponseMapper.toResponse(loginResult.user()),
+                loginResult.firstLogin()
         );
     }
 }
