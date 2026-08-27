@@ -681,6 +681,168 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /activity/heartbeat:
+    post:
+      summary: Record that the caller is actively using a POC
+      description: >
+        Sent periodically by the portal while a POC workspace is open. Any authenticated user
+        may report their own usage; the user is taken from the bearer token, never the body.
+      operationId: recordHeartbeat
+      tags:
+        - Activity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/activity.yaml#/HeartbeatRequest'
+      responses:
+        '204':
+          description: Heartbeat recorded
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /activity/leaderboard/pocs:
+    get:
+      summary: POCs ranked by total usage time (admin only)
+      operationId: getPocLeaderboard
+      tags:
+        - Activity
+      responses:
+        '200':
+          description: POC usage totals, highest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/activity.yaml#/PocUsageSummary'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /activity/leaderboard/users:
+    get:
+      summary: Users ranked by total usage time (admin only)
+      operationId: getUserLeaderboard
+      tags:
+        - Activity
+      responses:
+        '200':
+          description: User usage totals, highest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/activity.yaml#/UserUsageSummary'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /activity/users/{userId}:
+    get:
+      summary: One user's activity broken down per POC, with their sessions (admin only)
+      operationId: getUserActivity
+      tags:
+        - Activity
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The user's activity detail
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/activity.yaml#/UserActivityDetail'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /activity/usage/daily:
+    get:
+      summary: Daily usage totals across all POCs and users, for charting (admin only)
+      operationId: getDailyUsage
+      tags:
+        - Activity
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: First day to include, inclusive (UTC).
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Last day to include, inclusive (UTC). Must not be before `from`.
+      responses:
+        '200':
+          description: One point per day in the range, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/activity.yaml#/DailyUsagePoint'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /activity/active:
+    get:
+      summary: Sessions currently active across all users, for a live status view (admin only)
+      operationId: getActiveSessions
+      tags:
+        - Activity
+      responses:
+        '200':
+          description: Currently active sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/activity.yaml#/ActiveSessionResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
 components:
   securitySchemes:
     bearerAuth:

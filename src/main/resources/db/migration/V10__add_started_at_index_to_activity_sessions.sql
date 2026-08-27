@@ -1,0 +1,1 @@
+CREATE INDEX idx_activity_sessions_started_at ON activity_sessions(started_at);
