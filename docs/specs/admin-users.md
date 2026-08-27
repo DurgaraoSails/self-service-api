@@ -6,7 +6,7 @@ In Progress
 
 ## Overview / Purpose
 
-Introduces an "admin" role. Admins can manage the POC catalog (create, edit, hide/unhide, soft-delete/restore) and will see an "Activity" telemetry surface on the portal that regular users don't (the telemetry feature itself is being built separately; this spec only covers the role and the write-access gating it enables). Every authenticated, non-expired-trial user currently has unrestricted POC write access — see `docs/specs/poc-catalog.md`'s "Admin-only writes" open question — this closes that gap.
+Introduces an "admin" role. Admins can manage the POC catalog (create, edit, hide/unhide, soft-delete/restore) and see an "Activity" telemetry surface on the portal that regular users don't (the telemetry feature itself is specced separately in `docs/specs/activity-tracking.md`; this spec only covers the role and the write-access gating it enables). Every authenticated, non-expired-trial user currently has unrestricted POC write access — see `docs/specs/poc-catalog.md`'s "Admin-only writes" open question — this closes that gap.
 
 ## Requirements
 
