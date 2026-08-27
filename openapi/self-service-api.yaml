@@ -180,6 +180,33 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /users/me/trial/extension-request:
+    post:
+      summary: Request an extension of the current user's own trial, with a reason
+      description: >
+        Records the request (visible to admins via the Customers list and the "needs attention"
+        badge/filter) and emails the sales inbox.
+      operationId: requestTrialExtension
+      tags:
+        - User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/user.yaml#/RequestTrialExtensionRequest'
+      responses:
+        '204':
+          description: Request recorded
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /users:
     get:
       summary: List registered users (admin only), paginated and filterable

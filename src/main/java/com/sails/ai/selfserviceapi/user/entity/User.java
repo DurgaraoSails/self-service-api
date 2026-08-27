@@ -72,6 +72,12 @@ public class User {
     @Column(name = "last_login_date")
     private Instant lastLoginDate;
 
+    @Column(name = "pending_extension_note", columnDefinition = "text")
+    private String pendingExtensionNote;
+
+    @Column(name = "pending_extension_requested_at")
+    private Instant pendingExtensionRequestedAt;
+
     @Column(name = "first_login", nullable = false)
     private boolean firstLogin = true;
 

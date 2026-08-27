@@ -15,10 +15,18 @@ final class UserSpecifications {
         return (root, query, cb) -> cb.between(root.get("createdAt"), from, to);
     }
 
+    /**
+     * ACTIVE users whose trial ends within the window, OR who have a pending trial-extension
+     * request (regardless of where their trial end date falls) — both are things an admin needs
+     * to look at.
+     */
     static Specification<User> needsAttention(Instant now, Instant cutoff) {
         return (root, query, cb) -> cb.and(
                 cb.equal(root.get("status"), UserStatus.ACTIVE),
-                cb.between(root.get("trialEndDate"), now, cutoff)
+                cb.or(
+                        cb.between(root.get("trialEndDate"), now, cutoff),
+                        cb.isNotNull(root.get("pendingExtensionRequestedAt"))
+                )
         );
     }
 

@@ -177,6 +177,19 @@ CustomerResponse:
       description: When the account registered, in UTC.
       example: "2026-08-20T10:30:00Z"
 
+    pendingExtensionNote:
+      type: string
+      description: >
+        The reason the user gave when requesting a trial extension, if they have an unresolved
+        request. Null once an admin revokes or extends the trial.
+      example: "We're still finishing evaluation with the rest of the team, could use another week."
+
+    pendingExtensionRequestedAt:
+      type: string
+      format: date-time
+      description: When the pending trial-extension request was submitted, in UTC. Null if none.
+      example: "2026-08-27T09:00:00Z"
+
 
 CustomerPageResponse:
   type: object
@@ -233,8 +246,24 @@ TrialAlertsCountResponse:
   properties:
     count:
       type: integer
-      description: Number of ACTIVE users whose trial ends within the next day.
+      description: >
+        Number of ACTIVE users needing attention: trial ends within the next day, or has a pending
+        trial-extension request.
       example: 3
+
+
+RequestTrialExtensionRequest:
+  type: object
+  description: Request from the current user to extend their own trial, with a reason.
+  required:
+    - note
+  properties:
+    note:
+      type: string
+      minLength: 1
+      maxLength: 2000
+      description: Free-text reason the user wants more time.
+      example: "We're still finishing evaluation with the rest of the team, could use another week."
 
 
 RegisterRequest:
