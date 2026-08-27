@@ -1,0 +1,220 @@
+HeartbeatRequest:
+  type: object
+  description: >
+    Ping sent periodically by the portal while a POC workspace is open, to record that the
+    caller is actively using that POC. Duration is derived server-side from the gaps between
+    consecutive pings — the client never reports elapsed time itself.
+  required:
+    - pocId
+  properties:
+    pocId:
+      type: integer
+      format: int64
+      description: Identifier of the POC the caller currently has open.
+      example: 1
+
+
+PocUsageSummary:
+  type: object
+  description: Total time all users have spent in a single POC.
+  required:
+    - pocId
+    - pocName
+    - totalSeconds
+  properties:
+    pocId:
+      type: integer
+      format: int64
+      example: 1
+
+    pocName:
+      type: string
+      description: Display name of the POC, denormalised so callers don't need a second lookup.
+      example: "Contract Agent"
+
+    totalSeconds:
+      type: integer
+      format: int64
+      description: Total recorded usage across all users, in seconds.
+      example: 7200
+
+    userCount:
+      type: integer
+      format: int64
+      description: >
+        Number of distinct users who have used this POC. Only populated on the cross-user
+        leaderboard; omitted from a single user's own per-POC breakdown, where it would
+        always be 1.
+      example: 4
+
+
+UserUsageSummary:
+  type: object
+  description: Total time a single user has spent across all POCs.
+  required:
+    - userId
+    - firstName
+    - lastName
+    - email
+    - totalSeconds
+  properties:
+    userId:
+      type: string
+      example: "01JABC123XYZ"
+
+    firstName:
+      type: string
+      example: "Jane"
+
+    lastName:
+      type: string
+      example: "Doe"
+
+    email:
+      type: string
+      format: email
+      example: "jane.doe@example.com"
+
+    totalSeconds:
+      type: integer
+      format: int64
+      description: Total recorded usage across every POC, in seconds.
+      example: 10800
+
+
+ActivitySessionResponse:
+  type: object
+  description: >
+    A single continuous stretch of usage. A new session starts whenever a heartbeat arrives
+    after a gap longer than the server's grace period, so gaps are never counted as active time.
+  required:
+    - pocId
+    - pocName
+    - startedAt
+    - totalSeconds
+    - status
+  properties:
+    pocId:
+      type: integer
+      format: int64
+      example: 1
+
+    pocName:
+      type: string
+      example: "Contract Agent"
+
+    startedAt:
+      type: string
+      format: date-time
+      description: When this session's first heartbeat arrived, in UTC.
+      example: "2026-08-26T10:30:00Z"
+
+    endedAt:
+      type: string
+      format: date-time
+      nullable: true
+      description: >
+        When this session was closed, in UTC, or null while it's still open. Set to the last
+        heartbeat actually received — not the time the gap was noticed.
+      example: "2026-08-26T12:30:00Z"
+
+    totalSeconds:
+      type: integer
+      format: int64
+      example: 7200
+
+    status:
+      type: string
+      enum: [ACTIVE, ENDED]
+      description: >
+        Computed at read time, not stored. ENDED covers both a session explicitly closed by a
+        later heartbeat (`endedAt` set) and one whose last heartbeat has already fallen outside
+        the server's grace period but that hasn't been observed as closed yet — e.g. the tab was
+        closed and no further heartbeat ever arrived to record the closure. Without this, such a
+        session would read as `endedAt: null` and a client would have to reimplement the grace
+        period to know it isn't actually still open.
+      example: "ENDED"
+
+
+DailyUsagePoint:
+  type: object
+  description: >
+    Total recorded usage across all POCs and users for a single calendar day (UTC). Used to
+    chart usage over a date range.
+  required:
+    - date
+    - totalSeconds
+  properties:
+    date:
+      type: string
+      format: date
+      example: "2026-08-20"
+
+    totalSeconds:
+      type: integer
+      format: int64
+      description: >
+        Total usage that day, in seconds. Every day in the requested range is included, zero
+        or not, so callers don't need to fill gaps themselves before charting.
+      example: 340
+
+
+ActiveSessionResponse:
+  type: object
+  description: A session currently within the grace period — i.e. genuinely still open right now.
+  required:
+    - userId
+    - firstName
+    - lastName
+    - pocId
+    - pocName
+    - startedAt
+  properties:
+    userId:
+      type: string
+      example: "01JABC123XYZ"
+
+    firstName:
+      type: string
+      example: "Jane"
+
+    lastName:
+      type: string
+      example: "Doe"
+
+    pocId:
+      type: integer
+      format: int64
+      example: 1
+
+    pocName:
+      type: string
+      example: "Contract Agent"
+
+    startedAt:
+      type: string
+      format: date-time
+      description: When this session's first heartbeat arrived, in UTC.
+      example: "2026-08-26T10:30:00Z"
+
+
+UserActivityDetail:
+  description: One user's usage broken down per POC, plus their individual sessions.
+  allOf:
+    - $ref: '#/UserUsageSummary'
+    - type: object
+      required:
+        - byPoc
+        - sessions
+      properties:
+        byPoc:
+          type: array
+          description: Per-POC totals for this user, highest usage first.
+          items:
+            $ref: '#/PocUsageSummary'
+
+        sessions:
+          type: array
+          description: This user's individual sessions, most recent first.
+          items:
+            $ref: '#/ActivitySessionResponse'
