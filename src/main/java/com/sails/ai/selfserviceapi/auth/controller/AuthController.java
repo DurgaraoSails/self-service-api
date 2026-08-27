@@ -3,6 +3,7 @@ package com.sails.ai.selfserviceapi.auth.controller;
 import com.sails.ai.selfserviceapi.auth.service.AuthService;
 import com.sails.ai.selfserviceapi.auth.service.LoginResult;
 import com.sails.ai.selfserviceapi.auth.service.OtpService;
+import com.sails.ai.selfserviceapi.auth.service.RegistrationVerificationService;
 import com.sails.ai.selfserviceapi.auth.service.TokenPair;
 import com.sails.ai.selfserviceapi.generated.api.AuthApi;
 import com.sails.ai.selfserviceapi.generated.model.IssueTokenRequest;
@@ -13,7 +14,9 @@ import com.sails.ai.selfserviceapi.generated.model.OtpRequestResponse;
 import com.sails.ai.selfserviceapi.generated.model.OtpVerifyRequest;
 import com.sails.ai.selfserviceapi.generated.model.RefreshTokenRequest;
 import com.sails.ai.selfserviceapi.generated.model.RegisterRequest;
+import com.sails.ai.selfserviceapi.generated.model.RegistrationVerifyRequest;
 import com.sails.ai.selfserviceapi.generated.model.TokenResponse;
+import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.service.UserResponseMapper;
 import com.sails.ai.selfserviceapi.user.service.UserService;
 import org.springframework.core.env.Environment;
@@ -28,12 +31,15 @@ public class AuthController implements AuthApi {
     private final OtpService otpService;
     private final AuthService authService;
     private final UserService userService;
+    private final RegistrationVerificationService registrationVerificationService;
     private final Environment environment;
 
-    public AuthController(OtpService otpService, AuthService authService, UserService userService, Environment environment) {
+    public AuthController(OtpService otpService, AuthService authService, UserService userService,
+                           RegistrationVerificationService registrationVerificationService, Environment environment) {
         this.otpService = otpService;
         this.authService = authService;
         this.userService = userService;
+        this.registrationVerificationService = registrationVerificationService;
         this.environment = environment;
     }
 
@@ -47,10 +53,17 @@ public class AuthController implements AuthApi {
                 registerRequest.getCountry(),
                 registerRequest.getEmail()
         );
-        int expiresInSeconds = otpService.requestOtp(registerRequest.getEmail());
+        int expiresInSeconds = registrationVerificationService.requestVerification(registerRequest.getEmail());
         return ResponseEntity.status(HttpStatus.CREATED).body(new OtpRequestResponse()
-                .message("Account created. A verification code has been sent to your email.")
+                .message("Account created. Check your email for a link to verify your account.")
                 .expiresInSeconds(expiresInSeconds));
+    }
+
+    @Override
+    public ResponseEntity<LoginResponse> verifyRegistration(RegistrationVerifyRequest registrationVerifyRequest) {
+        User user = registrationVerificationService.verify(registrationVerifyRequest.getToken());
+        LoginResult loginResult = authService.issueTokensForVerifiedEmail(user.getEmail());
+        return ResponseEntity.ok(toLoginResponse(loginResult));
     }
 
     @Override

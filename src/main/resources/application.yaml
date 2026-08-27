@@ -46,6 +46,9 @@ otp:
   max-resends: 3
   max-requests-per-hour: 5
 
+registration-verification:
+  ttl-hours: ${REGISTRATION_VERIFICATION_TTL_HOURS:24}
+
 jwt:
   issuer: ${JWT_ISSUER:self-service-api}
   private-key-path: ${JWT_PRIVATE_KEY_PATH:file:./secrets/jwt/private-key.pem}
@@ -68,8 +71,10 @@ support:
 
 app:
   mail:
-    from-address: ${MAIL_FROM_ADDRESS:no-reply@example.com}
+    from-address: ${MAIL_FROM_ADDRESS}
     from-name: ${MAIL_FROM_NAME:Self Service}
+  frontend:
+    url: ${FRONTEND_URL:http://localhost:4200}
 
 management:
   endpoints:
