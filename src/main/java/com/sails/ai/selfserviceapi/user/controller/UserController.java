@@ -4,9 +4,11 @@ import com.sails.ai.selfserviceapi.generated.api.UserApi;
 import com.sails.ai.selfserviceapi.generated.model.CustomerPageResponse;
 import com.sails.ai.selfserviceapi.generated.model.CustomerResponse;
 import com.sails.ai.selfserviceapi.generated.model.ExtendTrialRequest;
+import com.sails.ai.selfserviceapi.generated.model.RequestTrialExtensionRequest;
 import com.sails.ai.selfserviceapi.generated.model.TrialAlertsCountResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdateUserRequest;
 import com.sails.ai.selfserviceapi.generated.model.UserResponse;
+import com.sails.ai.selfserviceapi.support.service.SupportService;
 import com.sails.ai.selfserviceapi.user.entity.ThemeMode;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.service.CustomerResponseMapper;
@@ -26,9 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController implements UserApi {
 
     private final UserService userService;
+    private final SupportService supportService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, SupportService supportService) {
         this.userService = userService;
+        this.supportService = supportService;
     }
 
     @Override
@@ -75,6 +79,14 @@ public class UserController implements UserApi {
     public ResponseEntity<CustomerResponse> extendTrial(String id, ExtendTrialRequest extendTrialRequest) {
         User user = userService.extendTrial(id, extendTrialRequest.getTrialEndDate().toInstant());
         return ResponseEntity.ok(CustomerResponseMapper.toResponse(user));
+    }
+
+    @Override
+    public ResponseEntity<Void> requestTrialExtension(RequestTrialExtensionRequest requestTrialExtensionRequest) {
+        String userId = currentUserId();
+        userService.requestTrialExtension(userId, requestTrialExtensionRequest.getNote());
+        supportService.notifyTrialExtensionRequest(userId, requestTrialExtensionRequest.getNote());
+        return ResponseEntity.noContent().build();
     }
 
     private String currentUserId() {

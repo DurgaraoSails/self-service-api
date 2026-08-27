@@ -21,7 +21,9 @@ public final class CustomerResponseMapper {
                 .jobTitle(user.getJobTitle())
                 .country(user.getCountry())
                 .trialStartDate(toUtcOffset(user.getTrialStartDate()))
-                .trialEndDate(toUtcOffset(user.getTrialEndDate()));
+                .trialEndDate(toUtcOffset(user.getTrialEndDate()))
+                .pendingExtensionNote(user.getPendingExtensionNote())
+                .pendingExtensionRequestedAt(toUtcOffset(user.getPendingExtensionRequestedAt()));
     }
 
     public static CustomerPageResponse toPageResponse(Page<User> page) {

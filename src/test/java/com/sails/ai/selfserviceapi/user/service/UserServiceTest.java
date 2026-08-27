@@ -2,8 +2,8 @@ package com.sails.ai.selfserviceapi.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
@@ -125,9 +125,9 @@ class UserServiceTest {
     }
 
     @Test
-    void countNeedingAttentionCountsActiveUsersWithinTheNextDay() {
-        when(userRepository.countByStatusAndTrialEndDateBetween(eq(UserStatus.ACTIVE), any(Instant.class), any(Instant.class)))
-                .thenReturn(3L);
+    @SuppressWarnings("unchecked")
+    void countNeedingAttentionCountsActiveUsersWithinTheNextDayOrWithAPendingExtensionRequest() {
+        when(userRepository.count(any(Specification.class))).thenReturn(3L);
 
         assertThat(userService.countNeedingAttention()).isEqualTo(3L);
     }
@@ -142,6 +142,20 @@ class UserServiceTest {
         User revoked = userService.revokeTrial("u1");
 
         assertThat(revoked.getTrialEndDate()).isBeforeOrEqualTo(Instant.now());
+    }
+
+    @Test
+    void revokeTrialClearsAPendingExtensionRequest() {
+        User user = userWithId("u1");
+        user.setPendingExtensionNote("Need more time.");
+        user.setPendingExtensionRequestedAt(Instant.now());
+        when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        User revoked = userService.revokeTrial("u1");
+
+        assertThat(revoked.getPendingExtensionNote()).isNull();
+        assertThat(revoked.getPendingExtensionRequestedAt()).isNull();
     }
 
     @Test
@@ -181,5 +195,39 @@ class UserServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getCode())
                 .isEqualTo("TRIAL_END_DATE_IN_PAST");
+    }
+
+    @Test
+    void extendTrialClearsAPendingExtensionRequest() {
+        User user = userWithId("u1");
+        user.setPendingExtensionNote("Need more time.");
+        user.setPendingExtensionRequestedAt(Instant.now());
+        when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        User extended = userService.extendTrial("u1", Instant.now().plus(10, ChronoUnit.DAYS));
+
+        assertThat(extended.getPendingExtensionNote()).isNull();
+        assertThat(extended.getPendingExtensionRequestedAt()).isNull();
+    }
+
+    @Test
+    void requestTrialExtensionSetsTheNoteAndTimestamp() {
+        User user = userWithId("u1");
+        when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        User requested = userService.requestTrialExtension("u1", "Need more time.");
+
+        assertThat(requested.getPendingExtensionNote()).isEqualTo("Need more time.");
+        assertThat(requested.getPendingExtensionRequestedAt()).isCloseTo(Instant.now(), within(2, ChronoUnit.SECONDS));
+    }
+
+    @Test
+    void requestTrialExtensionThrowsWhenUserMissing() {
+        when(userRepository.findById("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.requestTrialExtension("missing", "Need more time."))
+                .isInstanceOf(UserNotFoundException.class);
     }
 }

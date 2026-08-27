@@ -49,6 +49,17 @@ LoginResponse:
           example: false
 
 
+RegistrationVerifyRequest:
+  type: object
+  description: Request to complete registration via the link sent to the user's email.
+  required:
+    - token
+  properties:
+    token:
+      type: string
+      description: Opaque token from the registration verification link's `token` query parameter.
+
+
 IssueTokenRequest:
   type: object
   description: >

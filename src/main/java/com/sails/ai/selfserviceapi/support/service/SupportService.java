@@ -31,6 +31,15 @@ public class SupportService {
         emailService.sendTemplate(properties.salesEmail(), buildSubject(user), "contact-sales", buildVariables(user, message));
     }
 
+    /** Notifies sales that a user has asked to extend their trial, with their reason. */
+    public void notifyTrialExtensionRequest(String userId, String note) {
+        User user = userService.getById(userId);
+        Map<String, Object> variables = buildVariables(user, null);
+        variables.put("note", note);
+        emailService.sendTemplate(properties.salesEmail(), "Trial extension request from " + user.getCompanyName(),
+                "trial-extension-request", variables);
+    }
+
     private String buildSubject(User user) {
         return "Contact Sales request from " + user.getCompanyName();
     }

@@ -77,4 +77,32 @@ class SupportServiceTest {
         verify(emailService).sendTemplate(anyString(), anyString(), anyString(), variablesCaptor.capture());
         assertThat(variablesCaptor.getValue()).doesNotContainKey("message");
     }
+
+    @Test
+    void emailsSalesWithTheUsersProfileAndTheExtensionNote() {
+        User user = new User();
+        user.setFirstName("Jane");
+        user.setLastName("Doe");
+        user.setEmail("jane.doe@example.com");
+        user.setCompanyName("Acme Corp");
+        when(userService.getById("user-1")).thenReturn(user);
+
+        supportService.notifyTrialExtensionRequest("user-1", "Need more time.");
+
+        ArgumentCaptor<String> toCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> subjectCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> templateCaptor = ArgumentCaptor.forClass(String.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> variablesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(emailService).sendTemplate(toCaptor.capture(), subjectCaptor.capture(), templateCaptor.capture(), variablesCaptor.capture());
+
+        assertThat(toCaptor.getValue()).isEqualTo("no.reply.sails.poc@gmail.com");
+        assertThat(subjectCaptor.getValue()).contains("Acme Corp");
+        assertThat(templateCaptor.getValue()).isEqualTo("trial-extension-request");
+        assertThat(variablesCaptor.getValue())
+                .containsEntry("fullName", "Jane Doe")
+                .containsEntry("companyName", "Acme Corp")
+                .containsEntry("note", "Need more time.")
+                .doesNotContainKey("message");
+    }
 }

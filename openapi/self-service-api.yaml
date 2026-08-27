@@ -42,6 +42,34 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /auth/register/verify:
+    post:
+      summary: Complete registration via the link sent to the user's email
+      description: >
+        Activates the account and issues an access/refresh token pair, the same as
+        /auth/otp/verify — the token is single-use and expires 24 hours after registration.
+      operationId: verifyRegistration
+      tags:
+        - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/auth.yaml#/RegistrationVerifyRequest'
+      responses:
+        '200':
+          description: Registration verified; access and refresh token pair issued, with the user's profile
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/auth.yaml#/LoginResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /auth/tokens:
     post:
       summary: Issue a token pair for an email (interim login, pending email + OTP verification)
@@ -177,6 +205,33 @@ paths:
         '403':
           $ref: './components/responses.yaml#/Forbidden'
 
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /users/me/trial/extension-request:
+    post:
+      summary: Request an extension of the current user's own trial, with a reason
+      description: >
+        Records the request (visible to admins via the Customers list and the "needs attention"
+        badge/filter) and emails the sales inbox.
+      operationId: requestTrialExtension
+      tags:
+        - User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/user.yaml#/RequestTrialExtensionRequest'
+      responses:
+        '204':
+          description: Request recorded
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 

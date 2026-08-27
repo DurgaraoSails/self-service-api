@@ -149,13 +149,14 @@ public class UserService {
     }
 
     public long countNeedingAttention() {
-        return userRepository.countByStatusAndTrialEndDateBetween(UserStatus.ACTIVE, Instant.now(), needsAttentionCutoff());
+        return userRepository.count(UserSpecifications.needsAttention(Instant.now(), needsAttentionCutoff()));
     }
 
     @Transactional
     public User revokeTrial(String id) {
         User user = getById(id);
         user.setTrialEndDate(Instant.now());
+        clearPendingExtensionRequest(user);
         return userRepository.save(user);
     }
 
@@ -171,7 +172,26 @@ public class UserService {
         }
         User user = getById(id);
         user.setTrialEndDate(newTrialEndDate);
+        clearPendingExtensionRequest(user);
         return userRepository.save(user);
+    }
+
+    /**
+     * Records that the user has asked for more time, for an admin to see later (Customers list
+     * note icon + the "needs attention" badge/filter). Sending the actual notification email is a
+     * separate concern, handled by {@code SupportService}.
+     */
+    @Transactional
+    public User requestTrialExtension(String id, String note) {
+        User user = getById(id);
+        user.setPendingExtensionNote(note);
+        user.setPendingExtensionRequestedAt(Instant.now());
+        return userRepository.save(user);
+    }
+
+    private void clearPendingExtensionRequest(User user) {
+        user.setPendingExtensionNote(null);
+        user.setPendingExtensionRequestedAt(null);
     }
 
     private Instant needsAttentionCutoff() {
