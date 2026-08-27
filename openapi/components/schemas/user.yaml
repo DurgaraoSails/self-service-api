@@ -102,6 +102,141 @@ UserStatus:
   example: ACTIVE
 
 
+CustomerResponse:
+  type: object
+  description: Full admin view of a registered user, shown in the Customers management list.
+  required:
+    - id
+    - email
+    - firstName
+    - lastName
+    - companyName
+    - status
+    - roles
+    - createdAt
+  properties:
+    id:
+      type: string
+      example: "01JABC123XYZ"
+
+    email:
+      type: string
+      format: email
+      example: "user@example.com"
+
+    firstName:
+      type: string
+      maxLength: 100
+      example: "Jane"
+
+    lastName:
+      type: string
+      maxLength: 100
+      example: "Doe"
+
+    companyName:
+      type: string
+      maxLength: 200
+      example: "Acme Corp"
+
+    jobTitle:
+      type: string
+      maxLength: 100
+      example: "Engineering Manager"
+
+    country:
+      type: string
+      maxLength: 100
+      example: "United States"
+
+    status:
+      $ref: '#/UserStatus'
+
+    roles:
+      type: array
+      items:
+        type: string
+      example:
+        - USER
+
+    trialStartDate:
+      type: string
+      format: date-time
+      description: When the account's trial period started, in UTC.
+      example: "2026-08-20T10:30:00Z"
+
+    trialEndDate:
+      type: string
+      format: date-time
+      description: When the account's trial period ends (or ended), in UTC.
+      example: "2026-09-03T10:30:00Z"
+
+    createdAt:
+      type: string
+      format: date-time
+      description: When the account registered, in UTC.
+      example: "2026-08-20T10:30:00Z"
+
+
+CustomerPageResponse:
+  type: object
+  description: One page of the admin Customers list.
+  required:
+    - content
+    - page
+    - size
+    - totalElements
+    - totalPages
+  properties:
+    content:
+      type: array
+      items:
+        $ref: '#/CustomerResponse'
+
+    page:
+      type: integer
+      description: Zero-based page index of this page.
+      example: 0
+
+    size:
+      type: integer
+      description: Maximum number of records per page.
+      example: 30
+
+    totalElements:
+      type: integer
+      format: int64
+      description: Total number of matching users, across all pages.
+      example: 142
+
+    totalPages:
+      type: integer
+      example: 5
+
+
+ExtendTrialRequest:
+  type: object
+  required:
+    - trialEndDate
+  properties:
+    trialEndDate:
+      type: string
+      format: date-time
+      description: New trial end date, in UTC. Must be in the future and no more than 14 days from now.
+      example: "2026-09-10T00:00:00Z"
+
+
+TrialAlertsCountResponse:
+  type: object
+  required:
+    - count
+  properties:
+    count:
+      type: integer
+      description: Number of ACTIVE users whose trial ends within the next day.
+      example: 3
+
+
 RegisterRequest:
   type: object
   description: Request to register a new user account.

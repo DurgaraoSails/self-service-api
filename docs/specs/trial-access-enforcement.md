@@ -104,9 +104,10 @@ responses.
 - **Should `/users/me` be exempt from trial gating?** No existing precedent either way; current
   default is "no exemption" (see Architecture Decisions). Revisit if product wants expired-trial
   users to retain basic account visibility.
-- **No upgrade/paid path.** Once trial access enforcement ships, there is no way for a user to
-  regain access after their trial ends. This is a real product gap, not just a technical one — flag
-  for whoever owns the pricing/subscription roadmap.
+- **No upgrade/paid path.** ~~Once trial access enforcement ships, there is no way for a user to
+  regain access after their trial ends.~~ Resolved manually, not via billing: `docs/specs/admin-customers.md`
+  adds an admin "extend trial" action. No self-serve upgrade/paid path still exists — flag for
+  whoever owns the pricing/subscription roadmap if that's ever needed.
 - **`AccessDeniedHandler` generality**, as noted in Security Considerations.
 
 ## Changelog

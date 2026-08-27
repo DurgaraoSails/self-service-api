@@ -103,4 +103,43 @@ class OtpServiceTest {
 
         assertThat(user.getRoles()).containsExactly("USER", "ADMIN");
     }
+
+    @Test
+    void verifyOtpClearsTrialDatesWhenPromotingToAdmin() {
+        User user = activeUser("admin@example.com", List.of("USER"));
+        user.setTrialStartDate(Instant.now().minus(1, ChronoUnit.DAYS));
+        user.setTrialEndDate(Instant.now().plus(13, ChronoUnit.DAYS));
+        stubValidPendingOtp(user);
+        when(adminProperties.isAdminEmail("admin@example.com")).thenReturn(true);
+
+        otpService.verifyOtp("admin@example.com", "123456");
+
+        assertThat(user.getTrialStartDate()).isNull();
+        assertThat(user.getTrialEndDate()).isNull();
+    }
+
+    @Test
+    void verifyOtpClearsTrialDatesForAnAlreadyPromotedAdminOnEveryLogin() {
+        User user = activeUser("admin@example.com", List.of("USER", "ADMIN"));
+        user.setTrialEndDate(Instant.now().plus(5, ChronoUnit.DAYS));
+        stubValidPendingOtp(user);
+        when(adminProperties.isAdminEmail("admin@example.com")).thenReturn(true);
+
+        otpService.verifyOtp("admin@example.com", "123456");
+
+        assertThat(user.getTrialEndDate()).isNull();
+    }
+
+    @Test
+    void verifyOtpLeavesTrialDatesAloneForARegularUser() {
+        User user = activeUser("user@example.com", List.of("USER"));
+        Instant trialEnd = Instant.now().plus(10, ChronoUnit.DAYS);
+        user.setTrialEndDate(trialEnd);
+        stubValidPendingOtp(user);
+        when(adminProperties.isAdminEmail("user@example.com")).thenReturn(false);
+
+        otpService.verifyOtp("user@example.com", "123456");
+
+        assertThat(user.getTrialEndDate()).isEqualTo(trialEnd);
+    }
 }

@@ -132,6 +132,12 @@ public class OtpService {
             roles.add("ADMIN");
             user.setRoles(roles);
         }
+        if (user.getRoles().contains("ADMIN")) {
+            // Admins aren't subject to trial enforcement — clear on every login so it also covers
+            // an account promoted to ADMIN under a previous version of this check.
+            user.setTrialStartDate(null);
+            user.setTrialEndDate(null);
+        }
         user.setLastLoginDate(now);
         userRepository.save(user);
     }
