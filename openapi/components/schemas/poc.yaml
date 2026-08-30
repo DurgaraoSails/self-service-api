@@ -5,15 +5,22 @@ PocSummaryResponse:
     repository, and container-image references, which are only returned to authenticated callers.
   required:
     - id
+    - slug
     - name
     - description
     - status
+    - embedMode
   properties:
     id:
       type: integer
       format: int64
       description: Unique identifier of the POC.
       example: 1
+
+    slug:
+      type: string
+      description: URL-safe identifier used to launch the POC via the Access Gateway.
+      example: "contract-agent"
 
     name:
       type: string
@@ -75,6 +82,15 @@ PocSummaryResponse:
         Lifecycle status of the POC. HIDDEN removes it from the regular (non-admin) dashboard
         listing without deleting it.
       example: "ACTIVE"
+
+    embedMode:
+      type: string
+      enum: [IFRAME, NEW_TAB]
+      description: >
+        How Launch opens this POC. IFRAME embeds it in the workspace page (needs the gateway's
+        session cookie relaxed to SameSite=None for this POC specifically). NEW_TAB opens it in
+        a separate browser tab and keeps the stricter SameSite=Strict cookie.
+      example: "IFRAME"
 
     details:
       type: string
@@ -200,6 +216,12 @@ CreatePocRequest:
       description: Defaults to "ACTIVE" if omitted.
       example: "ACTIVE"
 
+    embedMode:
+      type: string
+      enum: [IFRAME, NEW_TAB]
+      description: Defaults to "IFRAME" if omitted.
+      example: "IFRAME"
+
     details:
       type: string
       example: "An AI-guided assistant that walks teams through internal processes step by step."
@@ -285,6 +307,12 @@ UpdatePocRequest:
       enum: [ACTIVE, HIDDEN]
       description: Defaults to "ACTIVE" if omitted.
       example: "ACTIVE"
+
+    embedMode:
+      type: string
+      enum: [IFRAME, NEW_TAB]
+      description: Defaults to "IFRAME" if omitted.
+      example: "IFRAME"
 
     details:
       type: string

@@ -20,6 +20,7 @@ public record PocFields(
         String containerImage,
         String demoType,
         String status,
+        String embedMode,
         String details,
         List<String> guideSteps
 ) {

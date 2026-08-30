@@ -44,11 +44,12 @@ public class JwtService {
         return builder.signWith(jwtPrivateKey, Jwts.SIG.RS256).compact();
     }
 
-    public String mintPocAccessToken(String userId, String pocSlug, UUID demoSessionId, Instant expiresAt) {
+    public String mintPocAccessToken(String userId, String pocSlug, UUID demoSessionId, Instant expiresAt, String embedMode) {
         return Jwts.builder()
                 .subject(userId)
                 .audience().add(pocSlug).and()
                 .claim("sid", demoSessionId.toString()) // lets the gateway's refresh check hit demo_sessions by id directly
+                .claim("embed", embedMode) // lets the gateway pick the session cookie's SameSite value per POC
                 .issuedAt(Date.from(Instant.now()))
                 .expiration(Date.from(expiresAt))
                 .signWith(jwtPrivateKey, Jwts.SIG.RS256)

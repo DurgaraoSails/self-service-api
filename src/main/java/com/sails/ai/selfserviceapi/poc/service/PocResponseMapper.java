@@ -13,8 +13,9 @@ public final class PocResponseMapper {
     }
 
     public static PocSummaryResponse toSummaryResponse(Poc poc) {
-        return new PocSummaryResponse(poc.getId(), poc.getName(), poc.getDescription(),
-                PocSummaryResponse.StatusEnum.fromValue(poc.getStatus()))
+        return new PocSummaryResponse(poc.getId(), poc.getSlug(), poc.getName(), poc.getDescription(),
+                PocSummaryResponse.StatusEnum.fromValue(poc.getStatus()),
+                PocSummaryResponse.EmbedModeEnum.fromValue(poc.getEmbedMode()))
                 .iconUrl(poc.getIconUrl())
                 .version(poc.getVersion())
                 .owner(poc.getOwner())
@@ -27,8 +28,9 @@ public final class PocResponseMapper {
     }
 
     public static PocResponse toResponse(Poc poc) {
-        return new PocResponse(poc.getId(), poc.getName(), poc.getDescription(),
-                PocResponse.StatusEnum.fromValue(poc.getStatus()))
+        return new PocResponse(poc.getId(), poc.getSlug(), poc.getName(), poc.getDescription(),
+                PocResponse.StatusEnum.fromValue(poc.getStatus()),
+                PocResponse.EmbedModeEnum.fromValue(poc.getEmbedMode()))
                 .iconUrl(poc.getIconUrl())
                 .version(poc.getVersion())
                 .owner(poc.getOwner())

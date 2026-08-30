@@ -1,44 +1,51 @@
 package com.sails.ai.selfserviceapi.poc.controller;
 
 import com.sails.ai.selfserviceapi.generated.api.PocApi;
+import com.sails.ai.selfserviceapi.generated.api.PocSessionsApi;
 import com.sails.ai.selfserviceapi.generated.model.CreatePocRequest;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
+import com.sails.ai.selfserviceapi.generated.model.PocSessionResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdatePocRequest;
+import com.sails.ai.selfserviceapi.poc.config.PocGatewayProperties;
 import com.sails.ai.selfserviceapi.poc.entity.DemoSession;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
-import com.sails.ai.selfserviceapi.poc.repository.DemoSessionRepository;
 import com.sails.ai.selfserviceapi.poc.service.DemoSessionService;
 import com.sails.ai.selfserviceapi.poc.service.PocFields;
 import com.sails.ai.selfserviceapi.poc.service.PocResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
 
+import java.net.URI;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Map;
 
 import com.sails.ai.selfserviceapi.security.JwtService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
-public class PocController implements PocApi {
+public class PocController implements PocApi, PocSessionsApi {
+
+    private static final String LIVE_STATUS = "ACTIVE";
 
     private final PocService pocService;
     private final JwtService jwtService;
     private final DemoSessionService demoSessionService;
+    private final PocGatewayProperties pocGatewayProperties;
 
     public PocController(PocService pocService,
                          JwtService jwtService,
-                         DemoSessionService demoSessionService) {
+                         DemoSessionService demoSessionService,
+                         PocGatewayProperties pocGatewayProperties) {
         this.pocService = pocService;
         this.jwtService = jwtService;
         this.demoSessionService = demoSessionService;
+        this.pocGatewayProperties = pocGatewayProperties;
     }
 
     @Override
@@ -72,6 +79,7 @@ public class PocController implements PocApi {
                 createPocRequest.getContainerImage(),
                 createPocRequest.getDemoType(),
                 createPocRequest.getStatus() != null ? createPocRequest.getStatus().getValue() : null,
+                createPocRequest.getEmbedMode() != null ? createPocRequest.getEmbedMode().getValue() : null,
                 createPocRequest.getDetails(),
                 createPocRequest.getGuideSteps()
         );
@@ -95,6 +103,7 @@ public class PocController implements PocApi {
                 updatePocRequest.getContainerImage(),
                 updatePocRequest.getDemoType(),
                 updatePocRequest.getStatus() != null ? updatePocRequest.getStatus().getValue() : null,
+                updatePocRequest.getEmbedMode() != null ? updatePocRequest.getEmbedMode().getValue() : null,
                 updatePocRequest.getDetails(),
                 updatePocRequest.getGuideSteps()
         );
@@ -127,19 +136,13 @@ public class PocController implements PocApi {
         return ResponseEntity.ok(PocResponseMapper.toResponse(pocService.restore(id)));
     }
 
-    public ResponseEntity<?> launchSession(
-            String slug,
-            Authentication authentication) {
-
-        // NOTE: adjust this to however your existing passwordless auth exposes
-        // the current user's id — this assumes Authentication#getName() returns
-        // the user's UUID as a string. Flag it back to me if your principal
-        // shape is different (e.g. a custom UserDetails with getId()).
-        String userId = authentication.getName();
+    @Override
+    public ResponseEntity<PocSessionResponse> launchPocSession(String slug) {
+        String userId = CurrentUser.id();
 
         Poc poc = pocService.getBySlug(slug);
 
-        if (!"live".equals(poc.getStatus())) {
+        if (!LIVE_STATUS.equals(poc.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "POC is not currently live (status: " + poc.getStatus() + ")");
         }
 
@@ -152,19 +155,18 @@ public class PocController implements PocApi {
         session.setExpiresAt(expiresAt);
         session = demoSessionService.save(session); // saved first so we have an id for the "sid" claim
 
-        String token = jwtService.mintPocAccessToken(userId, slug, session.getId(), expiresAt);
+        String token = jwtService.mintPocAccessToken(userId, slug, session.getId(), expiresAt, poc.getEmbedMode());
 
         session.setAccessToken(token);
         demoSessionService.save(session);
 
-        String baseDomain = "localhost";
-        String publicUrl = "https://" + slug + "." + baseDomain;
+        URI publicUrl = URI.create("https://" + slug + "." + pocGatewayProperties.domain());
 
-        return ResponseEntity.ok(Map.of(
-                "publicUrl", publicUrl,
-                "accessToken", token,
-                "expiresAt", expiresAt.toString(),
-                "sessionId", session.getId().toString()
+        return ResponseEntity.ok(new PocSessionResponse(
+                publicUrl,
+                token,
+                expiresAt.atOffset(ZoneOffset.UTC),
+                session.getId()
         ));
     }
 }

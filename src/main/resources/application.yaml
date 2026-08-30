@@ -75,6 +75,8 @@ app:
     from-name: ${MAIL_FROM_NAME:Self Service}
   frontend:
     url: ${FRONTEND_URL:http://localhost:4200}
+  poc:
+    domain: ${POC_DOMAIN:localhost}
 
 management:
   endpoints:

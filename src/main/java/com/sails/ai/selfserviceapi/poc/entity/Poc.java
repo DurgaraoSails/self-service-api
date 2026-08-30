@@ -67,6 +67,9 @@ public class Poc {
     @Column(name = "status", nullable = false, length = 50)
     private String status = "ACTIVE";
 
+    @Column(name = "embed_mode", nullable = false, length = 10)
+    private String embedMode = "IFRAME";
+
     @Column(name = "details")
     private String details;
 

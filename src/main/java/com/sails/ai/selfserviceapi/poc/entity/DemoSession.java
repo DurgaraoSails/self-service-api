@@ -34,5 +34,8 @@ public class DemoSession {
     @Column(name = "created_at")
     private Instant createdAt;
 
-    // getters/setters
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+    }
 }

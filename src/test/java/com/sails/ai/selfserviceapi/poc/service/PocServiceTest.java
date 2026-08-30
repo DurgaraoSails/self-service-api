@@ -93,6 +93,7 @@ class PocServiceTest {
                 "registry/company/rag-assistant:1.2.0",
                 "interactive",
                 "ACTIVE",
+                "IFRAME",
                 "Longer-form details shown on the public details page.",
                 List.of("Step one.", "Step two.")
         );
@@ -116,6 +117,7 @@ class PocServiceTest {
         assertThat(created.getContainerImage()).isEqualTo("registry/company/rag-assistant:1.2.0");
         assertThat(created.getDemoType()).isEqualTo("interactive");
         assertThat(created.getStatus()).isEqualTo("ACTIVE");
+        assertThat(created.getEmbedMode()).isEqualTo("IFRAME");
         assertThat(created.getDetails()).isEqualTo("Longer-form details shown on the public details page.");
         assertThat(created.getGuideSteps()).containsExactly("Step one.", "Step two.");
     }
@@ -126,10 +128,11 @@ class PocServiceTest {
 
         Poc created = pocService.create(new PocFields(
                 "Contract Agent", "Review & generate contracts.", null, null, null,
-                null, null, null, null, null, null, null, null, null
+                null, null, null, null, null, null, null, null, null, null
         ));
 
         assertThat(created.getStatus()).isEqualTo("ACTIVE");
+        assertThat(created.getEmbedMode()).isEqualTo("IFRAME");
         assertThat(created.getTechnologies()).isEmpty();
         assertThat(created.getGuideSteps()).isEmpty();
     }
@@ -153,6 +156,7 @@ class PocServiceTest {
                 "registry/company/renamed:2.0.0",
                 "video",
                 "INACTIVE",
+                "NEW_TAB",
                 "Updated details.",
                 List.of("Only step.")
         ));
@@ -169,6 +173,7 @@ class PocServiceTest {
         assertThat(updated.getContainerImage()).isEqualTo("registry/company/renamed:2.0.0");
         assertThat(updated.getDemoType()).isEqualTo("video");
         assertThat(updated.getStatus()).isEqualTo("INACTIVE");
+        assertThat(updated.getEmbedMode()).isEqualTo("NEW_TAB");
         assertThat(updated.getDetails()).isEqualTo("Updated details.");
         assertThat(updated.getGuideSteps()).containsExactly("Only step.");
     }
@@ -178,7 +183,7 @@ class PocServiceTest {
         when(pocRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> pocService.update(99L, new PocFields(
-                "n", "d", null, null, null, null, null, null, null, null, null, null, null, null)))
+                "n", "d", null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(PocNotFoundException.class);
     }
 

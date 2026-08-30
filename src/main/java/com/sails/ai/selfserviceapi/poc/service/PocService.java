@@ -17,6 +17,7 @@ public class PocService {
 
     private static final String DEFAULT_STATUS = "ACTIVE";
     private static final String HIDDEN_STATUS = "HIDDEN";
+    private static final String DEFAULT_EMBED_MODE = "IFRAME";
 
     private final PocRepository pocRepository;
 
@@ -100,6 +101,7 @@ public class PocService {
         poc.setContainerImage(fields.containerImage());
         poc.setDemoType(fields.demoType());
         poc.setStatus(fields.status() != null ? fields.status() : DEFAULT_STATUS);
+        poc.setEmbedMode(fields.embedMode() != null ? fields.embedMode() : DEFAULT_EMBED_MODE);
         poc.setDetails(fields.details());
         poc.setGuideSteps(fields.guideSteps() != null ? fields.guideSteps() : new ArrayList<>());
     }
