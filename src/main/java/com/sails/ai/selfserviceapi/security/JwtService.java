@@ -4,6 +4,7 @@ import com.sails.ai.selfserviceapi.user.entity.User;
 import io.jsonwebtoken.Jwts;
 import java.security.interfaces.RSAPrivateKey;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,21 @@ public class JwtService {
         }
 
         return builder.signWith(jwtPrivateKey, Jwts.SIG.RS256).compact();
+    }
+
+    public String mintPocAccessToken(String userId, String pocSlug, UUID demoSessionId, Instant expiresAt) {
+        return Jwts.builder()
+                .subject(userId)
+                .audience().add(pocSlug).and()
+                .claim("sid", demoSessionId.toString()) // lets the gateway's refresh check hit demo_sessions by id directly
+                .issuedAt(Date.from(Instant.now()))
+                .expiration(Date.from(expiresAt))
+                .signWith(jwtPrivateKey, Jwts.SIG.RS256)
+                .compact();
+    }
+
+    public Instant computeExpiry() {
+        return Instant.now().plus(jwtProperties.accessTokenTtl().toMinutes(), ChronoUnit.MINUTES);
     }
 
     public long accessTokenTtlSeconds() {

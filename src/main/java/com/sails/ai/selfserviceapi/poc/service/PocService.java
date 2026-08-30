@@ -6,8 +6,11 @@ import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class PocService {
@@ -35,6 +38,11 @@ public class PocService {
     public Poc getById(Long id) {
         return pocRepository.findById(id)
                 .orElseThrow(() -> new PocNotFoundException(id));
+    }
+
+    public Poc getBySlug(String slug) {
+        return pocRepository.findBySlug(slug)
+                .orElseThrow(() -> new PocNotFoundException(slug));
     }
 
     @Transactional

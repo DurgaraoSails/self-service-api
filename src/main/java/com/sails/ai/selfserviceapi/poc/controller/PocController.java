@@ -5,24 +5,40 @@ import com.sails.ai.selfserviceapi.generated.model.CreatePocRequest;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdatePocRequest;
+import com.sails.ai.selfserviceapi.poc.entity.DemoSession;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.repository.DemoSessionRepository;
+import com.sails.ai.selfserviceapi.poc.service.DemoSessionService;
 import com.sails.ai.selfserviceapi.poc.service.PocFields;
 import com.sails.ai.selfserviceapi.poc.service.PocResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
+
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+
+import com.sails.ai.selfserviceapi.security.JwtService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 public class PocController implements PocApi {
 
     private final PocService pocService;
+    private final JwtService jwtService;
+    private final DemoSessionService demoSessionService;
 
-    public PocController(PocService pocService) {
+    public PocController(PocService pocService,
+                         JwtService jwtService,
+                         DemoSessionService demoSessionService) {
         this.pocService = pocService;
+        this.jwtService = jwtService;
+        this.demoSessionService = demoSessionService;
     }
 
     @Override
@@ -109,5 +125,46 @@ public class PocController implements PocApi {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> restorePoc(Long id) {
         return ResponseEntity.ok(PocResponseMapper.toResponse(pocService.restore(id)));
+    }
+
+    public ResponseEntity<?> launchSession(
+            String slug,
+            Authentication authentication) {
+
+        // NOTE: adjust this to however your existing passwordless auth exposes
+        // the current user's id — this assumes Authentication#getName() returns
+        // the user's UUID as a string. Flag it back to me if your principal
+        // shape is different (e.g. a custom UserDetails with getId()).
+        String userId = authentication.getName();
+
+        Poc poc = pocService.getBySlug(slug);
+
+        if (!"live".equals(poc.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "POC is not currently live (status: " + poc.getStatus() + ")");
+        }
+
+        Instant expiresAt = jwtService.computeExpiry();
+
+        DemoSession session = new DemoSession();
+        session.setPocId(poc.getId());
+        session.setUserId(userId);
+        session.setStatus("confirmed");
+        session.setExpiresAt(expiresAt);
+        session = demoSessionService.save(session); // saved first so we have an id for the "sid" claim
+
+        String token = jwtService.mintPocAccessToken(userId, slug, session.getId(), expiresAt);
+
+        session.setAccessToken(token);
+        demoSessionService.save(session);
+
+        String baseDomain = "localhost";
+        String publicUrl = "https://" + slug + "." + baseDomain;
+
+        return ResponseEntity.ok(Map.of(
+                "publicUrl", publicUrl,
+                "accessToken", token,
+                "expiresAt", expiresAt.toString(),
+                "sessionId", session.getId().toString()
+        ));
     }
 }

@@ -1,5 +1,6 @@
 CREATE TABLE pocs (
     id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    slug             TEXT UNIQUE NOT NULL,
     name             VARCHAR(200) NOT NULL,
     description      VARCHAR(2000) NOT NULL,
     icon_url         VARCHAR(500),

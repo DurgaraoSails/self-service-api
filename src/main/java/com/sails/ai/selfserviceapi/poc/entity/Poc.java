@@ -27,6 +27,9 @@ public class Poc {
     @Column(name = "id", nullable = false, updatable = false)
     private Long id;
 
+    @Column(unique = true, nullable = false)
+    private String slug;
+
     @Column(name = "name", nullable = false, length = 200)
     private String name;
 

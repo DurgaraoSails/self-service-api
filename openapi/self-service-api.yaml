@@ -736,6 +736,47 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/{slug}/session:
+    post:
+      summary: Launch a demo session for a POC
+      description: >
+        Mints a short-lived, POC-scoped access token for the authenticated
+        user and creates a demo_sessions record. The returned accessToken
+        is scoped to this POC only (aud claim = slug) and must be used to
+        bootstrap the Access Gateway session
+      operationId: launchPocSession
+      tags:
+        - POC Sessions
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: URL-safe identifier of the POC to launch
+          schema:
+            type: string
+            pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+            example: ai-assistant
+      responses:
+        '200':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocSessionResponse'
+              example:
+                publicUrl: https://churn-predictor.demos.company.com
+                accessToken: eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI...
+                expiresAt: '2026-08-30T15:45:00Z'
+                sessionId: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /activity/heartbeat:
     post:
       summary: Record that the caller is actively using a POC

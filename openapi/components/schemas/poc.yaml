@@ -297,3 +297,26 @@ UpdatePocRequest:
       example:
         - "Click Launch to open the assistant in your session."
         - "Describe the process or task you need help with in plain language."
+
+PocSessionResponse:
+  type: object
+  required: [publicUrl, accessToken, expiresAt, sessionId]
+  properties:
+    publicUrl:
+      type: string
+      format: uri
+      description: The POC's public subdomain URL to bootstrap into
+      example: https://churn-predictor.demos.company.com
+    accessToken:
+      type: string
+      description: >
+        Short-lived RS256-signed JWT, aud=slug, sub=userId, sid=sessionId.
+        Passed to the Access Gateway's bootstrap endpoint, never stored
+        client-side beyond the bootstrap redirect.
+    expiresAt:
+      type: string
+      format: date-time
+      example: '2026-08-30T15:45:00Z'
+    sessionId:
+      type: string
+      format: uuid
