@@ -97,3 +97,8 @@ brevo:
 
 github:
   token: ${GITHUB_TOKEN}
+
+gcp:
+  project-id: ${GCP_PROJECT_ID:sails-agenthub}
+  region: ${GCP_REGION:us-central1}
+  environment: ${GCP_ENVIRONMENT:dev}

@@ -17,7 +17,7 @@ import org.springframework.web.client.RestClient;
  * Run directly: mvnw test -Dtest=GitHubServiceIT
  */
 @EnabledIfEnvironmentVariable(named = "GITHUB_TOKEN", matches = ".+")
-class GitHubServiceTest {
+class GitHubServiceIT {
 
     private static final String REPO_URL = "https://github.com/DurgaraoSails/dummy-poc";
 
