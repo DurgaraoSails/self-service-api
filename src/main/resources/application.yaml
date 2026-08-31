@@ -94,3 +94,6 @@ server:
 
 brevo:
   api-key: ${BREVO_API_KEY}
+
+github:
+  token: ${GITHUB_TOKEN}
