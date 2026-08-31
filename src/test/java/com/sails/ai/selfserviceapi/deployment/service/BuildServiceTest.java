@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.sails.ai.selfserviceapi.deployment.config.GcpProperties;
 import com.sails.ai.selfserviceapi.deployment.service.BuildService.BuildRequest;
+import com.sails.ai.selfserviceapi.deployment.service.BuildService.BuildSubmission;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
@@ -47,9 +48,10 @@ class BuildServiceTest {
         BuildService buildService = new BuildService(restClient, GCP_PROPERTIES);
         GitHubRepoRef repo = new GitHubRepoRef("DurgaraoSails", "dummy-poc");
 
-        String buildId = buildService.submitBuild(new BuildRequest("dummy-poc", "1.0.0", repo));
+        BuildSubmission submission = buildService.submitBuild(new BuildRequest("dummy-poc", "1.0.0", repo));
 
-        assertThat(buildId).isEqualTo("abc-123");
+        assertThat(submission.cloudBuildId()).isEqualTo("abc-123");
+        assertThat(submission.imageUri()).isEqualTo("us-central1-docker.pkg.dev/sails-agenthub/poc-images/dummy-poc/app:1.0.0");
 
         String body = capturedBody.toString();
         assertThat(body)

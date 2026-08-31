@@ -80,6 +80,23 @@ public class Poc {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    @Column(name = "slug")
+    private String slug;
+
+    // Deliberately separate from `status` above — that's an admin visibility toggle
+    // (ACTIVE/HIDDEN), this is the deployment pipeline's own lifecycle.
+    @Column(name = "deployment_status", nullable = false, length = 50)
+    private String deploymentStatus = "active";
+
+    @Column(name = "current_release_tag")
+    private String currentReleaseTag;
+
+    @Column(name = "latest_main_commit_sha")
+    private String latestMainCommitSha;
+
+    @Column(name = "latest_main_checked_at")
+    private Instant latestMainCheckedAt;
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();

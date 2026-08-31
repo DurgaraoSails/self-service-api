@@ -40,9 +40,9 @@ class BuildServiceIT {
         BuildService buildService = new BuildService(restClient, gcpProperties);
         GitHubRepoRef repo = new GitHubRepoRef("DurgaraoSails", "dummy-poc");
 
-        String buildId = buildService.submitBuild(new BuildRequest("dummy-poc", "1.0.0", repo));
+        var submission = buildService.submitBuild(new BuildRequest("dummy-poc", "1.0.0", repo));
 
-        assertThat(buildId).isNotBlank();
-        System.out.println("Submitted Cloud Build job: " + buildId);
+        assertThat(submission.cloudBuildId()).isNotBlank();
+        System.out.println("Submitted Cloud Build job: " + submission.cloudBuildId());
     }
 }

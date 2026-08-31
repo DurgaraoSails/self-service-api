@@ -19,16 +19,17 @@ public class BuildService {
         this.gcpProperties = gcpProperties;
     }
 
-    /** Submits the tag-build-push-deploy job for one POC release. Returns the Cloud Build job ID. */
-    public String submitBuild(BuildRequest request) {
-        BuildConfig config = buildConfig(request);
+    /** Submits the tag-build-push-deploy job for one POC release. */
+    public BuildSubmission submitBuild(BuildRequest request) {
+        String image = imageUri(request.slug(), request.releaseTag());
+        BuildConfig config = buildConfig(request, image);
         try {
             SubmitBuildResponse response = cloudBuildRestClient.post()
                     .uri("/projects/{project}/builds", gcpProperties.projectId())
                     .body(config)
                     .retrieve()
                     .body(SubmitBuildResponse.class);
-            return response.metadata().build().id();
+            return new BuildSubmission(response.metadata().build().id(), image);
         } catch (RestClientResponseException e) {
             throw new CloudBuildApiException(
                     "Failed to submit build for %s@%s: %d %s".formatted(
@@ -37,9 +38,12 @@ public class BuildService {
         }
     }
 
-    private BuildConfig buildConfig(BuildRequest request) {
-        String image = "%s-docker.pkg.dev/%s/poc-images/%s/app:%s".formatted(
-                gcpProperties.region(), gcpProperties.projectId(), request.slug(), request.releaseTag());
+    private String imageUri(String slug, String releaseTag) {
+        return "%s-docker.pkg.dev/%s/poc-images/%s/app:%s".formatted(
+                gcpProperties.region(), gcpProperties.projectId(), slug, releaseTag);
+    }
+
+    private BuildConfig buildConfig(BuildRequest request, String image) {
 
         // The token is never baked into args/substitutions — those are stored permanently on the
         // Build resource and visible to anyone with build-read access. It only ever exists as a
@@ -82,6 +86,9 @@ public class BuildService {
     }
 
     public record BuildRequest(String slug, String releaseTag, GitHubRepoRef repo) {
+    }
+
+    public record BuildSubmission(String cloudBuildId, String imageUri) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
