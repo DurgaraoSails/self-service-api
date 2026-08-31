@@ -34,6 +34,12 @@ public class ActivityController implements ActivityApi {
     }
 
     @Override
+    public ResponseEntity<Void> endSession(HeartbeatRequest heartbeatRequest) {
+        activityService.endSession(CurrentUser.id(), heartbeatRequest.getPocId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<PocUsageSummary>> getPocLeaderboard() {
         return ResponseEntity.ok(activityService.getPocLeaderboard().stream()

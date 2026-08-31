@@ -133,6 +133,44 @@ class ActivityServiceTest {
     }
 
     @Test
+    void endSessionWithNoOpenSessionIsANoOp() {
+        when(activitySessionRepository.findFirstByUserIdAndPocIdAndEndedAtIsNullOrderByLastSeenAtDesc(USER_ID, POC_ID))
+                .thenReturn(Optional.empty());
+
+        activityService.endSession(USER_ID, POC_ID);
+
+        verify(activitySessionRepository, never()).save(any());
+    }
+
+    @Test
+    void endSessionWithinGracePeriodCreditsTheGapAndClosesTheSessionNow() {
+        ActivitySession existing = openSessionLastSeen(Instant.now().minusSeconds(15), 100);
+        when(activitySessionRepository.findFirstByUserIdAndPocIdAndEndedAtIsNullOrderByLastSeenAtDesc(USER_ID, POC_ID))
+                .thenReturn(Optional.of(existing));
+
+        activityService.endSession(USER_ID, POC_ID);
+
+        assertThat(existing.getTotalSeconds()).isBetween(113L, 117L);
+        assertThat(existing.getEndedAt()).isNotNull();
+        assertThat(existing.getEndedAt()).isEqualTo(existing.getLastSeenAt());
+        verify(activitySessionRepository).save(existing);
+    }
+
+    @Test
+    void endSessionPastGracePeriodClosesAtTheLastHeartbeatWithoutCreditingTheGap() {
+        Instant staleLastSeen = Instant.now().minus(Duration.ofHours(3));
+        ActivitySession stale = openSessionLastSeen(staleLastSeen, 600);
+        when(activitySessionRepository.findFirstByUserIdAndPocIdAndEndedAtIsNullOrderByLastSeenAtDesc(USER_ID, POC_ID))
+                .thenReturn(Optional.of(stale));
+
+        activityService.endSession(USER_ID, POC_ID);
+
+        assertThat(stale.getTotalSeconds()).isEqualTo(600);
+        assertThat(stale.getEndedAt()).isEqualTo(staleLastSeen);
+        verify(activitySessionRepository).save(stale);
+    }
+
+    @Test
     void getDailyUsageRejectsAFromDateAfterTo() {
         assertThatThrownBy(() -> activityService.getDailyUsage(LocalDate.of(2026, 8, 27), LocalDate.of(2026, 8, 20)))
                 .isInstanceOf(ApiException.class)

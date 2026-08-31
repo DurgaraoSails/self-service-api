@@ -765,6 +765,33 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /activity/end:
+    post:
+      summary: Close the caller's open session for a POC immediately
+      description: >
+        Sent when the portal detects the caller leaving a POC workspace (in-app navigation, tab
+        close, or reload), so the session closes right away instead of waiting out the server's
+        grace period. A no-op if there's no open session, so it's safe to call more than once
+        or after the session has already closed on its own.
+      operationId: endSession
+      tags:
+        - Activity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/activity.yaml#/HeartbeatRequest'
+      responses:
+        '204':
+          description: Session closed, or no open session to close
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /activity/leaderboard/pocs:
     get:
       summary: POCs ranked by total usage time (admin only)

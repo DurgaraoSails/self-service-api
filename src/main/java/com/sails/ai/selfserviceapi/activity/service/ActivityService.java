@@ -86,6 +86,37 @@ public class ActivityService {
         activitySessionRepository.save(session);
     }
 
+    /**
+     * Explicit close, called when the portal detects the caller leaving a POC workspace (in-app
+     * navigation away, tab close, or reload) instead of relying solely on the grace period to
+     * expire. Credits the gap since the last heartbeat with the same rules as {@link
+     * #recordHeartbeat} — capped, and not counted at all if it's already past {@link
+     * #GRACE_PERIOD} — then closes the session immediately rather than leaving it open. A no-op
+     * if there's no open session, so a duplicate or late-arriving call (e.g. both an in-app
+     * cleanup and a beacon on tab close) is harmless.
+     */
+    @Transactional
+    public void endSession(String userId, Long pocId) {
+        Optional<ActivitySession> openSession =
+                activitySessionRepository.findFirstByUserIdAndPocIdAndEndedAtIsNullOrderByLastSeenAtDesc(userId, pocId);
+        if (openSession.isEmpty()) {
+            return;
+        }
+
+        ActivitySession session = openSession.get();
+        Instant now = Instant.now();
+        long gapSeconds = Duration.between(session.getLastSeenAt(), now).getSeconds();
+
+        if (gapSeconds <= GRACE_PERIOD.getSeconds()) {
+            session.setTotalSeconds(session.getTotalSeconds() + Math.clamp(gapSeconds, 0, MAX_TICK_SECONDS));
+            session.setLastSeenAt(now);
+            session.setEndedAt(now);
+        } else {
+            session.setEndedAt(session.getLastSeenAt());
+        }
+        activitySessionRepository.save(session);
+    }
+
     public List<PocUsageProjection> getPocLeaderboard() {
         return activitySessionRepository.findPocUsage();
     }
