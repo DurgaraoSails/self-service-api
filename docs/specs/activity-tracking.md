@@ -40,10 +40,12 @@ all aggregates anyway. Instead each row is a continuous stretch of use (`started
 `last_seen_at`, `ended_at`, `total_seconds`), extended in place by each heartbeat. This still
 supports the session timeline the drill-down needs, at a tiny fraction of the row count.
 
-**Sessions close implicitly, via a grace period — no "end session" call, no cleanup job.**
-Relying on the client to announce that it's leaving would mean a closed laptop, a crashed tab, or
-a lost network connection leaves a session open forever, accruing bogus time. Instead each
-heartbeat compares `now` against `last_seen_at`:
+**Sessions close implicitly, via a grace period — the explicit "end session" call is a fast path
+on top of that, not a replacement for it.**
+Relying solely on the client to announce that it's leaving would mean a closed laptop, a crashed
+tab, or a lost network connection leaves a session open forever, accruing bogus time. So the grace
+period remains the ground truth: each heartbeat (and `endSession`) compares `now` against
+`last_seen_at`:
 - within `GRACE_PERIOD` (90s) → the same session is extended by the elapsed gap;
 - beyond it → the old session is closed *at its own `last_seen_at`* (the last moment we actually
   know the user was there — not `now`, which would silently bank the entire absence as usage),
@@ -52,7 +54,11 @@ heartbeat compares `now` against `last_seen_at`:
 So an abandoned tab simply stops accumulating on its own, and a user returning to the same POC
 hours later gets a second session rather than one session with a bogus multi-hour middle. This is
 why no reconciliation job exists: there is no such thing as a stale session needing repair, only
-one that hasn't been observed as closed yet.
+one that hasn't been observed as closed yet — `endSession` just lets a *well-behaved* client
+(SPA navigation, or a tab close that got a beacon out) close it right away instead of leaving it
+to be observed as closed up to `GRACE_PERIOD` later. `POST /activity/end` runs the exact same
+gap-crediting logic as a heartbeat, so it can't be used to inflate or shortcut real elapsed time —
+it only changes *when* an already-correct close happens, never *how much* is credited.
 
 **A `MAX_TICK_SECONDS` (120s) cap on what any single heartbeat can credit.**
 Without it, a laptop suspended for 89 seconds — still inside the grace period — would bank the
@@ -84,6 +90,23 @@ only the `id` input signal changes, and `ngOnDestroy` never fires. A timer torn 
 Starting and clearing the interval inside the same `effect()` that reacts to `id()`, via its
 cleanup callback, is what makes POC-to-POC navigation correct. This is covered by a regression
 test in `poc-workspace.spec.ts`.
+
+**Frontend: `endSession` is called from that same effect cleanup, plus a `pagehide` fetch-keepalive
+fallback for an actual tab close.** The cleanup callback above already fires exactly when the
+workspace is left — via `id()` changing (POC-to-POC navigation) or component destruction (leaving
+the workspace route entirely) — so it's also where `activityApi.endSession(pocId)` is called, via
+the normal `HttpClient`/interceptor path. This is the common case (an in-app route change) and
+needs nothing special: the SPA is still running, so the request completes normally.
+
+An actual tab close or hard reload is different — the JS context can be torn down before that
+cleanup callback finishes, and per the previous "Open Questions" note, `sendBeacon` can't carry
+the `Authorization` header this API requires. Resolved with `fetch(url, { keepalive: true, headers:
+{ Authorization: ... } })` in a `pagehide` listener (registered and removed alongside the interval,
+in the same effect) — `keepalive` lets the request outlive the page unload, and unlike
+`sendBeacon` it can carry arbitrary headers, so the token is read synchronously from
+`TokenStorage` and attached by hand (this call bypasses `HttpClient`, so the auth interceptor
+never runs). `POST /activity/end` is idempotent (a no-op with no open session), so it's harmless
+if both paths fire for the same departure.
 
 **Heartbeats pause on a hidden tab.**
 The interval checks `document.visibilityState` before firing, so a POC workspace left open in a
@@ -118,6 +141,10 @@ matcher was needed — these fall under the existing authenticated-by-default ca
 
 - **`POST /activity/heartbeat`** — `HeartbeatRequest {pocId}` → `204`. Any authenticated user,
   recording their own usage only. `404 POC_NOT_FOUND` for an unknown POC.
+- **`POST /activity/end`** — `HeartbeatRequest {pocId}` → `204`. Same body/auth shape as
+  heartbeat, but closes the caller's open session immediately (crediting the gap since the last
+  heartbeat first) instead of leaving it for the grace period to expire. A no-op if there's no
+  open session for that user+POC.
 - **`GET /activity/leaderboard/pocs`** — **admin only**. `PocUsageSummary[]`
   (`{pocId, pocName, totalSeconds, userCount}`), ordered by `totalSeconds` desc.
 - **`GET /activity/leaderboard/users`** — **admin only**. `UserUsageSummary[]`
@@ -159,10 +186,12 @@ formatted client-side.
 - **Deleted POCs still appear** in the leaderboard if they have recorded usage — the join doesn't
   filter on `deleted_at`. Arguably correct (the time really was spent), but worth an explicit
   product call.
-- **Best-effort final heartbeat on tab close** was designed but not implemented: `sendBeacon`
-  can't carry the `Authorization` header, so it would need `fetch(..., {keepalive: true})` in a
-  `pagehide` listener. Skipped because the grace-period design already bounds the loss to under
-  one heartbeat interval.
+- ~~**Best-effort final heartbeat on tab close** was designed but not implemented...~~ Implemented
+  2026-08-31 as `POST /activity/end` plus a `pagehide` + `fetch(..., {keepalive: true})` listener
+  on the frontend — see the Architecture Decisions above. In-app navigation away from a POC now
+  closes the session immediately (not best-effort — the SPA is still running); an actual tab
+  close/reload remains best-effort, same as originally scoped, since the browser can still drop
+  the request before it lands.
 - **Concurrent sessions for the same user+POC** (two tabs on the same POC) will extend a single
   session rather than counting double — which is the desired behaviour — but two tabs on
   *different* POCs will legitimately accrue time in parallel, so a user's total can exceed their
@@ -170,6 +199,22 @@ formatted client-side.
 
 ## Changelog
 
+- 2026-08-31 — Added `POST /activity/end` so a departing session closes immediately instead of
+  waiting out `GRACE_PERIOD`: `ActivityService.endSession` runs the same gap-crediting logic as
+  `recordHeartbeat` then sets `endedAt` right away (a no-op if there's no open session). Wired
+  into `PocWorkspace`'s existing `id`-effect cleanup for in-app navigation away from a workspace,
+  plus a `pagehide` + `fetch(..., {keepalive: true})` listener (manually attaching the bearer
+  token, since this bypasses `HttpClient`) as a best-effort fallback for an actual tab close or
+  reload — the `sendBeacon`-can't-carry-`Authorization` blocker noted below is why that fallback
+  needed `fetch` with `keepalive` instead. Fixes the admin Activity page's Live tab showing a
+  session as still counting for up to ~90s after the user actually left. Regression-tested in
+  `poc-workspace.spec.ts` (session ends on both an `id` change and component destroy) and
+  `ActivityServiceTest` (no-op with nothing open, within-grace-period credit + immediate close,
+  past-grace-period close at the last real heartbeat without crediting the gap).
+- 2026-08-31 — Restructured the admin Activity page: "Users by usage" is now its own top-level tab
+  (`Overview | Live | Users by usage`) instead of a section stacked under Overview, and the usage
+  trend chart moved into a two-column row alongside "POC(s) by usage" instead of running full-width
+  above both lists — same data and endpoints, layout only.
 - 2026-08-27 — Added `GET /activity/usage/daily` (daily usage totals over an admin-supplied
   `[from, to]` date range, zero-filled via a `generate_series` LEFT JOIN so every day in range
   produces a point) and `GET /activity/active` (sessions currently within the grace period,
