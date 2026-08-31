@@ -46,6 +46,7 @@ public class JwtService {
 
     public String mintPocAccessToken(String userId, String pocSlug, UUID demoSessionId, Instant expiresAt, String embedMode) {
         return Jwts.builder()
+                .issuer(jwtProperties.issuer()) // lets this token also authenticate calls back into self-service-api (e.g. the gateway's session-status check) — its JwtDecoder requires a matching issuer
                 .subject(userId)
                 .audience().add(pocSlug).and()
                 .claim("sid", demoSessionId.toString()) // lets the gateway's refresh check hit demo_sessions by id directly

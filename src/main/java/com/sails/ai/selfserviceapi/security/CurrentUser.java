@@ -19,4 +19,10 @@ public final class CurrentUser {
         Jwt jwt = (Jwt) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         return jwt.getSubject();
     }
+
+    /** Only present on POC access tokens (see JwtService#mintPocAccessToken) — null for a portal login token. */
+    public static String sessionId() {
+        Jwt jwt = (Jwt) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return jwt.getClaimAsString("sid");
+    }
 }

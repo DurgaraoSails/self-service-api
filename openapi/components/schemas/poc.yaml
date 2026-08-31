@@ -348,3 +348,13 @@ PocSessionResponse:
     sessionId:
       type: string
       format: uuid
+
+
+DemoSessionStatusResponse:
+  type: object
+  required: [status]
+  properties:
+    status:
+      type: string
+      description: The demo_sessions row's current status code (requested, confirmed, completed, cancelled).
+      example: confirmed

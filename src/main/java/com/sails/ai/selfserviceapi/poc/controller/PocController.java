@@ -3,6 +3,7 @@ package com.sails.ai.selfserviceapi.poc.controller;
 import com.sails.ai.selfserviceapi.generated.api.PocApi;
 import com.sails.ai.selfserviceapi.generated.api.PocSessionsApi;
 import com.sails.ai.selfserviceapi.generated.model.CreatePocRequest;
+import com.sails.ai.selfserviceapi.generated.model.DemoSessionStatusResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSessionResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
@@ -20,6 +21,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 
 import com.sails.ai.selfserviceapi.security.JwtService;
 import org.springframework.http.HttpStatus;
@@ -168,5 +170,11 @@ public class PocController implements PocApi, PocSessionsApi {
                 expiresAt.atOffset(ZoneOffset.UTC),
                 session.getId()
         ));
+    }
+
+    @Override
+    public ResponseEntity<DemoSessionStatusResponse> getSessionStatus() {
+        DemoSession session = demoSessionService.getById(UUID.fromString(CurrentUser.sessionId()));
+        return ResponseEntity.ok(new DemoSessionStatusResponse(session.getStatus()));
     }
 }

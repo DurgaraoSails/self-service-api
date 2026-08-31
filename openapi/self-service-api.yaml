@@ -777,6 +777,33 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/session/status:
+    get:
+      summary: Current status of the caller's own demo session
+      description: >
+        Called by the Access Gateway (never the portal directly) to re-validate a session on
+        every sliding-refresh tick. The session is identified entirely by the sid claim on the
+        bearer token — there's no path or query parameter, the same way launchPocSession never
+        takes a userId.
+      operationId: getSessionStatus
+      tags:
+        - POC Sessions
+      responses:
+        '200':
+          description: The session's current status
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/DemoSessionStatusResponse'
+              example:
+                status: confirmed
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /activity/heartbeat:
     post:
       summary: Record that the caller is actively using a POC
