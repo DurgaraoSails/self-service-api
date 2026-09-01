@@ -63,6 +63,8 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers("/api/v1/**")
                         .authenticated()
+                        .requestMatchers("/users/me", "/users/me/trial/extension-request", "/support/contact-sales")
+                        .authenticated()
                         .anyRequest()
                         .access(AuthorizationManagers.allOf(
                                 AuthenticatedAuthorizationManager.authenticated(),
