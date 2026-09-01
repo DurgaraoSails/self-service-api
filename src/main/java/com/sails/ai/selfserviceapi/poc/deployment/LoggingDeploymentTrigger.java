@@ -2,6 +2,7 @@ package com.sails.ai.selfserviceapi.poc.deployment;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Component;
  * that, making it non-deterministic. Logs a ready-to-paste curl command for exactly that.
  */
 @Component
+@ConditionalOnProperty(prefix = "deployment", name = "trigger", havingValue = "logging")
 public class LoggingDeploymentTrigger implements DeploymentTrigger {
 
     private static final Logger log = LoggerFactory.getLogger(LoggingDeploymentTrigger.class);

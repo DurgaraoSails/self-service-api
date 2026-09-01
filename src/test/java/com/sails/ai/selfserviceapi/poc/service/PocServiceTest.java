@@ -133,6 +133,7 @@ class PocServiceTest {
         return new PocFields(
                 "RAG Assistant",
                 "Enterprise retrieval-augmented generation assistant.",
+                "rag-assistant",
                 "https://cdn.example.com/icon.svg",
                 "https://rag-assistant.example.com",
                 "https://github.com/example-org/rag-assistant",
@@ -171,7 +172,7 @@ class PocServiceTest {
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Poc created = pocService.create(new PocFields(
-                "Contract Agent", "Review & generate contracts.", null, null, null,
+                "Contract Agent", "Review & generate contracts.", null, null, null, null,
                 null, null, null, null, null, null, null
         ));
 
@@ -189,6 +190,7 @@ class PocServiceTest {
         Poc updated = pocService.update(1L, new PocFields(
                 "Renamed Agent",
                 "New description.",
+                "renamed-agent",
                 "https://cdn.example.com/new-icon.svg",
                 "https://renamed.example.com",
                 "https://github.com/example-org/renamed",
@@ -220,7 +222,7 @@ class PocServiceTest {
         when(pocRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> pocService.update(99L, new PocFields(
-                "n", "d", null, null, null, null, null, null, null, null, null, null)))
+                "n", "d", null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(PocNotFoundException.class);
     }
 

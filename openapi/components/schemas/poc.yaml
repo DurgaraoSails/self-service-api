@@ -158,20 +158,6 @@ PocResponse:
           description: URL-safe identifier — Cloud Run service name, image path segment, and deployment-pipeline key.
           example: "contract-agent"
 
-        deploymentStatus:
-          type: string
-          enum: [not_deployed, building, active, failed]
-          description: >
-            Pipeline lifecycle state. Deliberately separate from `status` (ACTIVE/HIDDEN), which
-            is an admin visibility toggle unrelated to whether a deploy actually succeeded.
-          example: "active"
-
-        currentReleaseTag:
-          type: string
-          nullable: true
-          description: Version tag of the release currently live, or null if none has gone live yet.
-          example: "1.0.0"
-
 
 CreatePocRequest:
   type: object
@@ -279,6 +265,16 @@ UpdatePocRequest:
       maxLength: 2000
       example: "Review & generate contracts."
 
+    slug:
+      type: string
+      maxLength: 100
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      description: >
+        Only settable while the POC has no slug yet, so a POC created before the deploy pipeline
+        existed can be adopted into it. Ignored once assigned — the slug names a live Cloud Run
+        service and changing it would orphan the deployment.
+      example: "contract-agent"
+
     iconUrl:
       type: string
       maxLength: 500
@@ -338,40 +334,6 @@ UpdatePocRequest:
         - "Describe the process or task you need help with in plain language."
 
 
-DeployNewVersionRequest:
-  type: object
-  description: Request to tag, build, and deploy a new release of an existing POC.
-  properties:
-    bump:
-      type: string
-      enum: [major, minor, patch]
-      default: minor
-      description: Defaults to "minor" if omitted.
-      example: "minor"
-
-
-CheckUpdatesResponse:
-  type: object
-  description: Result of re-fetching the repo's main branch and comparing it to what's deployed.
-  required:
-    - updateAvailable
-  properties:
-    updateAvailable:
-      type: boolean
-      example: true
-
-    latestMainCommitSha:
-      type: string
-      description: HEAD of main as of this check.
-      example: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
-
-    deployedCommitSha:
-      type: string
-      nullable: true
-      description: Commit the currently-active deployment was built from, or null if none is active yet.
-      example: "0011223344556677889900112233445566778899"
-
-
 PocDeploymentResponse:
   type: object
   description: One tag-build-deploy attempt, for the admin-facing progress/status view.
@@ -427,50 +389,3 @@ PocDeploymentResponse:
       format: date-time
       nullable: true
       description: Null while still building.
-
-
-PocDeploymentSummaryResponse:
-  type: object
-  description: >
-    One POC together with its most recent deployment attempt — the fleet-wide view an admin
-    uses to see what is building, what went live, and what failed. Only the latest attempt per
-    POC is included; full per-POC history is not exposed here.
-  required:
-    - pocId
-    - name
-    - deploymentStatus
-  properties:
-    pocId:
-      type: integer
-      format: int64
-      example: 6
-
-    slug:
-      type: string
-      nullable: true
-      description: Null for POCs created before the self-service pipeline existed.
-      example: "dummy-poc"
-
-    name:
-      type: string
-      example: "Dummy POC"
-
-    deploymentStatus:
-      type: string
-      enum: [not_deployed, building, active, failed]
-      description: Authoritative current pipeline state, taken from the POC itself.
-      example: "failed"
-
-    currentReleaseTag:
-      type: string
-      nullable: true
-      description: Version currently live, or null if nothing has ever gone live.
-      example: "1.2.0"
-
-    latestDeployment:
-      description: >
-        Most recent deployment attempt, or null for a POC that has never been through the
-        pipeline (e.g. a POC seeded before this feature existed).
-      nullable: true
-      allOf:
-        - $ref: '#/PocDeploymentResponse'

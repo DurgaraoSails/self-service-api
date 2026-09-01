@@ -10,6 +10,8 @@ import java.util.List;
 public record PocFields(
         String name,
         String description,
+        /** Assigned once and then immutable — it names a live Cloud Run service. */
+        String slug,
         String iconUrl,
         String appUrl,
         String githubUrl,

@@ -60,6 +60,7 @@ class PocDeploymentServiceTest {
         poc.setId(id);
         poc.setName("Contract Agent");
         poc.setGithubUrl("https://github.com/example-org/contract-agent");
+        poc.setSlug("contract-agent");
         return poc;
     }
 
