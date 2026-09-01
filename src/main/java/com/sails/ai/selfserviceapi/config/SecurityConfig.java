@@ -59,7 +59,13 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/pocs")
                         .permitAll()
+                        // Pipeline-facing endpoints. permitAll only bypasses the JWT filter —
+                        // each one still verifies the X-Pipeline-Webhook-Secret header itself.
                         .requestMatchers(HttpMethod.POST, "/pocs/deployments/*/status")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/pocs/source-repositories")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.POST, "/pocs/upstream-commits")
                         .permitAll()
                         .requestMatchers("/api/v1/**")
                         .authenticated()

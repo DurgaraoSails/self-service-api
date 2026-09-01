@@ -96,6 +96,39 @@ class PocServiceTest {
         assertThat(pocService.listCategories()).containsExactly(healthcare, rag);
     }
 
+    @Test
+    void listSourceRepositoriesOnlyReturnsPocsThePipelineCouldActuallyPoll() {
+        List<Poc> withRepos = List.of(pocWithId(1L));
+        when(pocRepository.findByGithubUrlIsNotNullAndDeletedAtIsNull()).thenReturn(withRepos);
+
+        assertThat(pocService.listSourceRepositories()).isEqualTo(withRepos);
+    }
+
+    @Test
+    void recordUpstreamCommitsStampsTheShaAndTheCheckTime() {
+        Poc poc = pocWithId(1L);
+        when(pocRepository.findAllById(any())).thenReturn(List.of(poc));
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        pocService.recordUpstreamCommits(java.util.Map.of(1L, "abc123"));
+
+        assertThat(poc.getLatestMainCommitSha()).isEqualTo("abc123");
+        assertThat(poc.getLatestMainCheckedAt()).isNotNull();
+    }
+
+    @Test
+    void recordUpstreamCommitsIgnoresPocsThatVanishedMidRun() {
+        Poc stillHere = pocWithId(1L);
+        // Only one of the two reported ids still resolves — the other was deleted in between.
+        when(pocRepository.findAllById(any())).thenReturn(List.of(stillHere));
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        pocService.recordUpstreamCommits(new java.util.LinkedHashMap<>(java.util.Map.of(1L, "abc123", 99L, "def456")));
+
+        assertThat(stillHere.getLatestMainCommitSha()).isEqualTo("abc123");
+        verify(pocRepository, Mockito.times(1)).save(any(Poc.class));
+    }
+
     private static PocFields fullFields() {
         return new PocFields(
                 "RAG Assistant",

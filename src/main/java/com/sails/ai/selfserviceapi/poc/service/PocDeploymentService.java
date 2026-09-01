@@ -114,7 +114,8 @@ public class PocDeploymentService {
     }
 
     @Transactional
-    public PocDeployment reportStatus(UUID deploymentId, String status, String containerImage, String logsUrl, String errorMessage) {
+    public PocDeployment reportStatus(UUID deploymentId, String status, String containerImage, String commitSha,
+                                       String logsUrl, String errorMessage) {
         PocDeployment deployment = getDeploymentById(deploymentId);
         if (isTerminal(deployment.getStatus())) {
             throw new DeploymentAlreadyTerminalException(deploymentId);
@@ -136,6 +137,11 @@ public class PocDeploymentService {
                     throw new MissingContainerImageException(deploymentId);
                 }
                 version.setContainerImage(containerImage);
+                // Optional: only a pipeline that builds from source knows the commit, and a
+                // REDEPLOY rebuilds nothing, so its version already carries the right one.
+                if (commitSha != null && !commitSha.isBlank()) {
+                    version.setCommitSha(commitSha);
+                }
                 pocVersionRepository.save(version);
             }
             Poc poc = getPoc(deployment.getPocId());

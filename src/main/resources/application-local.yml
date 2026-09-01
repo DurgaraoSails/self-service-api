@@ -1,3 +1,0 @@
-# Local profile currently has no overrides beyond the defaults in application.yaml
-# (jwt.private-key-path / jwt.public-key-path default to ./secrets/jwt/*.pem,
-# generated via scripts/generate-jwt-keys.sh).
