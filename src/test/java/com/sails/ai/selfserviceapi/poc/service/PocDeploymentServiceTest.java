@@ -294,4 +294,20 @@ class PocDeploymentServiceTest {
         assertThat(labels).isEmpty();
         verify(pocVersionRepository, never()).findByIdIn(any());
     }
+    @Test
+    void deployNewVersionRefusesAPocWithNoSlug() {
+        Poc poc = new Poc();
+        poc.setId(1L);
+        poc.setGithubUrl("https://github.com/example-org/contract-agent");
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+
+        assertThatThrownBy(() -> service.deployNewVersion(1L, "admin-1"))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getCode())
+                .isEqualTo("POC_SLUG_REQUIRED");
+
+        // Rejected before allocating, so a refused attempt never burns a version number.
+        verify(pocVersionRepository, never()).save(any());
+    }
+
 }
