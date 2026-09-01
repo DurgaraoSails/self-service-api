@@ -42,6 +42,9 @@ Deliberately not folded into `status` as a third value — hide/unhide (a routin
 **Runtime auth for the public list needed an explicit `SecurityConfig` matcher, not just OpenAPI `security: []`.**
 OpenAPI's per-operation `security: []` only affects generated documentation — Spring Security's actual authorization comes from `SecurityConfig.securityFilterChain()`'s own `requestMatchers(...)`. Everything not explicitly `permitAll()`-listed falls through to `.anyRequest().access(AuthorizationManagers.allOf(AuthenticatedAuthorizationManager.authenticated(), trialAuthorizationManager))`. Added `.requestMatchers(HttpMethod.GET, "/pocs").permitAll()`, scoped to `GET` only so `POST /pocs` and all of `/pocs/{id}` stay authenticated. (This exact class of mismatch — OpenAPI claiming public, Spring Security actually rejecting — is what broke CORS earlier in this repo's history; see the CORS changelog entry in `docs/specs/jwt-authentication.md`.)
 
+**`category` options come from a `poc_categories` lookup table, not a closed enum.**
+The admin add/edit form originally had `category` as free text. Once it needed to become a dropdown, the choice was a lookup table (like `pocs` itself) vs. a hardcoded enum on `CreatePocRequest`/`UpdatePocRequest`. A table was picked because `pocs.category` stays plain `VARCHAR` (unvalidated, exactly as before — this only changes the admin form's *input widget*, not the API contract), and because the value set is expected to grow without a deploy: adding a category is an `INSERT`, not a migration. `poc_categories` has no relationship to `pocs.category` (no FK) — it's purely a source list for the dropdown, matching the "for now, static" scope the seeded rows started from.
+
 ## Data Model
 
 **`pocs`** (migration `V4__create_pocs_table.sql`, entity `poc/entity/Poc.java`)
@@ -66,6 +69,14 @@ OpenAPI's per-operation `security: []` only affects generated documentation — 
 | deleted_at | TIMESTAMPTZ | nullable; `NULL` = not deleted (migration `V8__add_deleted_at_to_pocs_table.sql`) |
 | active_version_id | BIGINT REFERENCES poc_versions(id) | nullable; added 2026-09-01, see `docs/specs/poc-deployment.md` |
 
+**`poc_categories`** (migration `V14__create_poc_categories_table.sql`, entity `poc/entity/PocCategory.java`)
+| column | type | notes |
+|---|---|---|
+| id | BIGINT GENERATED ALWAYS AS IDENTITY PK | |
+| name | VARCHAR(100) NOT NULL UNIQUE | |
+
+Seeded with 4 rows: `Healthcare`, `RAG`, `Process Assistant`, `Accelerators`.
+
 ## API Surface
 
 All new endpoints live under `/pocs`, tagged `Poc` (generates a single `PocApi` interface, same pattern as `Auth`/`User`/`Support`).
@@ -78,6 +89,7 @@ All new endpoints live under `/pocs`, tagged `Poc` (generates a single `PocApi` 
 - **`POST /pocs/{id}/hide`** — **admin only** (new). Sets `status=HIDDEN`. `200` `PocResponse`. `404` if not found.
 - **`POST /pocs/{id}/unhide`** — **admin only** (new). Sets `status=ACTIVE`. `200` `PocResponse`. `404` if not found.
 - **`POST /pocs/{id}/restore`** — **admin only** (new). Clears `deletedAt`. `200` `PocResponse`. `404` if not found.
+- **`GET /pocs/categories`** — public (new). Returns `PocCategoryResponse[]` (`id`, `name`), alphabetical, for the admin add/edit form's category dropdown. No auth required, same reasoning as `GET /pocs`: nothing sensitive in a list of category names.
 
 ## Security Considerations
 
@@ -100,9 +112,11 @@ Three portal pages consume this API, split along the same public/authenticated l
 - The frontend's `Poc` type (previously its own vocabulary: `title`, `url`, a closed `PocIcon` enum) was retired in favor of `PocSummary`/`PocDetail` (`core/poc/poc.models.ts`), which mirror `PocSummaryResponse`/`PocResponse` directly — `id` is now numeric, matching the backend's identity column, and POC routes (`/poc/:id`, `/poc/:id/workspace`) now resolve against that numeric id instead of the old hardcoded string slugs.
 - `details`/`guideSteps` (shown on the public `PocDetails` page) didn't exist in the original backend contract — added here (public, alongside the other display fields) once discovered mid-wiring, following the same reactive-extension pattern as `version`/`owner`/`category`/etc.
 - Seeded the 5 previously-hardcoded POCs into the database (`V7__seed_initial_pocs.sql`) so the dashboard doesn't regress to empty — only fields with real values were populated (mostly just name/description; `sails-process-assistant` also got its real `appUrl`/`details`/`guideSteps`). Everything else (`version`, `owner`, `category`, `technologies`, `iconUrl`, `containerImage`, `demoType`) is left null rather than filled with fabricated placeholder data.
+- `PocFormModal`'s category field is a native `<select>`, populated from `PocApi.getCategories()` (fetched once per modal open, in both create and edit mode). It's a plain HTML `<select>` bound via `formControlName="category"`, not a custom combobox, since the option count is small and no search/filter is needed. An existing POC whose stored `category` doesn't match any current row (e.g. legacy seed data) shows no option selected but keeps its original value in the form until the admin explicitly changes it — the dropdown doesn't clear or coerce the underlying field.
 
 ## Changelog
 
+- 2026-09-01 — Added `poc_categories` (migration `V14`) and public `GET /pocs/categories`, and changed the admin add/edit form's category field from free text to a dropdown sourced from it. `pocs.category` itself is unchanged (still plain `VARCHAR`, no FK) — this only replaces the form's input widget.
 - 2026-09-01 — `version`/`container_image` removed from `pocs`, replaced by `active_version_id` (FK
   to a new `poc_versions` table) and real deployment tracking. See `docs/specs/poc-deployment.md`.
 - 2026-08-26 — Admin-only writes: `POST/PUT/DELETE /pocs` now require the `ADMIN` role (see `docs/specs/admin-users.md`). `DELETE` is now a soft delete (`deleted_at`, migration `V8`) with a new `POST /pocs/{id}/restore`. `status` tightened to an `ACTIVE`/`HIDDEN` enum and repurposed as the hide/unhide mechanism, via new `POST /pocs/{id}/hide` and `/unhide`. `GET /pocs` gained an admin-only `includeDeleted` query param and now filters rows by caller role instead of returning everything unconditionally.
