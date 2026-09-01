@@ -8,4 +8,8 @@ public class PocNotFoundException extends ApiException {
     public PocNotFoundException(Long id) {
         super(HttpStatus.NOT_FOUND, "POC_NOT_FOUND", "POC not found: " + id);
     }
+
+    public PocNotFoundException(String slug) {
+        super(HttpStatus.NOT_FOUND, "POC_NOT_FOUND", "POC not found: " + slug);
+    }
 }

@@ -70,6 +70,7 @@ public class PocController implements PocApi {
         PocFields fields = new PocFields(
                 createPocRequest.getName(),
                 createPocRequest.getDescription(),
+                createPocRequest.getSlug(),
                 createPocRequest.getIconUrl(),
                 createPocRequest.getAppUrl(),
                 createPocRequest.getGithubUrl(),
@@ -91,6 +92,7 @@ public class PocController implements PocApi {
         PocFields fields = new PocFields(
                 updatePocRequest.getName(),
                 updatePocRequest.getDescription(),
+                updatePocRequest.getSlug(),
                 updatePocRequest.getIconUrl(),
                 updatePocRequest.getAppUrl(),
                 updatePocRequest.getGithubUrl(),

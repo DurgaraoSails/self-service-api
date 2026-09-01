@@ -40,6 +40,10 @@ public class PocVersion {
     @Column(name = "container_image", length = 500)
     private String containerImage;
 
+    /** Commit this version was built from — reported by the pipeline, used for update detection. */
+    @Column(name = "commit_sha")
+    private String commitSha;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

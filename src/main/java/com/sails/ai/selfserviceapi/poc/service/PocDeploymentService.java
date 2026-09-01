@@ -9,6 +9,7 @@ import com.sails.ai.selfserviceapi.poc.entity.PocVersion;
 import com.sails.ai.selfserviceapi.poc.exception.DeploymentAlreadyTerminalException;
 import com.sails.ai.selfserviceapi.poc.exception.MissingContainerImageException;
 import com.sails.ai.selfserviceapi.poc.exception.MissingGithubUrlException;
+import com.sails.ai.selfserviceapi.poc.exception.MissingPocSlugException;
 import com.sails.ai.selfserviceapi.poc.exception.NoBuiltImageException;
 import com.sails.ai.selfserviceapi.poc.exception.PocDeploymentNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
@@ -66,18 +67,20 @@ public class PocDeploymentService {
         if (poc.getGithubUrl() == null || poc.getGithubUrl().isBlank()) {
             throw new MissingGithubUrlException(pocId);
         }
+        requireSlug(poc);
 
         PocVersion version = allocateNextVersion(pocId);
         PocDeployment deployment = createDeployment(pocId, version.getId(), BUILD_AND_DEPLOY, initiatedByUserId);
 
         deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(
-                deployment.getId(), pocId, poc.getGithubUrl(), version.getVersionLabel()));
+                deployment.getId(), pocId, poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel()));
         return deployment;
     }
 
     @Transactional
     public PocDeployment redeployVersion(Long pocId, Long versionId, String initiatedByUserId) {
-        getPoc(pocId);
+        Poc poc = getPoc(pocId);
+        requireSlug(poc);
         PocVersion version = pocVersionRepository.findById(versionId)
                 .orElseThrow(() -> new PocVersionNotFoundException(versionId));
         if (!version.getPocId().equals(pocId)) {
@@ -90,8 +93,18 @@ public class PocDeploymentService {
         PocDeployment deployment = createDeployment(pocId, versionId, REDEPLOY, initiatedByUserId);
 
         deploymentTrigger.redeploy(new RedeployRequest(
-                deployment.getId(), pocId, version.getContainerImage(), version.getVersionLabel()));
+                deployment.getId(), pocId, poc.getSlug(), version.getContainerImage(), version.getVersionLabel()));
         return deployment;
+    }
+
+    /**
+     * The pipeline addresses the deploy target by slug, so a POC without one cannot be deployed
+     * at all. Checked before allocating a version, so a rejected attempt doesn't burn a number.
+     */
+    private void requireSlug(Poc poc) {
+        if (poc.getSlug() == null || poc.getSlug().isBlank()) {
+            throw new MissingPocSlugException(poc.getId());
+        }
     }
 
     public List<PocVersion> listVersions(Long pocId) {
@@ -114,7 +127,8 @@ public class PocDeploymentService {
     }
 
     @Transactional
-    public PocDeployment reportStatus(UUID deploymentId, String status, String containerImage, String logsUrl, String errorMessage) {
+    public PocDeployment reportStatus(UUID deploymentId, String status, String containerImage, String commitSha,
+                                       String logsUrl, String errorMessage) {
         PocDeployment deployment = getDeploymentById(deploymentId);
         if (isTerminal(deployment.getStatus())) {
             throw new DeploymentAlreadyTerminalException(deploymentId);
@@ -136,6 +150,11 @@ public class PocDeploymentService {
                     throw new MissingContainerImageException(deploymentId);
                 }
                 version.setContainerImage(containerImage);
+                // Optional: only a pipeline that builds from source knows the commit, and a
+                // REDEPLOY rebuilds nothing, so its version already carries the right one.
+                if (commitSha != null && !commitSha.isBlank()) {
+                    version.setCommitSha(commitSha);
+                }
                 pocVersionRepository.save(version);
             }
             Poc poc = getPoc(deployment.getPocId());

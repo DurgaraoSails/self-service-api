@@ -964,6 +964,72 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/source-repositories:
+    get:
+      summary: POCs whose repositories the pipeline should poll (called by the pipeline, not the portal)
+      description: >
+        Every non-deleted POC that has a githubUrl. The pipeline reads this at the start of a run,
+        checks each repository's default-branch HEAD, and reports back via POST /pocs/upstream-commits.
+        Authenticated by the same shared secret as the status callback — self-service-api holds no
+        GitHub credential and never reads a repository itself.
+      operationId: getSourceRepositories
+      tags:
+        - Deployment
+      security: []
+      parameters:
+        - name: X-Pipeline-Webhook-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Repositories to poll
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/poc-deployment.yaml#/PocSourceRepositoryResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/upstream-commits:
+    post:
+      summary: Report each POC's current upstream HEAD (called by the pipeline, not the portal)
+      description: >
+        Batch counterpart to GET /pocs/source-repositories. Stores the observed commit against each
+        POC so an admin's "check for updates" is a comparison against already-stored state rather
+        than a live GitHub call. Unknown POC ids are ignored rather than failing the batch — a POC
+        deleted between the two calls should not break the run.
+      operationId: reportUpstreamCommits
+      tags:
+        - Deployment
+      security: []
+      parameters:
+        - name: X-Pipeline-Webhook-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/poc-deployment.yaml#/ReportUpstreamCommitsRequest'
+      responses:
+        '204':
+          description: Commits recorded
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /activity/heartbeat:
     post:
       summary: Record that the caller is actively using a POC

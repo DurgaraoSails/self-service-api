@@ -70,6 +70,9 @@ support:
   sales-email: ${SALES_EMAIL:no.reply.sails.poc@gmail.com}
 
 deployment:
+  # 'queue' hands work to poc-deploy-pipeline via the deployment_jobs table. 'logging' is a
+  # local-dev stub that only logs, letting you drive status transitions by hand.
+  trigger: ${DEPLOYMENT_TRIGGER:queue}
   webhook-secret: ${DEPLOYMENT_WEBHOOK_SECRET:local-dev-deployment-webhook-secret-change-me}
 
 app:

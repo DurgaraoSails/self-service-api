@@ -9,4 +9,7 @@ public interface PocRepository extends JpaRepository<Poc, Long> {
     List<Poc> findByStatusAndDeletedAtIsNull(String status);
 
     List<Poc> findByDeletedAtIsNull();
+
+    /** The repositories the deploy pipeline polls for upstream changes. */
+    List<Poc> findByGithubUrlIsNotNullAndDeletedAtIsNull();
 }

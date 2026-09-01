@@ -77,6 +77,18 @@ public class Poc {
     @Column(name = "active_version_id")
     private Long activeVersionId;
 
+    /** Addressable name for the deploy target — Cloud Run service name and image path segment. */
+    @Column(name = "slug")
+    private String slug;
+
+    // Written by the deploy pipeline, which holds the GitHub credential — never by this service.
+    // Compared against the active version's commitSha to answer "is main ahead of what's live?".
+    @Column(name = "latest_main_commit_sha")
+    private String latestMainCommitSha;
+
+    @Column(name = "latest_main_checked_at")
+    private Instant latestMainCheckedAt;
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();

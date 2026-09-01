@@ -2,8 +2,11 @@ package com.sails.ai.selfserviceapi.poc.controller;
 
 import com.sails.ai.selfserviceapi.generated.api.DeploymentApi;
 import com.sails.ai.selfserviceapi.generated.model.PocDeploymentResponse;
+import com.sails.ai.selfserviceapi.generated.model.PocSourceRepositoryResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocVersionResponse;
 import com.sails.ai.selfserviceapi.generated.model.ReportDeploymentStatusRequest;
+import com.sails.ai.selfserviceapi.generated.model.ReportUpstreamCommitsRequest;
+import com.sails.ai.selfserviceapi.generated.model.UpstreamCommit;
 import com.sails.ai.selfserviceapi.poc.config.DeploymentWebhookProperties;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.entity.PocDeployment;
@@ -15,7 +18,9 @@ import com.sails.ai.selfserviceapi.security.CurrentUser;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -90,10 +95,41 @@ public class PocDeploymentController implements DeploymentApi {
                 deploymentId,
                 reportDeploymentStatusRequest.getStatus().getValue(),
                 reportDeploymentStatusRequest.getContainerImage(),
+                reportDeploymentStatusRequest.getCommitSha(),
                 reportDeploymentStatusRequest.getLogsUrl(),
                 reportDeploymentStatusRequest.getErrorMessage()
         );
         return ResponseEntity.ok(PocDeploymentResponseMapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
+    }
+
+    @Override
+    public ResponseEntity<List<PocSourceRepositoryResponse>> getSourceRepositories(String xPipelineWebhookSecret) {
+        requirePipelineSecret(xPipelineWebhookSecret);
+
+        List<PocSourceRepositoryResponse> repositories = pocService.listSourceRepositories().stream()
+                .map(poc -> new PocSourceRepositoryResponse(poc.getId(), poc.getGithubUrl()).slug(poc.getSlug()))
+                .toList();
+        return ResponseEntity.ok(repositories);
+    }
+
+    @Override
+    public ResponseEntity<Void> reportUpstreamCommits(String xPipelineWebhookSecret,
+                                                        ReportUpstreamCommitsRequest reportUpstreamCommitsRequest) {
+        requirePipelineSecret(xPipelineWebhookSecret);
+
+        Map<Long, String> commitsByPocId = reportUpstreamCommitsRequest.getCommits().stream()
+                .collect(Collectors.toMap(UpstreamCommit::getPocId, UpstreamCommit::getCommitSha, (first, second) -> second));
+        pocService.recordUpstreamCommits(commitsByPocId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Constant-time comparison — a timing-based probe must not be able to recover the secret. */
+    private void requirePipelineSecret(String provided) {
+        if (provided == null || !MessageDigest.isEqual(
+                provided.getBytes(StandardCharsets.UTF_8),
+                webhookProperties.webhookSecret().getBytes(StandardCharsets.UTF_8))) {
+            throw new InvalidWebhookSecretException();
+        }
     }
 
     private String versionLabelOf(PocDeployment deployment) {

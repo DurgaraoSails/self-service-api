@@ -8,6 +8,7 @@ import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +44,27 @@ public class PocService {
 
     public List<PocCategory> listCategories() {
         return pocCategoryRepository.findAllByOrderByNameAsc();
+    }
+
+    /** Every POC the pipeline can poll for upstream changes — i.e. those with a repository. */
+    public List<Poc> listSourceRepositories() {
+        return pocRepository.findByGithubUrlIsNotNullAndDeletedAtIsNull();
+    }
+
+    /**
+     * Records what the pipeline observed at each repository's head. Unknown ids are skipped
+     * rather than failing the batch: a POC deleted between the pipeline listing repositories
+     * and reporting back should not discard the rest of the run's results.
+     */
+    @Transactional
+    public void recordUpstreamCommits(Map<Long, String> commitShaByPocId) {
+        Instant checkedAt = Instant.now();
+
+        for (Poc poc : pocRepository.findAllById(commitShaByPocId.keySet())) {
+            poc.setLatestMainCommitSha(commitShaByPocId.get(poc.getId()));
+            poc.setLatestMainCheckedAt(checkedAt);
+            pocRepository.save(poc);
+        }
     }
 
     @Transactional
@@ -90,6 +112,12 @@ public class PocService {
     private void applyFields(Poc poc, PocFields fields) {
         poc.setName(fields.name());
         poc.setDescription(fields.description());
+        // Set once, never changed. The slug names a deployed Cloud Run service and an Artifact
+        // Registry path; editing it would orphan both and leave the POC pointing at nothing.
+        // Still settable on update while null, so POCs predating the pipeline can be adopted.
+        if (poc.getSlug() == null && fields.slug() != null && !fields.slug().isBlank()) {
+            poc.setSlug(fields.slug());
+        }
         poc.setIconUrl(fields.iconUrl());
         poc.setAppUrl(fields.appUrl());
         poc.setGithubUrl(fields.githubUrl());
