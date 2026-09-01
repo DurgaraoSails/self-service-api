@@ -420,3 +420,50 @@ PocDeploymentResponse:
       format: date-time
       nullable: true
       description: Null while still building.
+
+
+PocDeploymentSummaryResponse:
+  type: object
+  description: >
+    One POC together with its most recent deployment attempt — the fleet-wide view an admin
+    uses to see what is building, what went live, and what failed. Only the latest attempt per
+    POC is included; full per-POC history is not exposed here.
+  required:
+    - pocId
+    - name
+    - deploymentStatus
+  properties:
+    pocId:
+      type: integer
+      format: int64
+      example: 6
+
+    slug:
+      type: string
+      nullable: true
+      description: Null for POCs created before the self-service pipeline existed.
+      example: "dummy-poc"
+
+    name:
+      type: string
+      example: "Dummy POC"
+
+    deploymentStatus:
+      type: string
+      enum: [not_deployed, building, active, failed]
+      description: Authoritative current pipeline state, taken from the POC itself.
+      example: "failed"
+
+    currentReleaseTag:
+      type: string
+      nullable: true
+      description: Version currently live, or null if nothing has ever gone live.
+      example: "1.2.0"
+
+    latestDeployment:
+      description: >
+        Most recent deployment attempt, or null for a POC that has never been through the
+        pipeline (e.g. a POC seeded before this feature existed).
+      nullable: true
+      allOf:
+        - $ref: '#/PocDeploymentResponse'

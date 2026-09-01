@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
+import com.sails.ai.selfserviceapi.poc.exception.PocSlugAlreadyExistsException;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.util.List;
 import java.util.Optional;
@@ -108,7 +109,20 @@ class PocServiceTest {
     }
 
     @Test
+    void createForPipelineRejectsADuplicateSlugWithAConflict() {
+        when(pocRepository.findBySlug("dummy-poc")).thenReturn(Optional.of(pocWithId(1L)));
+
+        assertThatThrownBy(() -> pocService.createForPipeline(fullFields(), "dummy-poc"))
+                .isInstanceOf(PocSlugAlreadyExistsException.class)
+                .extracting(ex -> ((ApiException) ex).getStatus())
+                .isEqualTo(HttpStatus.CONFLICT);
+
+        verify(pocRepository, Mockito.never()).save(any(Poc.class));
+    }
+
+    @Test
     void createForPipelineSetsSlugAndStartsUndeployedRegardlessOfFieldsStatus() {
+        when(pocRepository.findBySlug("rag-assistant")).thenReturn(Optional.empty());
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Poc created = pocService.createForPipeline(fullFields(), "rag-assistant");

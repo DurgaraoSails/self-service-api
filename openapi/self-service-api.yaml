@@ -557,6 +557,8 @@ paths:
           $ref: './components/responses.yaml#/Unauthorized'
         '403':
           $ref: './components/responses.yaml#/Forbidden'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
@@ -736,6 +738,42 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/deployments/latest:
+    get:
+      summary: Latest deployment of every POC, optionally filtered by state (admin only)
+      description: >
+        One row per POC, carrying only its most recent deployment attempt — the fleet-wide view
+        behind the admin's build-status screen. Unlike GET /pocs, this deliberately includes POCs
+        that are not live (not_deployed / building / failed), since those are exactly the ones an
+        admin needs to see. Pass status=failed for the "what's broken" view. Soft-deleted POCs are
+        always excluded.
+      operationId: getLatestDeployments
+      tags:
+        - Poc
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [not_deployed, building, active, failed]
+          description: Filter to POCs in this pipeline state. Omit for all POCs.
+      responses:
+        '200':
+          description: Latest deployment per POC, most recently started first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/poc.yaml#/PocDeploymentSummaryResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/{slug}/check-updates:
     post:
       summary: Re-fetch the repo's main branch and compare it to what's deployed (admin only)
@@ -794,6 +832,8 @@ paths:
           $ref: './components/responses.yaml#/Forbidden'
         '404':
           $ref: './components/responses.yaml#/NotFound'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 

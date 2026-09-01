@@ -1,11 +1,13 @@
 package com.sails.ai.selfserviceapi.poc.controller;
 
 import com.sails.ai.selfserviceapi.deployment.entity.PocDeployment;
+import com.sails.ai.selfserviceapi.deployment.exception.DeploymentAlreadyInProgressException;
 import com.sails.ai.selfserviceapi.deployment.exception.PocDeploymentNotFoundException;
 import com.sails.ai.selfserviceapi.deployment.repository.PocDeploymentRepository;
 import com.sails.ai.selfserviceapi.deployment.service.CheckUpdatesService;
 import com.sails.ai.selfserviceapi.deployment.service.CheckUpdatesService.CheckUpdatesResult;
 import com.sails.ai.selfserviceapi.deployment.service.DeploymentOrchestrator;
+import com.sails.ai.selfserviceapi.deployment.service.DeploymentQueryService;
 import com.sails.ai.selfserviceapi.deployment.service.PocDeploymentResponseMapper;
 import com.sails.ai.selfserviceapi.deployment.service.VersionService.BumpType;
 import com.sails.ai.selfserviceapi.generated.api.PocApi;
@@ -13,6 +15,7 @@ import com.sails.ai.selfserviceapi.generated.model.CheckUpdatesResponse;
 import com.sails.ai.selfserviceapi.generated.model.CreatePocRequest;
 import com.sails.ai.selfserviceapi.generated.model.DeployNewVersionRequest;
 import com.sails.ai.selfserviceapi.generated.model.PocDeploymentResponse;
+import com.sails.ai.selfserviceapi.generated.model.PocDeploymentSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdatePocRequest;
@@ -33,16 +36,19 @@ public class PocController implements PocApi {
     private final PocService pocService;
     private final DeploymentOrchestrator deploymentOrchestrator;
     private final CheckUpdatesService checkUpdatesService;
+    private final DeploymentQueryService deploymentQueryService;
     private final PocDeploymentRepository pocDeploymentRepository;
 
     public PocController(
             PocService pocService,
             DeploymentOrchestrator deploymentOrchestrator,
             CheckUpdatesService checkUpdatesService,
+            DeploymentQueryService deploymentQueryService,
             PocDeploymentRepository pocDeploymentRepository) {
         this.pocService = pocService;
         this.deploymentOrchestrator = deploymentOrchestrator;
         this.checkUpdatesService = checkUpdatesService;
+        this.deploymentQueryService = deploymentQueryService;
         this.pocDeploymentRepository = pocDeploymentRepository;
     }
 
@@ -154,9 +160,26 @@ public class PocController implements PocApi {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deployNewPocVersion(String slug, DeployNewVersionRequest deployNewVersionRequest) {
         Poc poc = pocService.getBySlug(slug);
+
+        // Without this, an impatient double-click on the UI's "Update" button starts two
+        // pipelines for the same POC — two release tags, two builds, both racing to write
+        // deployment_status. Cheap to prevent, confusing to debug after the fact.
+        if (pocDeploymentRepository.existsByPocIdAndStatus(poc.getId(), "building")) {
+            throw new DeploymentAlreadyInProgressException(slug);
+        }
+
         BumpType bumpType = toBumpType(deployNewVersionRequest);
         deploymentOrchestrator.triggerNewVersion(poc.getId(), bumpType, CurrentUser.id());
         return ResponseEntity.accepted().build();
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<PocDeploymentSummaryResponse>> getLatestDeployments(String status) {
+        List<PocDeploymentSummaryResponse> rows = deploymentQueryService.listLatestDeployments(status).stream()
+                .map(PocDeploymentResponseMapper::toSummaryResponse)
+                .toList();
+        return ResponseEntity.ok(rows);
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.sails.ai.selfserviceapi.poc.service;
 
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
+import com.sails.ai.selfserviceapi.poc.exception.PocSlugAlreadyExistsException;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -61,6 +62,13 @@ public class PocService {
     /** Used by the self-service pipeline flow — every POC created this way starts undeployed. */
     @Transactional
     public Poc createForPipeline(PocFields fields, String slug) {
+        // The unique constraint on pocs.slug is the real guard; this pre-check exists so a
+        // duplicate returns a 409 the admin can act on rather than a bare 500 from the
+        // constraint violation surfacing as an unhandled DataIntegrityViolationException.
+        if (pocRepository.findBySlug(slug).isPresent()) {
+            throw new PocSlugAlreadyExistsException(slug);
+        }
+
         Poc poc = new Poc();
         applyFields(poc, fields);
         poc.setSlug(slug);

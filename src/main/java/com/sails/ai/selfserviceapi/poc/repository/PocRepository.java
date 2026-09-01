@@ -12,4 +12,6 @@ public interface PocRepository extends JpaRepository<Poc, Long> {
     List<Poc> findByDeletedAtIsNull();
 
     Optional<Poc> findBySlug(String slug);
+
+    List<Poc> findByDeploymentStatusAndDeletedAtIsNull(String deploymentStatus);
 }
