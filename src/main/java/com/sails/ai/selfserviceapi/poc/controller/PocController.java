@@ -6,11 +6,14 @@ import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdatePocRequest;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
 import com.sails.ai.selfserviceapi.poc.service.PocFields;
 import com.sails.ai.selfserviceapi.poc.service.PocResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,24 +23,34 @@ import org.springframework.web.bind.annotation.RestController;
 public class PocController implements PocApi {
 
     private final PocService pocService;
+    private final PocDeploymentService pocDeploymentService;
 
-    public PocController(PocService pocService) {
+    public PocController(PocService pocService, PocDeploymentService pocDeploymentService) {
         this.pocService = pocService;
+        this.pocDeploymentService = pocDeploymentService;
     }
 
     @Override
     public ResponseEntity<List<PocSummaryResponse>> getPocs(Boolean includeDeleted) {
         boolean isAdmin = CurrentUser.isAdmin();
-        List<PocSummaryResponse> pocs = pocService.listForViewer(isAdmin, isAdmin && Boolean.TRUE.equals(includeDeleted)).stream()
-                .map(PocResponseMapper::toSummaryResponse)
+        List<Poc> pocs = pocService.listForViewer(isAdmin, isAdmin && Boolean.TRUE.equals(includeDeleted));
+
+        List<Long> versionIds = pocs.stream().map(Poc::getActiveVersionId).filter(Objects::nonNull).toList();
+        List<Long> pocIds = pocs.stream().map(Poc::getId).toList();
+        Map<Long, String> activeVersionLabels = pocDeploymentService.activeVersionLabels(versionIds);
+        Map<Long, String> latestStatuses = pocDeploymentService.latestDeploymentStatuses(pocIds);
+
+        List<PocSummaryResponse> pocResponses = pocs.stream()
+                .map(poc -> PocResponseMapper.toSummaryResponse(poc,
+                        activeVersionLabels.get(poc.getActiveVersionId()),
+                        latestStatuses.get(poc.getId())))
                 .toList();
-        return ResponseEntity.ok(pocs);
+        return ResponseEntity.ok(pocResponses);
     }
 
     @Override
     public ResponseEntity<PocResponse> getPocById(Long id) {
-        Poc poc = pocService.getById(id);
-        return ResponseEntity.ok(PocResponseMapper.toResponse(poc));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.getById(id)));
     }
 
     @Override
@@ -49,18 +62,16 @@ public class PocController implements PocApi {
                 createPocRequest.getIconUrl(),
                 createPocRequest.getAppUrl(),
                 createPocRequest.getGithubUrl(),
-                createPocRequest.getVersion(),
                 createPocRequest.getOwner(),
                 createPocRequest.getCategory(),
                 createPocRequest.getTechnologies(),
-                createPocRequest.getContainerImage(),
                 createPocRequest.getDemoType(),
                 createPocRequest.getStatus() != null ? createPocRequest.getStatus().getValue() : null,
                 createPocRequest.getDetails(),
                 createPocRequest.getGuideSteps()
         );
         Poc poc = pocService.create(fields);
-        return ResponseEntity.status(HttpStatus.CREATED).body(PocResponseMapper.toResponse(poc));
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponseWithDeploymentInfo(poc));
     }
 
     @Override
@@ -72,18 +83,15 @@ public class PocController implements PocApi {
                 updatePocRequest.getIconUrl(),
                 updatePocRequest.getAppUrl(),
                 updatePocRequest.getGithubUrl(),
-                updatePocRequest.getVersion(),
                 updatePocRequest.getOwner(),
                 updatePocRequest.getCategory(),
                 updatePocRequest.getTechnologies(),
-                updatePocRequest.getContainerImage(),
                 updatePocRequest.getDemoType(),
                 updatePocRequest.getStatus() != null ? updatePocRequest.getStatus().getValue() : null,
                 updatePocRequest.getDetails(),
                 updatePocRequest.getGuideSteps()
         );
-        Poc poc = pocService.update(id, fields);
-        return ResponseEntity.ok(PocResponseMapper.toResponse(poc));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.update(id, fields)));
     }
 
     @Override
@@ -96,18 +104,26 @@ public class PocController implements PocApi {
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> hidePoc(Long id) {
-        return ResponseEntity.ok(PocResponseMapper.toResponse(pocService.hide(id)));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.hide(id)));
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> unhidePoc(Long id) {
-        return ResponseEntity.ok(PocResponseMapper.toResponse(pocService.unhide(id)));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.unhide(id)));
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> restorePoc(Long id) {
-        return ResponseEntity.ok(PocResponseMapper.toResponse(pocService.restore(id)));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.restore(id)));
+    }
+
+    private PocResponse toResponseWithDeploymentInfo(Poc poc) {
+        String activeVersionLabel = poc.getActiveVersionId() != null
+                ? pocDeploymentService.activeVersionLabels(List.of(poc.getActiveVersionId())).get(poc.getActiveVersionId())
+                : null;
+        String latestStatus = pocDeploymentService.latestDeploymentStatuses(List.of(poc.getId())).get(poc.getId());
+        return PocResponseMapper.toResponse(poc, activeVersionLabel, latestStatus);
     }
 }

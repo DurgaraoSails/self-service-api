@@ -69,6 +69,9 @@ email-domain-validation:
 support:
   sales-email: ${SALES_EMAIL:no.reply.sails.poc@gmail.com}
 
+deployment:
+  webhook-secret: ${DEPLOYMENT_WEBHOOK_SECRET:local-dev-deployment-webhook-secret-change-me}
+
 app:
   mail:
     from-address: ${MAIL_FROM_ADDRESS}

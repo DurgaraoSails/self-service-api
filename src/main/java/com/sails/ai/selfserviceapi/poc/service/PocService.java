@@ -85,11 +85,9 @@ public class PocService {
         poc.setIconUrl(fields.iconUrl());
         poc.setAppUrl(fields.appUrl());
         poc.setGithubUrl(fields.githubUrl());
-        poc.setVersion(fields.version());
         poc.setOwner(fields.owner());
         poc.setCategory(fields.category());
         poc.setTechnologies(fields.technologies() != null ? fields.technologies() : new ArrayList<>());
-        poc.setContainerImage(fields.containerImage());
         poc.setDemoType(fields.demoType());
         poc.setStatus(fields.status() != null ? fields.status() : DEFAULT_STATUS);
         poc.setDetails(fields.details());

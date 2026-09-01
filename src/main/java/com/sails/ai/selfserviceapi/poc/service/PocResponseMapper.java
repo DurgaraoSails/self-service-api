@@ -12,11 +12,14 @@ public final class PocResponseMapper {
     private PocResponseMapper() {
     }
 
-    public static PocSummaryResponse toSummaryResponse(Poc poc) {
+    public static PocSummaryResponse toSummaryResponse(Poc poc, String activeVersionLabel, String latestDeploymentStatus) {
         return new PocSummaryResponse(poc.getId(), poc.getName(), poc.getDescription(),
                 PocSummaryResponse.StatusEnum.fromValue(poc.getStatus()))
                 .iconUrl(poc.getIconUrl())
-                .version(poc.getVersion())
+                .activeVersion(activeVersionLabel)
+                .latestDeploymentStatus(latestDeploymentStatus != null
+                        ? PocSummaryResponse.LatestDeploymentStatusEnum.fromValue(latestDeploymentStatus)
+                        : null)
                 .owner(poc.getOwner())
                 .category(poc.getCategory())
                 .technologies(poc.getTechnologies())
@@ -26,11 +29,14 @@ public final class PocResponseMapper {
                 .deletedAt(toUtcOffset(poc.getDeletedAt()));
     }
 
-    public static PocResponse toResponse(Poc poc) {
+    public static PocResponse toResponse(Poc poc, String activeVersionLabel, String latestDeploymentStatus) {
         return new PocResponse(poc.getId(), poc.getName(), poc.getDescription(),
                 PocResponse.StatusEnum.fromValue(poc.getStatus()))
                 .iconUrl(poc.getIconUrl())
-                .version(poc.getVersion())
+                .activeVersion(activeVersionLabel)
+                .latestDeploymentStatus(latestDeploymentStatus != null
+                        ? PocResponse.LatestDeploymentStatusEnum.fromValue(latestDeploymentStatus)
+                        : null)
                 .owner(poc.getOwner())
                 .category(poc.getCategory())
                 .technologies(poc.getTechnologies())
@@ -40,7 +46,7 @@ public final class PocResponseMapper {
                 .deletedAt(toUtcOffset(poc.getDeletedAt()))
                 .appUrl(poc.getAppUrl())
                 .githubUrl(poc.getGithubUrl())
-                .containerImage(poc.getContainerImage());
+                .activeVersionId(poc.getActiveVersionId());
     }
 
     private static OffsetDateTime toUtcOffset(Instant instant) {

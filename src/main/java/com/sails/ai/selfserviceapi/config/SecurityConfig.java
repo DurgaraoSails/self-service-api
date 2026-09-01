@@ -59,6 +59,8 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/pocs")
                         .permitAll()
+                        .requestMatchers(HttpMethod.POST, "/pocs/deployments/*/status")
+                        .permitAll()
                         .requestMatchers("/api/v1/**")
                         .authenticated()
                         .anyRequest()

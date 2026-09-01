@@ -86,11 +86,9 @@ class PocServiceTest {
                 "https://cdn.example.com/icon.svg",
                 "https://rag-assistant.example.com",
                 "https://github.com/example-org/rag-assistant",
-                "1.2.0",
                 "AI Team",
                 "Generative AI",
                 List.of("Python", "FastAPI", "PostgreSQL", "LLM"),
-                "registry/company/rag-assistant:1.2.0",
                 "interactive",
                 "ACTIVE",
                 "Longer-form details shown on the public details page.",
@@ -109,11 +107,9 @@ class PocServiceTest {
         assertThat(created.getIconUrl()).isEqualTo("https://cdn.example.com/icon.svg");
         assertThat(created.getAppUrl()).isEqualTo("https://rag-assistant.example.com");
         assertThat(created.getGithubUrl()).isEqualTo("https://github.com/example-org/rag-assistant");
-        assertThat(created.getVersion()).isEqualTo("1.2.0");
         assertThat(created.getOwner()).isEqualTo("AI Team");
         assertThat(created.getCategory()).isEqualTo("Generative AI");
         assertThat(created.getTechnologies()).containsExactly("Python", "FastAPI", "PostgreSQL", "LLM");
-        assertThat(created.getContainerImage()).isEqualTo("registry/company/rag-assistant:1.2.0");
         assertThat(created.getDemoType()).isEqualTo("interactive");
         assertThat(created.getStatus()).isEqualTo("ACTIVE");
         assertThat(created.getDetails()).isEqualTo("Longer-form details shown on the public details page.");
@@ -126,7 +122,7 @@ class PocServiceTest {
 
         Poc created = pocService.create(new PocFields(
                 "Contract Agent", "Review & generate contracts.", null, null, null,
-                null, null, null, null, null, null, null, null, null
+                null, null, null, null, null, null, null
         ));
 
         assertThat(created.getStatus()).isEqualTo("ACTIVE");
@@ -146,11 +142,9 @@ class PocServiceTest {
                 "https://cdn.example.com/new-icon.svg",
                 "https://renamed.example.com",
                 "https://github.com/example-org/renamed",
-                "2.0.0",
                 "Platform Team",
                 "Automation",
                 List.of("Java", "Spring Boot"),
-                "registry/company/renamed:2.0.0",
                 "video",
                 "INACTIVE",
                 "Updated details.",
@@ -162,11 +156,9 @@ class PocServiceTest {
         assertThat(updated.getIconUrl()).isEqualTo("https://cdn.example.com/new-icon.svg");
         assertThat(updated.getAppUrl()).isEqualTo("https://renamed.example.com");
         assertThat(updated.getGithubUrl()).isEqualTo("https://github.com/example-org/renamed");
-        assertThat(updated.getVersion()).isEqualTo("2.0.0");
         assertThat(updated.getOwner()).isEqualTo("Platform Team");
         assertThat(updated.getCategory()).isEqualTo("Automation");
         assertThat(updated.getTechnologies()).containsExactly("Java", "Spring Boot");
-        assertThat(updated.getContainerImage()).isEqualTo("registry/company/renamed:2.0.0");
         assertThat(updated.getDemoType()).isEqualTo("video");
         assertThat(updated.getStatus()).isEqualTo("INACTIVE");
         assertThat(updated.getDetails()).isEqualTo("Updated details.");
@@ -178,7 +170,7 @@ class PocServiceTest {
         when(pocRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> pocService.update(99L, new PocFields(
-                "n", "d", null, null, null, null, null, null, null, null, null, null, null, null)))
+                "n", "d", null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(PocNotFoundException.class);
     }
 
