@@ -1,7 +1,9 @@
 package com.sails.ai.selfserviceapi.poc.service;
 
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
+import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -16,9 +18,11 @@ public class PocService {
     private static final String HIDDEN_STATUS = "HIDDEN";
 
     private final PocRepository pocRepository;
+    private final PocCategoryRepository pocCategoryRepository;
 
-    public PocService(PocRepository pocRepository) {
+    public PocService(PocRepository pocRepository, PocCategoryRepository pocCategoryRepository) {
         this.pocRepository = pocRepository;
+        this.pocCategoryRepository = pocCategoryRepository;
     }
 
     /**
@@ -35,6 +39,10 @@ public class PocService {
     public Poc getById(Long id) {
         return pocRepository.findById(id)
                 .orElseThrow(() -> new PocNotFoundException(id));
+    }
+
+    public List<PocCategory> listCategories() {
+        return pocCategoryRepository.findAllByOrderByNameAsc();
     }
 
     @Transactional

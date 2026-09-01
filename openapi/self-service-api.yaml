@@ -560,6 +560,25 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/categories:
+    get:
+      summary: List available POC categories, for the admin add/edit form's dropdown
+      operationId: getPocCategories
+      tags:
+        - Poc
+      security: []
+      responses:
+        '200':
+          description: List of categories, alphabetical
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/poc.yaml#/PocCategoryResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/{id}:
     get:
       summary: Get a POC by id

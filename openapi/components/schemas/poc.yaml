@@ -108,6 +108,24 @@ PocSummaryResponse:
       example: null
 
 
+PocCategoryResponse:
+  type: object
+  description: A category POCs can be classified under, for the admin add/edit form's dropdown.
+  required:
+    - id
+    - name
+  properties:
+    id:
+      type: integer
+      format: int64
+      example: 1
+
+    name:
+      type: string
+      maxLength: 100
+      example: "Healthcare"
+
+
 PocResponse:
   description: >
     Full POC details, including the launch, repository, and container-image references.

@@ -2,6 +2,7 @@ package com.sails.ai.selfserviceapi.poc.controller;
 
 import com.sails.ai.selfserviceapi.generated.api.PocApi;
 import com.sails.ai.selfserviceapi.generated.model.CreatePocRequest;
+import com.sails.ai.selfserviceapi.generated.model.PocCategoryResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdatePocRequest;
@@ -48,6 +49,14 @@ public class PocController implements PocApi {
                 })
                 .toList();
         return ResponseEntity.ok(pocResponses);
+    }
+
+    @Override
+    public ResponseEntity<List<PocCategoryResponse>> getPocCategories() {
+        List<PocCategoryResponse> categories = pocService.listCategories().stream()
+                .map(PocResponseMapper::toCategoryResponse)
+                .toList();
+        return ResponseEntity.ok(categories);
     }
 
     @Override

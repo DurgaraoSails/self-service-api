@@ -1,8 +1,10 @@
 package com.sails.ai.selfserviceapi.poc.service;
 
+import com.sails.ai.selfserviceapi.generated.model.PocCategoryResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -47,6 +49,10 @@ public final class PocResponseMapper {
                 .appUrl(poc.getAppUrl())
                 .githubUrl(poc.getGithubUrl())
                 .activeVersionId(poc.getActiveVersionId());
+    }
+
+    public static PocCategoryResponse toCategoryResponse(PocCategory category) {
+        return new PocCategoryResponse(category.getId(), category.getName());
     }
 
     private static OffsetDateTime toUtcOffset(Instant instant) {

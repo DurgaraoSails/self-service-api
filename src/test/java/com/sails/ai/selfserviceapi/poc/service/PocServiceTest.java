@@ -8,7 +8,9 @@ import static org.mockito.Mockito.when;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
+import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.util.List;
 import java.util.Optional;
@@ -21,12 +23,14 @@ import org.springframework.http.HttpStatus;
 class PocServiceTest {
 
     private PocRepository pocRepository;
+    private PocCategoryRepository pocCategoryRepository;
     private PocService pocService;
 
     @BeforeEach
     void setUp() {
         pocRepository = Mockito.mock(PocRepository.class);
-        pocService = new PocService(pocRepository);
+        pocCategoryRepository = Mockito.mock(PocCategoryRepository.class);
+        pocService = new PocService(pocRepository, pocCategoryRepository);
     }
 
     private static Poc pocWithId(Long id) {
@@ -77,6 +81,19 @@ class PocServiceTest {
                 .isInstanceOf(PocNotFoundException.class)
                 .extracting(ex -> ((ApiException) ex).getStatus())
                 .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void listCategoriesReturnsThemAlphabetical() {
+        PocCategory healthcare = new PocCategory();
+        healthcare.setId(1L);
+        healthcare.setName("Healthcare");
+        PocCategory rag = new PocCategory();
+        rag.setId(2L);
+        rag.setName("RAG");
+        when(pocCategoryRepository.findAllByOrderByNameAsc()).thenReturn(List.of(healthcare, rag));
+
+        assertThat(pocService.listCategories()).containsExactly(healthcare, rag);
     }
 
     private static PocFields fullFields() {
