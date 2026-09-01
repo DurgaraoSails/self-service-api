@@ -59,14 +59,11 @@ Security's default empty 403 body.** `TrialExpiredAccessDeniedHandler` writes
 trial-expired denial looks like every other API error rather than an unstyled security-framework
 default.
 
-**All authenticated routes are gated, including `/users/me` — no carve-out.**
-There's no existing precedent in this codebase for "always-accessible" vs. "feature" routes, and
-today `/users/me` is the only other authenticated endpoint besides the new Contact Sales one. Gating
-everything under the existing `anyRequest()` catch-all is the simplest reading of "block access to
-features." If it later turns out expired-trial users should still be able to view their own account
-status via `/users/me`, that's a cheap follow-up:
-`requestMatchers("/users/me").access(AuthenticatedAuthorizationManager.authenticated())` placed
-before the `anyRequest()` catch-all (Spring Security matchers are first-match-wins).
+~~**All authenticated routes are gated, including `/users/me` — no carve-out.**~~ Reversed — see
+Changelog. `/users/me`, `/users/me/trial/extension-request`, and `/support/contact-sales` are now
+carved out to `authenticated()` only (no trial check), placed before the `anyRequest()` catch-all
+(Spring Security matchers are first-match-wins). This was the exact follow-up anticipated below,
+plus the two endpoints the trial-expired modal itself calls.
 
 **Trial length is a configuration property (`trial.length-days`, default 14), not a hardcoded
 constant.** Matches the existing `otp.*`/`jwt.*` `@ConfigurationProperties` record convention in
@@ -101,9 +98,15 @@ responses.
 
 ## Open Questions / Future Work
 
-- **Should `/users/me` be exempt from trial gating?** No existing precedent either way; current
-  default is "no exemption" (see Architecture Decisions). Revisit if product wants expired-trial
-  users to retain basic account visibility.
+- ~~**Should `/users/me` be exempt from trial gating?**~~ Resolved: yes. Gating `/users/me` broke
+  session restore on page refresh — `restoreSession()` calls `GET /users/me` to rehydrate the
+  in-memory `Auth` state from a still-valid access token, and a 403 there (rather than 401) is
+  swallowed as "not logged in," so a trial-expired user got silently signed out of the UI on refresh
+  even though their tokens were still valid. Gating also blocked `POST
+  /users/me/trial/extension-request` and `POST /support/contact-sales` — the trial-expired modal's
+  own two actions — so a trial-expired user couldn't actually request an extension or contact sales,
+  the only two things that modal exists to let them do. All three are now carved out to
+  `authenticated()` only.
 - **No upgrade/paid path.** ~~Once trial access enforcement ships, there is no way for a user to
   regain access after their trial ends.~~ Resolved manually, not via billing: `docs/specs/admin-customers.md`
   adds an admin "extend trial" action. No self-serve upgrade/paid path still exists — flag for
@@ -112,5 +115,10 @@ responses.
 
 ## Changelog
 
+- 2026-09-01 — Bug fix: carved `/users/me`, `/users/me/trial/extension-request`, and
+  `/support/contact-sales` out of trial gating (`authenticated()` only, matched before the
+  `anyRequest()` catch-all). Fixes trial-expired users being bounced to a logged-out UI on page
+  refresh, and fixes the trial-expired modal's own Extend/Contact Sales actions 403ing. See Open
+  Questions / Future Work and Architecture Decisions for the reasoning.
 - 2026-08-21 — Implemented: `TrialProperties` (`trial.length-days`, default 14), `UserService.registerUser` now sets `trialStartDate`/`trialEndDate`, `JwtService.issueAccessToken` adds the conditional `trialEndDate` claim, `TrialAuthorizationManager` + `TrialExpiredAccessDeniedHandler` added and wired into `SecurityConfig` via `AuthorizationManagers.allOf(...)` and `exceptionHandling(...)`. `/users/me` and `/support/contact-sales` OpenAPI responses gained `403`. Unit-tested (`TrialAuthorizationManagerTest`: no-claim/future/past/non-JWT cases; `JwtServiceTest`: claim present/absent) — all pass. Full end-to-end verification (register → decode token → confirm claim → force-expire → confirm 403) was not run live in this session due to an unrelated local-environment limitation (embedded Tomcat can't open a loopback socket in the sandboxed shell used here); the Spring Security bean wiring itself was confirmed via a full, successful `ApplicationContext` refresh short of the final web-server-start step.
 - 2026-08-21 — Initial draft, written before implementation.
