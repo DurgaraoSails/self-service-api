@@ -123,14 +123,6 @@
 			<optional>true</optional>
 		</dependency>
 
-		<!-- Application Default Credentials, used to mint OAuth2 access tokens for calling
-		     the Cloud Build API directly (no full google-cloud-build SDK / gRPC needed). -->
-		<dependency>
-			<groupId>com.google.auth</groupId>
-			<artifactId>google-auth-library-oauth2-http</artifactId>
-			<version>1.48.0</version>
-		</dependency>
-
 		<!-- test dependecies -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
