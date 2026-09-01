@@ -42,9 +42,6 @@ public class Poc {
     @Column(name = "github_url", length = 500)
     private String githubUrl;
 
-    @Column(name = "version", length = 50)
-    private String version;
-
     @Column(name = "owner", length = 200)
     private String owner;
 
@@ -54,9 +51,6 @@ public class Poc {
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "technologies", nullable = false, columnDefinition = "text[]")
     private List<String> technologies = new ArrayList<>();
-
-    @Column(name = "container_image", length = 500)
-    private String containerImage;
 
     @Column(name = "demo_type", length = 50)
     private String demoType;
@@ -80,17 +74,15 @@ public class Poc {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    @Column(name = "active_version_id")
+    private Long activeVersionId;
+
+    /** Addressable name for the deploy target — Cloud Run service name and image path segment. */
     @Column(name = "slug")
     private String slug;
 
-    // Deliberately separate from `status` above — that's an admin visibility toggle
-    // (ACTIVE/HIDDEN), this is the deployment pipeline's own lifecycle.
-    @Column(name = "deployment_status", nullable = false, length = 50)
-    private String deploymentStatus = "active";
-
-    @Column(name = "current_release_tag")
-    private String currentReleaseTag;
-
+    // Written by the deploy pipeline, which holds the GitHub credential — never by this service.
+    // Compared against the active version's commitSha to answer "is main ahead of what's live?".
     @Column(name = "latest_main_commit_sha")
     private String latestMainCommitSha;
 

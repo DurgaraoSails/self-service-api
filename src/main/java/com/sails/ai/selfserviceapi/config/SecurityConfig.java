@@ -59,7 +59,11 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/pocs")
                         .permitAll()
+                        .requestMatchers(HttpMethod.POST, "/pocs/deployments/*/status")
+                        .permitAll()
                         .requestMatchers("/api/v1/**")
+                        .authenticated()
+                        .requestMatchers("/users/me", "/users/me/trial/extension-request", "/support/contact-sales")
                         .authenticated()
                         .anyRequest()
                         .access(AuthorizationManagers.allOf(

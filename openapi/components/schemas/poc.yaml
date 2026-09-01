@@ -33,11 +33,19 @@ PocSummaryResponse:
       description: Public URL of the POC's icon image (e.g. hosted in a storage bucket).
       example: "https://cdn.example.com/pocs/contract-agent/icon.svg"
 
-    version:
+    activeVersion:
       type: string
-      maxLength: 50
-      description: Version of the POC.
-      example: "1.2.0"
+      maxLength: 20
+      nullable: true
+      description: Label of the POC's currently deployed version (e.g. "1.2.4"), or null if it has never been successfully deployed.
+      example: "1.2.4"
+
+    latestDeploymentStatus:
+      type: string
+      enum: [PENDING, BUILDING, DEPLOYING, SUCCEEDED, FAILED]
+      nullable: true
+      description: Status of the most recent deploy/rollback attempt, or null if one was never triggered.
+      example: null
 
     owner:
       type: string
@@ -100,6 +108,24 @@ PocSummaryResponse:
       example: null
 
 
+PocCategoryResponse:
+  type: object
+  description: A category POCs can be classified under, for the admin add/edit form's dropdown.
+  required:
+    - id
+    - name
+  properties:
+    id:
+      type: integer
+      format: int64
+      example: 1
+
+    name:
+      type: string
+      maxLength: 100
+      example: "Healthcare"
+
+
 PocResponse:
   description: >
     Full POC details, including the launch, repository, and container-image references.
@@ -120,11 +146,12 @@ PocResponse:
           description: URL of the POC's source repository.
           example: "https://github.com/example-org/contract-agent"
 
-        containerImage:
-          type: string
-          maxLength: 500
-          description: Container image reference the POC is deployed from.
-          example: "registry/company/rag-assistant:1.2.0"
+        activeVersionId:
+          type: integer
+          format: int64
+          nullable: true
+          description: Id of the POC's currently deployed version (see GET /pocs/{id}/versions), or null if never deployed.
+          example: 4
 
         slug:
           type: string
@@ -191,11 +218,6 @@ CreatePocRequest:
       description: Repository the pipeline clones and tags. Required — this is what triggers the deploy.
       example: "https://github.com/example-org/contract-agent"
 
-    version:
-      type: string
-      maxLength: 50
-      example: "1.2.0"
-
     owner:
       type: string
       maxLength: 200
@@ -215,11 +237,6 @@ CreatePocRequest:
         - "FastAPI"
         - "PostgreSQL"
         - "LLM"
-
-    containerImage:
-      type: string
-      maxLength: 500
-      example: "registry/company/rag-assistant:1.2.0"
 
     demoType:
       type: string
@@ -277,11 +294,6 @@ UpdatePocRequest:
       maxLength: 500
       example: "https://github.com/example-org/contract-agent"
 
-    version:
-      type: string
-      maxLength: 50
-      example: "1.2.0"
-
     owner:
       type: string
       maxLength: 200
@@ -301,11 +313,6 @@ UpdatePocRequest:
         - "FastAPI"
         - "PostgreSQL"
         - "LLM"
-
-    containerImage:
-      type: string
-      maxLength: 500
-      example: "registry/company/rag-assistant:1.2.0"
 
     demoType:
       type: string

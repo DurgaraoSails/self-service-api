@@ -69,6 +69,9 @@ email-domain-validation:
 support:
   sales-email: ${SALES_EMAIL:no.reply.sails.poc@gmail.com}
 
+deployment:
+  webhook-secret: ${DEPLOYMENT_WEBHOOK_SECRET:local-dev-deployment-webhook-secret-change-me}
+
 app:
   mail:
     from-address: ${MAIL_FROM_ADDRESS}
@@ -90,15 +93,7 @@ management:
 
 server:
   address: 0.0.0.0
-  port: ${PORT:8081}
+  port: ${PORT:8080}
 
 brevo:
   api-key: ${BREVO_API_KEY}
-
-github:
-  token: ${GITHUB_TOKEN}
-
-gcp:
-  project-id: ${GCP_PROJECT_ID:sails-agenthub}
-  region: ${GCP_REGION:us-central1}
-  environment: ${GCP_ENVIRONMENT:dev}

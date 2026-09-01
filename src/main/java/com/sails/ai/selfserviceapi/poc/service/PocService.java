@@ -1,8 +1,9 @@
 package com.sails.ai.selfserviceapi.poc.service;
 
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
-import com.sails.ai.selfserviceapi.poc.exception.PocSlugAlreadyExistsException;
+import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -15,31 +16,24 @@ public class PocService {
 
     private static final String DEFAULT_STATUS = "ACTIVE";
     private static final String HIDDEN_STATUS = "HIDDEN";
-    private static final String DEPLOYMENT_ACTIVE = "active";
-    private static final String DEPLOYMENT_NOT_DEPLOYED = "not_deployed";
 
     private final PocRepository pocRepository;
+    private final PocCategoryRepository pocCategoryRepository;
 
-    public PocService(PocRepository pocRepository) {
+    public PocService(PocRepository pocRepository, PocCategoryRepository pocCategoryRepository) {
         this.pocRepository = pocRepository;
+        this.pocCategoryRepository = pocCategoryRepository;
     }
 
     /**
      * Non-admins only ever see active, non-deleted POCs. Admins additionally see hidden POCs,
-     * and soft-deleted ones too when {@code includeDeleted} is set. Either way, a POC still
-     * building/not yet deployed/failed never shows here — it's not "ready", regardless of who's
-     * asking; its progress is tracked via the deployments/latest endpoint instead.
+     * and soft-deleted ones too when {@code includeDeleted} is set.
      */
     public List<Poc> listForViewer(boolean isAdmin, boolean includeDeleted) {
-        List<Poc> pocs;
         if (!isAdmin) {
-            pocs = pocRepository.findByStatusAndDeletedAtIsNull(DEFAULT_STATUS);
-        } else {
-            pocs = includeDeleted ? pocRepository.findAll() : pocRepository.findByDeletedAtIsNull();
+            return pocRepository.findByStatusAndDeletedAtIsNull(DEFAULT_STATUS);
         }
-        return pocs.stream()
-                .filter(poc -> DEPLOYMENT_ACTIVE.equals(poc.getDeploymentStatus()))
-                .toList();
+        return includeDeleted ? pocRepository.findAll() : pocRepository.findByDeletedAtIsNull();
     }
 
     public Poc getById(Long id) {
@@ -47,32 +41,14 @@ public class PocService {
                 .orElseThrow(() -> new PocNotFoundException(id));
     }
 
-    public Poc getBySlug(String slug) {
-        return pocRepository.findBySlug(slug)
-                .orElseThrow(() -> new PocNotFoundException(slug));
+    public List<PocCategory> listCategories() {
+        return pocCategoryRepository.findAllByOrderByNameAsc();
     }
 
     @Transactional
     public Poc create(PocFields fields) {
         Poc poc = new Poc();
         applyFields(poc, fields);
-        return pocRepository.save(poc);
-    }
-
-    /** Used by the self-service pipeline flow — every POC created this way starts undeployed. */
-    @Transactional
-    public Poc createForPipeline(PocFields fields, String slug) {
-        // The unique constraint on pocs.slug is the real guard; this pre-check exists so a
-        // duplicate returns a 409 the admin can act on rather than a bare 500 from the
-        // constraint violation surfacing as an unhandled DataIntegrityViolationException.
-        if (pocRepository.findBySlug(slug).isPresent()) {
-            throw new PocSlugAlreadyExistsException(slug);
-        }
-
-        Poc poc = new Poc();
-        applyFields(poc, fields);
-        poc.setSlug(slug);
-        poc.setDeploymentStatus(DEPLOYMENT_NOT_DEPLOYED);
         return pocRepository.save(poc);
     }
 
@@ -117,11 +93,9 @@ public class PocService {
         poc.setIconUrl(fields.iconUrl());
         poc.setAppUrl(fields.appUrl());
         poc.setGithubUrl(fields.githubUrl());
-        poc.setVersion(fields.version());
         poc.setOwner(fields.owner());
         poc.setCategory(fields.category());
         poc.setTechnologies(fields.technologies() != null ? fields.technologies() : new ArrayList<>());
-        poc.setContainerImage(fields.containerImage());
         poc.setDemoType(fields.demoType());
         poc.setStatus(fields.status() != null ? fields.status() : DEFAULT_STATUS);
         poc.setDetails(fields.details());

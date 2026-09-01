@@ -8,8 +8,9 @@ import static org.mockito.Mockito.when;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
-import com.sails.ai.selfserviceapi.poc.exception.PocSlugAlreadyExistsException;
+import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.util.List;
 import java.util.Optional;
@@ -22,12 +23,14 @@ import org.springframework.http.HttpStatus;
 class PocServiceTest {
 
     private PocRepository pocRepository;
+    private PocCategoryRepository pocCategoryRepository;
     private PocService pocService;
 
     @BeforeEach
     void setUp() {
         pocRepository = Mockito.mock(PocRepository.class);
-        pocService = new PocService(pocRepository);
+        pocCategoryRepository = Mockito.mock(PocCategoryRepository.class);
+        pocService = new PocService(pocRepository, pocCategoryRepository);
     }
 
     private static Poc pocWithId(Long id) {
@@ -63,17 +66,6 @@ class PocServiceTest {
     }
 
     @Test
-    void listForViewerHidesPocsWhoseDeploymentIsNotYetActiveEvenForAdmins() {
-        Poc building = pocWithId(1L);
-        building.setDeploymentStatus("building");
-        Poc active = pocWithId(2L);
-        active.setDeploymentStatus("active");
-        when(pocRepository.findByDeletedAtIsNull()).thenReturn(List.of(building, active));
-
-        assertThat(pocService.listForViewer(true, false)).containsExactly(active);
-    }
-
-    @Test
     void getByIdReturnsTheMatchingPoc() {
         Poc poc = pocWithId(1L);
         when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
@@ -92,46 +84,16 @@ class PocServiceTest {
     }
 
     @Test
-    void getBySlugReturnsTheMatchingPoc() {
-        Poc poc = pocWithId(1L);
-        poc.setSlug("contract-agent");
-        when(pocRepository.findBySlug("contract-agent")).thenReturn(Optional.of(poc));
+    void listCategoriesReturnsThemAlphabetical() {
+        PocCategory healthcare = new PocCategory();
+        healthcare.setId(1L);
+        healthcare.setName("Healthcare");
+        PocCategory rag = new PocCategory();
+        rag.setId(2L);
+        rag.setName("RAG");
+        when(pocCategoryRepository.findAllByOrderByNameAsc()).thenReturn(List.of(healthcare, rag));
 
-        assertThat(pocService.getBySlug("contract-agent")).isEqualTo(poc);
-    }
-
-    @Test
-    void getBySlugThrowsNotFoundWhenMissing() {
-        when(pocRepository.findBySlug("missing")).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> pocService.getBySlug("missing"))
-                .isInstanceOf(PocNotFoundException.class);
-    }
-
-    @Test
-    void createForPipelineRejectsADuplicateSlugWithAConflict() {
-        when(pocRepository.findBySlug("dummy-poc")).thenReturn(Optional.of(pocWithId(1L)));
-
-        assertThatThrownBy(() -> pocService.createForPipeline(fullFields(), "dummy-poc"))
-                .isInstanceOf(PocSlugAlreadyExistsException.class)
-                .extracting(ex -> ((ApiException) ex).getStatus())
-                .isEqualTo(HttpStatus.CONFLICT);
-
-        verify(pocRepository, Mockito.never()).save(any(Poc.class));
-    }
-
-    @Test
-    void createForPipelineSetsSlugAndStartsUndeployedRegardlessOfFieldsStatus() {
-        when(pocRepository.findBySlug("rag-assistant")).thenReturn(Optional.empty());
-        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        Poc created = pocService.createForPipeline(fullFields(), "rag-assistant");
-
-        assertThat(created.getSlug()).isEqualTo("rag-assistant");
-        assertThat(created.getDeploymentStatus()).isEqualTo("not_deployed");
-        // The admin-visibility status (ACTIVE/HIDDEN) is untouched by this — it's a separate axis.
-        assertThat(created.getStatus()).isEqualTo("ACTIVE");
-        assertThat(created.getGithubUrl()).isEqualTo("https://github.com/example-org/rag-assistant");
+        assertThat(pocService.listCategories()).containsExactly(healthcare, rag);
     }
 
     private static PocFields fullFields() {
@@ -141,11 +103,9 @@ class PocServiceTest {
                 "https://cdn.example.com/icon.svg",
                 "https://rag-assistant.example.com",
                 "https://github.com/example-org/rag-assistant",
-                "1.2.0",
                 "AI Team",
                 "Generative AI",
                 List.of("Python", "FastAPI", "PostgreSQL", "LLM"),
-                "registry/company/rag-assistant:1.2.0",
                 "interactive",
                 "ACTIVE",
                 "Longer-form details shown on the public details page.",
@@ -164,11 +124,9 @@ class PocServiceTest {
         assertThat(created.getIconUrl()).isEqualTo("https://cdn.example.com/icon.svg");
         assertThat(created.getAppUrl()).isEqualTo("https://rag-assistant.example.com");
         assertThat(created.getGithubUrl()).isEqualTo("https://github.com/example-org/rag-assistant");
-        assertThat(created.getVersion()).isEqualTo("1.2.0");
         assertThat(created.getOwner()).isEqualTo("AI Team");
         assertThat(created.getCategory()).isEqualTo("Generative AI");
         assertThat(created.getTechnologies()).containsExactly("Python", "FastAPI", "PostgreSQL", "LLM");
-        assertThat(created.getContainerImage()).isEqualTo("registry/company/rag-assistant:1.2.0");
         assertThat(created.getDemoType()).isEqualTo("interactive");
         assertThat(created.getStatus()).isEqualTo("ACTIVE");
         assertThat(created.getDetails()).isEqualTo("Longer-form details shown on the public details page.");
@@ -181,7 +139,7 @@ class PocServiceTest {
 
         Poc created = pocService.create(new PocFields(
                 "Contract Agent", "Review & generate contracts.", null, null, null,
-                null, null, null, null, null, null, null, null, null
+                null, null, null, null, null, null, null
         ));
 
         assertThat(created.getStatus()).isEqualTo("ACTIVE");
@@ -201,11 +159,9 @@ class PocServiceTest {
                 "https://cdn.example.com/new-icon.svg",
                 "https://renamed.example.com",
                 "https://github.com/example-org/renamed",
-                "2.0.0",
                 "Platform Team",
                 "Automation",
                 List.of("Java", "Spring Boot"),
-                "registry/company/renamed:2.0.0",
                 "video",
                 "INACTIVE",
                 "Updated details.",
@@ -217,11 +173,9 @@ class PocServiceTest {
         assertThat(updated.getIconUrl()).isEqualTo("https://cdn.example.com/new-icon.svg");
         assertThat(updated.getAppUrl()).isEqualTo("https://renamed.example.com");
         assertThat(updated.getGithubUrl()).isEqualTo("https://github.com/example-org/renamed");
-        assertThat(updated.getVersion()).isEqualTo("2.0.0");
         assertThat(updated.getOwner()).isEqualTo("Platform Team");
         assertThat(updated.getCategory()).isEqualTo("Automation");
         assertThat(updated.getTechnologies()).containsExactly("Java", "Spring Boot");
-        assertThat(updated.getContainerImage()).isEqualTo("registry/company/renamed:2.0.0");
         assertThat(updated.getDemoType()).isEqualTo("video");
         assertThat(updated.getStatus()).isEqualTo("INACTIVE");
         assertThat(updated.getDetails()).isEqualTo("Updated details.");
@@ -233,7 +187,7 @@ class PocServiceTest {
         when(pocRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> pocService.update(99L, new PocFields(
-                "n", "d", null, null, null, null, null, null, null, null, null, null, null, null)))
+                "n", "d", null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(PocNotFoundException.class);
     }
 

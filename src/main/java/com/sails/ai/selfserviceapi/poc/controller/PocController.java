@@ -1,30 +1,20 @@
 package com.sails.ai.selfserviceapi.poc.controller;
 
-import com.sails.ai.selfserviceapi.deployment.entity.PocDeployment;
-import com.sails.ai.selfserviceapi.deployment.exception.DeploymentAlreadyInProgressException;
-import com.sails.ai.selfserviceapi.deployment.exception.PocDeploymentNotFoundException;
-import com.sails.ai.selfserviceapi.deployment.repository.PocDeploymentRepository;
-import com.sails.ai.selfserviceapi.deployment.service.CheckUpdatesService;
-import com.sails.ai.selfserviceapi.deployment.service.CheckUpdatesService.CheckUpdatesResult;
-import com.sails.ai.selfserviceapi.deployment.service.DeploymentOrchestrator;
-import com.sails.ai.selfserviceapi.deployment.service.DeploymentQueryService;
-import com.sails.ai.selfserviceapi.deployment.service.PocDeploymentResponseMapper;
-import com.sails.ai.selfserviceapi.deployment.service.VersionService.BumpType;
 import com.sails.ai.selfserviceapi.generated.api.PocApi;
-import com.sails.ai.selfserviceapi.generated.model.CheckUpdatesResponse;
 import com.sails.ai.selfserviceapi.generated.model.CreatePocRequest;
-import com.sails.ai.selfserviceapi.generated.model.DeployNewVersionRequest;
-import com.sails.ai.selfserviceapi.generated.model.PocDeploymentResponse;
-import com.sails.ai.selfserviceapi.generated.model.PocDeploymentSummaryResponse;
+import com.sails.ai.selfserviceapi.generated.model.PocCategoryResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdatePocRequest;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
 import com.sails.ai.selfserviceapi.poc.service.PocFields;
 import com.sails.ai.selfserviceapi.poc.service.PocResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,44 +24,46 @@ import org.springframework.web.bind.annotation.RestController;
 public class PocController implements PocApi {
 
     private final PocService pocService;
-    private final DeploymentOrchestrator deploymentOrchestrator;
-    private final CheckUpdatesService checkUpdatesService;
-    private final DeploymentQueryService deploymentQueryService;
-    private final PocDeploymentRepository pocDeploymentRepository;
+    private final PocDeploymentService pocDeploymentService;
 
-    public PocController(
-            PocService pocService,
-            DeploymentOrchestrator deploymentOrchestrator,
-            CheckUpdatesService checkUpdatesService,
-            DeploymentQueryService deploymentQueryService,
-            PocDeploymentRepository pocDeploymentRepository) {
+    public PocController(PocService pocService, PocDeploymentService pocDeploymentService) {
         this.pocService = pocService;
-        this.deploymentOrchestrator = deploymentOrchestrator;
-        this.checkUpdatesService = checkUpdatesService;
-        this.deploymentQueryService = deploymentQueryService;
-        this.pocDeploymentRepository = pocDeploymentRepository;
+        this.pocDeploymentService = pocDeploymentService;
     }
 
     @Override
     public ResponseEntity<List<PocSummaryResponse>> getPocs(Boolean includeDeleted) {
         boolean isAdmin = CurrentUser.isAdmin();
-        List<PocSummaryResponse> pocs = pocService.listForViewer(isAdmin, isAdmin && Boolean.TRUE.equals(includeDeleted)).stream()
-                .map(PocResponseMapper::toSummaryResponse)
+        List<Poc> pocs = pocService.listForViewer(isAdmin, isAdmin && Boolean.TRUE.equals(includeDeleted));
+
+        List<Long> versionIds = pocs.stream().map(Poc::getActiveVersionId).filter(Objects::nonNull).toList();
+        List<Long> pocIds = pocs.stream().map(Poc::getId).toList();
+        Map<Long, String> activeVersionLabels = pocDeploymentService.activeVersionLabels(versionIds);
+        Map<Long, String> latestStatuses = pocDeploymentService.latestDeploymentStatuses(pocIds);
+
+        List<PocSummaryResponse> pocResponses = pocs.stream()
+                .map(poc -> {
+                    Long activeVersionId = poc.getActiveVersionId();
+                    String activeVersionLabel = activeVersionId != null ? activeVersionLabels.get(activeVersionId) : null;
+                    return PocResponseMapper.toSummaryResponse(poc, activeVersionLabel, latestStatuses.get(poc.getId()));
+                })
                 .toList();
-        return ResponseEntity.ok(pocs);
+        return ResponseEntity.ok(pocResponses);
+    }
+
+    @Override
+    public ResponseEntity<List<PocCategoryResponse>> getPocCategories() {
+        List<PocCategoryResponse> categories = pocService.listCategories().stream()
+                .map(PocResponseMapper::toCategoryResponse)
+                .toList();
+        return ResponseEntity.ok(categories);
     }
 
     @Override
     public ResponseEntity<PocResponse> getPocById(Long id) {
-        Poc poc = pocService.getById(id);
-        return ResponseEntity.ok(PocResponseMapper.toResponse(poc));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.getById(id)));
     }
 
-    /**
-     * Creating a POC always kicks off the deploy pipeline — deploymentStatus starts
-     * "not_deployed" and DeploymentOrchestrator takes over asynchronously from here, so this
-     * returns 201 immediately rather than waiting on the tag/build/deploy sequence.
-     */
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> createPoc(CreatePocRequest createPocRequest) {
@@ -81,19 +73,16 @@ public class PocController implements PocApi {
                 createPocRequest.getIconUrl(),
                 createPocRequest.getAppUrl(),
                 createPocRequest.getGithubUrl(),
-                createPocRequest.getVersion(),
                 createPocRequest.getOwner(),
                 createPocRequest.getCategory(),
                 createPocRequest.getTechnologies(),
-                createPocRequest.getContainerImage(),
                 createPocRequest.getDemoType(),
                 createPocRequest.getStatus() != null ? createPocRequest.getStatus().getValue() : null,
                 createPocRequest.getDetails(),
                 createPocRequest.getGuideSteps()
         );
-        Poc poc = pocService.createForPipeline(fields, createPocRequest.getSlug());
-        deploymentOrchestrator.triggerInitialDeployment(poc.getId(), CurrentUser.id());
-        return ResponseEntity.status(HttpStatus.CREATED).body(PocResponseMapper.toResponse(poc));
+        Poc poc = pocService.create(fields);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponseWithDeploymentInfo(poc));
     }
 
     @Override
@@ -105,18 +94,15 @@ public class PocController implements PocApi {
                 updatePocRequest.getIconUrl(),
                 updatePocRequest.getAppUrl(),
                 updatePocRequest.getGithubUrl(),
-                updatePocRequest.getVersion(),
                 updatePocRequest.getOwner(),
                 updatePocRequest.getCategory(),
                 updatePocRequest.getTechnologies(),
-                updatePocRequest.getContainerImage(),
                 updatePocRequest.getDemoType(),
                 updatePocRequest.getStatus() != null ? updatePocRequest.getStatus().getValue() : null,
                 updatePocRequest.getDetails(),
                 updatePocRequest.getGuideSteps()
         );
-        Poc poc = pocService.update(id, fields);
-        return ResponseEntity.ok(PocResponseMapper.toResponse(poc));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.update(id, fields)));
     }
 
     @Override
@@ -129,72 +115,26 @@ public class PocController implements PocApi {
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> hidePoc(Long id) {
-        return ResponseEntity.ok(PocResponseMapper.toResponse(pocService.hide(id)));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.hide(id)));
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> unhidePoc(Long id) {
-        return ResponseEntity.ok(PocResponseMapper.toResponse(pocService.unhide(id)));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.unhide(id)));
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> restorePoc(Long id) {
-        return ResponseEntity.ok(PocResponseMapper.toResponse(pocService.restore(id)));
+        return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.restore(id)));
     }
 
-    @Override
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<CheckUpdatesResponse> checkPocUpdates(String slug) {
-        Poc poc = pocService.getBySlug(slug);
-        CheckUpdatesResult result = checkUpdatesService.checkForUpdates(poc);
-        CheckUpdatesResponse response = new CheckUpdatesResponse(result.updateAvailable())
-                .latestMainCommitSha(result.latestMainCommitSha())
-                .deployedCommitSha(result.deployedCommitSha());
-        return ResponseEntity.ok(response);
-    }
-
-    /** Runs asynchronously — 202 just confirms the pipeline was triggered, not that it finished. */
-    @Override
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deployNewPocVersion(String slug, DeployNewVersionRequest deployNewVersionRequest) {
-        Poc poc = pocService.getBySlug(slug);
-
-        // Without this, an impatient double-click on the UI's "Update" button starts two
-        // pipelines for the same POC — two release tags, two builds, both racing to write
-        // deployment_status. Cheap to prevent, confusing to debug after the fact.
-        if (pocDeploymentRepository.existsByPocIdAndStatus(poc.getId(), "building")) {
-            throw new DeploymentAlreadyInProgressException(slug);
-        }
-
-        BumpType bumpType = toBumpType(deployNewVersionRequest);
-        deploymentOrchestrator.triggerNewVersion(poc.getId(), bumpType, CurrentUser.id());
-        return ResponseEntity.accepted().build();
-    }
-
-    @Override
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<PocDeploymentSummaryResponse>> getLatestDeployments(String status) {
-        List<PocDeploymentSummaryResponse> rows = deploymentQueryService.listLatestDeployments(status).stream()
-                .map(PocDeploymentResponseMapper::toSummaryResponse)
-                .toList();
-        return ResponseEntity.ok(rows);
-    }
-
-    @Override
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<PocDeploymentResponse> getLatestPocDeployment(String slug) {
-        Poc poc = pocService.getBySlug(slug);
-        PocDeployment deployment = pocDeploymentRepository.findFirstByPocIdOrderByCreatedAtDesc(poc.getId())
-                .orElseThrow(() -> new PocDeploymentNotFoundException(slug));
-        return ResponseEntity.ok(PocDeploymentResponseMapper.toResponse(deployment));
-    }
-
-    private static BumpType toBumpType(DeployNewVersionRequest request) {
-        if (request == null || request.getBump() == null) {
-            return BumpType.MINOR;
-        }
-        return BumpType.valueOf(request.getBump().getValue().toUpperCase());
+    private PocResponse toResponseWithDeploymentInfo(Poc poc) {
+        String activeVersionLabel = poc.getActiveVersionId() != null
+                ? pocDeploymentService.activeVersionLabels(List.of(poc.getActiveVersionId())).get(poc.getActiveVersionId())
+                : null;
+        String latestStatus = pocDeploymentService.latestDeploymentStatuses(List.of(poc.getId())).get(poc.getId());
+        return PocResponseMapper.toResponse(poc, activeVersionLabel, latestStatus);
     }
 }
