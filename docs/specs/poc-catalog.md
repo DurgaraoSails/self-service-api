@@ -28,6 +28,7 @@ The API assumes the icon image already lives somewhere with a public URL (e.g. a
 
 **`containerImage` is gated the same as `appUrl`/`githubUrl`, the rest of the metadata is public.**
 `version`, `owner`, `category`, `technologies`, `demoType`, and `status` were added to match an existing POC contract used elsewhere (fields like `name`, `version`, `owner`, `category`, `technologies`, `containerImage`, `demoType`, `status`). All of them are descriptive/display metadata for the same public dashboard card as name/description, so they're on `PocSummaryResponse` too. `containerImage` is the one exception — like `appUrl`/`githubUrl`, it's an internal deployment reference (an image registry path), not display content, so it only appears on the authenticated `PocResponse`.
+*(Superseded 2026-09-01 — see `docs/specs/poc-deployment.md`: both `version` and `containerImage` were removed from `pocs` entirely, replaced by real per-version tracking. This paragraph is kept for history, not current behavior.)*
 
 **`status` is now a closed `ACTIVE`/`HIDDEN` enum, doubling as the admin hide/unhide mechanism.**
 Originally free text with only one known value (`"ACTIVE"`). Once admin hide/unhide (see Requirements/Data Model below) needed a visibility flag, `status` was the natural fit rather than adding a new boolean column — it had no other reader or writer anywhere in the codebase, and "hidden" is genuinely a lifecycle status, not a distinct concept. Tightened to an enum at the same time (`ACTIVE`, `HIDDEN`) since this round is the only writer of new values — free 400-on-typo validation instead of accepting arbitrary strings. This also resolves the "tighten `status` into an enum" item from Open Questions below (the `demoType` half of that item is still open).
@@ -52,17 +53,18 @@ OpenAPI's per-operation `security: []` only affects generated documentation — 
 | icon_url | VARCHAR(500) | nullable, public URL to an icon image |
 | app_url | VARCHAR(500) | nullable, deployed POC app URL |
 | github_url | VARCHAR(500) | nullable, source repo URL |
-| version | VARCHAR(50) | nullable |
+| ~~version~~ | ~~VARCHAR(50)~~ | removed 2026-09-01 — see `docs/specs/poc-deployment.md` (`active_version_id` below) |
 | owner | VARCHAR(200) | nullable, owning team/person |
 | category | VARCHAR(100) | nullable |
 | technologies | TEXT\[\] NOT NULL DEFAULT '{}' | |
-| container_image | VARCHAR(500) | nullable, registry image reference |
+| ~~container_image~~ | ~~VARCHAR(500)~~ | removed 2026-09-01 — moved to `poc_versions.container_image`, see `docs/specs/poc-deployment.md` |
 | demo_type | VARCHAR(50) | nullable |
 | status | VARCHAR(50) NOT NULL DEFAULT 'ACTIVE' | `ACTIVE` \| `HIDDEN` (enum-validated at the API layer; column itself is still plain text) |
 | details | TEXT | nullable, longer-form copy for the public details page |
 | guide_steps | TEXT\[\] NOT NULL DEFAULT '{}' | ordered "how to use this POC" steps, public details page |
 | created_at / updated_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
 | deleted_at | TIMESTAMPTZ | nullable; `NULL` = not deleted (migration `V8__add_deleted_at_to_pocs_table.sql`) |
+| active_version_id | BIGINT REFERENCES poc_versions(id) | nullable; added 2026-09-01, see `docs/specs/poc-deployment.md` |
 
 ## API Surface
 
@@ -87,6 +89,7 @@ All new endpoints live under `/pocs`, tagged `Poc` (generates a single `PocApi` 
 - **Icon upload**: no asset-hosting/upload endpoint exists; `iconUrl` must be populated with an already-hosted URL. The portal's `PocCard` renders it as an `<img>` when present, falling back to a generic SVG glyph when absent (no POC has a real `iconUrl` set yet).
 - **`demoType` as a closed enum**: still free-text `VARCHAR`. `status` was tightened this round (see Architecture Decisions); `demoType` wasn't, since its valid value set still isn't known — same reasoning that originally applied to both.
 - **Hard-delete / purge**: soft-deleted POCs are retained indefinitely once restorable via the admin "Show deleted" view — there's no purge job or hard-delete path. Not needed yet; revisit if the deleted set grows large.
+- **Versioning and deployment tracking**: now covered by `docs/specs/poc-deployment.md` (2026-09-01) — see that spec for `version`/`containerImage`'s removal from this table and the new `poc_versions`/`poc_deployments` model.
 
 ## Angular UI Wiring
 
@@ -100,6 +103,8 @@ Three portal pages consume this API, split along the same public/authenticated l
 
 ## Changelog
 
+- 2026-09-01 — `version`/`container_image` removed from `pocs`, replaced by `active_version_id` (FK
+  to a new `poc_versions` table) and real deployment tracking. See `docs/specs/poc-deployment.md`.
 - 2026-08-26 — Admin-only writes: `POST/PUT/DELETE /pocs` now require the `ADMIN` role (see `docs/specs/admin-users.md`). `DELETE` is now a soft delete (`deleted_at`, migration `V8`) with a new `POST /pocs/{id}/restore`. `status` tightened to an `ACTIVE`/`HIDDEN` enum and repurposed as the hide/unhide mechanism, via new `POST /pocs/{id}/hide` and `/unhide`. `GET /pocs` gained an admin-only `includeDeleted` query param and now filters rows by caller role instead of returning everything unconditionally.
 - 2026-08-25 — Wired the Angular dashboard/details/workspace pages to this API (see "Angular UI Wiring" above) and removed `data/pocs.ts`. Added `details` (`TEXT`) and `guideSteps` (`TEXT[]`) — public fields, migration `V6__add_details_and_guide_steps_to_pocs_table.sql` (additive, not folded into `V4`, since that migration is now committed/shared) — plus a seed migration (`V7__seed_initial_pocs.sql`) for the 5 pre-existing hardcoded POCs. Refactored `PocService.create`/`update` from 12 (now would've been 14) positional same-type parameters into a `PocFields` record, to remove a real transposition-bug risk that had grown past the point the `UserService.registerUser`-style positional-parameter precedent was comfortable.
 - 2026-08-25 — Added `version`, `owner`, `category`, `technologies`, `containerImage`, `demoType`, `status` to match an existing POC contract (fields observed: `name`, `version`, `owner`, `category`, `technologies`, `containerImage`, `demoType`, `status`). Revised `V4__create_pocs_table.sql` in place rather than adding a new migration, since the table hadn't been committed or applied anywhere yet. `containerImage` joined `appUrl`/`githubUrl` as authenticated-only; the rest joined the public `PocSummaryResponse`.
