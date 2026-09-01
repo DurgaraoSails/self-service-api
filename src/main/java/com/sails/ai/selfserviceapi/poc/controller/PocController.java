@@ -41,9 +41,11 @@ public class PocController implements PocApi {
         Map<Long, String> latestStatuses = pocDeploymentService.latestDeploymentStatuses(pocIds);
 
         List<PocSummaryResponse> pocResponses = pocs.stream()
-                .map(poc -> PocResponseMapper.toSummaryResponse(poc,
-                        activeVersionLabels.get(poc.getActiveVersionId()),
-                        latestStatuses.get(poc.getId())))
+                .map(poc -> {
+                    Long activeVersionId = poc.getActiveVersionId();
+                    String activeVersionLabel = activeVersionId != null ? activeVersionLabels.get(activeVersionId) : null;
+                    return PocResponseMapper.toSummaryResponse(poc, activeVersionLabel, latestStatuses.get(poc.getId()));
+                })
                 .toList();
         return ResponseEntity.ok(pocResponses);
     }
