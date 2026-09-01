@@ -162,14 +162,12 @@ PocResponse:
 CreatePocRequest:
   type: object
   description: >
-    Request to create a new POC. Creating a POC always kicks off the deploy pipeline
-    (tag main, build, push, deploy) — appUrl and containerImage are populated by the pipeline
-    itself once a deployment succeeds, not supplied here.
+    Request to create a new POC. Creating a POC records metadata only — deploying is a separate,
+    explicit action (POST /pocs/{id}/deploy). slug and githubUrl are optional here, but both are
+    required before that POC can be deployed.
   required:
     - name
     - description
-    - slug
-    - githubUrl
   properties:
     name:
       type: string
