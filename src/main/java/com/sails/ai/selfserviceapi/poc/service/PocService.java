@@ -14,6 +14,8 @@ public class PocService {
 
     private static final String DEFAULT_STATUS = "ACTIVE";
     private static final String HIDDEN_STATUS = "HIDDEN";
+    private static final String DEPLOYMENT_ACTIVE = "active";
+    private static final String DEPLOYMENT_NOT_DEPLOYED = "not_deployed";
 
     private final PocRepository pocRepository;
 
@@ -23,13 +25,20 @@ public class PocService {
 
     /**
      * Non-admins only ever see active, non-deleted POCs. Admins additionally see hidden POCs,
-     * and soft-deleted ones too when {@code includeDeleted} is set.
+     * and soft-deleted ones too when {@code includeDeleted} is set. Either way, a POC still
+     * building/not yet deployed/failed never shows here — it's not "ready", regardless of who's
+     * asking; its progress is tracked via the deployments/latest endpoint instead.
      */
     public List<Poc> listForViewer(boolean isAdmin, boolean includeDeleted) {
+        List<Poc> pocs;
         if (!isAdmin) {
-            return pocRepository.findByStatusAndDeletedAtIsNull(DEFAULT_STATUS);
+            pocs = pocRepository.findByStatusAndDeletedAtIsNull(DEFAULT_STATUS);
+        } else {
+            pocs = includeDeleted ? pocRepository.findAll() : pocRepository.findByDeletedAtIsNull();
         }
-        return includeDeleted ? pocRepository.findAll() : pocRepository.findByDeletedAtIsNull();
+        return pocs.stream()
+                .filter(poc -> DEPLOYMENT_ACTIVE.equals(poc.getDeploymentStatus()))
+                .toList();
     }
 
     public Poc getById(Long id) {
@@ -37,10 +46,25 @@ public class PocService {
                 .orElseThrow(() -> new PocNotFoundException(id));
     }
 
+    public Poc getBySlug(String slug) {
+        return pocRepository.findBySlug(slug)
+                .orElseThrow(() -> new PocNotFoundException(slug));
+    }
+
     @Transactional
     public Poc create(PocFields fields) {
         Poc poc = new Poc();
         applyFields(poc, fields);
+        return pocRepository.save(poc);
+    }
+
+    /** Used by the self-service pipeline flow — every POC created this way starts undeployed. */
+    @Transactional
+    public Poc createForPipeline(PocFields fields, String slug) {
+        Poc poc = new Poc();
+        applyFields(poc, fields);
+        poc.setSlug(slug);
+        poc.setDeploymentStatus(DEPLOYMENT_NOT_DEPLOYED);
         return pocRepository.save(poc);
     }
 

@@ -90,6 +90,7 @@ public class DeploymentOrchestrator {
             BuildSubmission submission = buildService.submitBuild(new BuildRequest(poc.getSlug(), releaseTag, repo));
 
             deployment.setReleaseTag(releaseTag);
+            deployment.setCommitSha(headSha);
             deployment.setCloudBuildId(submission.cloudBuildId());
             deployment.setImageUri(submission.imageUri());
             pocDeploymentRepository.save(deployment);
@@ -121,4 +122,3 @@ public class DeploymentOrchestrator {
         return message.length() > 2000 ? message.substring(0, 2000) : message;
     }
 }
-    

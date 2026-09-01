@@ -62,6 +62,17 @@ class PocServiceTest {
     }
 
     @Test
+    void listForViewerHidesPocsWhoseDeploymentIsNotYetActiveEvenForAdmins() {
+        Poc building = pocWithId(1L);
+        building.setDeploymentStatus("building");
+        Poc active = pocWithId(2L);
+        active.setDeploymentStatus("active");
+        when(pocRepository.findByDeletedAtIsNull()).thenReturn(List.of(building, active));
+
+        assertThat(pocService.listForViewer(true, false)).containsExactly(active);
+    }
+
+    @Test
     void getByIdReturnsTheMatchingPoc() {
         Poc poc = pocWithId(1L);
         when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
@@ -77,6 +88,36 @@ class PocServiceTest {
                 .isInstanceOf(PocNotFoundException.class)
                 .extracting(ex -> ((ApiException) ex).getStatus())
                 .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void getBySlugReturnsTheMatchingPoc() {
+        Poc poc = pocWithId(1L);
+        poc.setSlug("contract-agent");
+        when(pocRepository.findBySlug("contract-agent")).thenReturn(Optional.of(poc));
+
+        assertThat(pocService.getBySlug("contract-agent")).isEqualTo(poc);
+    }
+
+    @Test
+    void getBySlugThrowsNotFoundWhenMissing() {
+        when(pocRepository.findBySlug("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> pocService.getBySlug("missing"))
+                .isInstanceOf(PocNotFoundException.class);
+    }
+
+    @Test
+    void createForPipelineSetsSlugAndStartsUndeployedRegardlessOfFieldsStatus() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Poc created = pocService.createForPipeline(fullFields(), "rag-assistant");
+
+        assertThat(created.getSlug()).isEqualTo("rag-assistant");
+        assertThat(created.getDeploymentStatus()).isEqualTo("not_deployed");
+        // The admin-visibility status (ACTIVE/HIDDEN) is untouched by this — it's a separate axis.
+        assertThat(created.getStatus()).isEqualTo("ACTIVE");
+        assertThat(created.getGithubUrl()).isEqualTo("https://github.com/example-org/rag-assistant");
     }
 
     private static PocFields fullFields() {

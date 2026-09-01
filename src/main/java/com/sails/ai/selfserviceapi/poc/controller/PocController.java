@@ -1,7 +1,18 @@
 package com.sails.ai.selfserviceapi.poc.controller;
 
+import com.sails.ai.selfserviceapi.deployment.entity.PocDeployment;
+import com.sails.ai.selfserviceapi.deployment.exception.PocDeploymentNotFoundException;
+import com.sails.ai.selfserviceapi.deployment.repository.PocDeploymentRepository;
+import com.sails.ai.selfserviceapi.deployment.service.CheckUpdatesService;
+import com.sails.ai.selfserviceapi.deployment.service.CheckUpdatesService.CheckUpdatesResult;
+import com.sails.ai.selfserviceapi.deployment.service.DeploymentOrchestrator;
+import com.sails.ai.selfserviceapi.deployment.service.PocDeploymentResponseMapper;
+import com.sails.ai.selfserviceapi.deployment.service.VersionService.BumpType;
 import com.sails.ai.selfserviceapi.generated.api.PocApi;
+import com.sails.ai.selfserviceapi.generated.model.CheckUpdatesResponse;
 import com.sails.ai.selfserviceapi.generated.model.CreatePocRequest;
+import com.sails.ai.selfserviceapi.generated.model.DeployNewVersionRequest;
+import com.sails.ai.selfserviceapi.generated.model.PocDeploymentResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdatePocRequest;
@@ -20,9 +31,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class PocController implements PocApi {
 
     private final PocService pocService;
+    private final DeploymentOrchestrator deploymentOrchestrator;
+    private final CheckUpdatesService checkUpdatesService;
+    private final PocDeploymentRepository pocDeploymentRepository;
 
-    public PocController(PocService pocService) {
+    public PocController(
+            PocService pocService,
+            DeploymentOrchestrator deploymentOrchestrator,
+            CheckUpdatesService checkUpdatesService,
+            PocDeploymentRepository pocDeploymentRepository) {
         this.pocService = pocService;
+        this.deploymentOrchestrator = deploymentOrchestrator;
+        this.checkUpdatesService = checkUpdatesService;
+        this.pocDeploymentRepository = pocDeploymentRepository;
     }
 
     @Override
@@ -40,6 +61,11 @@ public class PocController implements PocApi {
         return ResponseEntity.ok(PocResponseMapper.toResponse(poc));
     }
 
+    /**
+     * Creating a POC always kicks off the deploy pipeline — deploymentStatus starts
+     * "not_deployed" and DeploymentOrchestrator takes over asynchronously from here, so this
+     * returns 201 immediately rather than waiting on the tag/build/deploy sequence.
+     */
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> createPoc(CreatePocRequest createPocRequest) {
@@ -59,7 +85,8 @@ public class PocController implements PocApi {
                 createPocRequest.getDetails(),
                 createPocRequest.getGuideSteps()
         );
-        Poc poc = pocService.create(fields);
+        Poc poc = pocService.createForPipeline(fields, createPocRequest.getSlug());
+        deploymentOrchestrator.triggerInitialDeployment(poc.getId(), CurrentUser.id());
         return ResponseEntity.status(HttpStatus.CREATED).body(PocResponseMapper.toResponse(poc));
     }
 
@@ -109,5 +136,42 @@ public class PocController implements PocApi {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocResponse> restorePoc(Long id) {
         return ResponseEntity.ok(PocResponseMapper.toResponse(pocService.restore(id)));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<CheckUpdatesResponse> checkPocUpdates(String slug) {
+        Poc poc = pocService.getBySlug(slug);
+        CheckUpdatesResult result = checkUpdatesService.checkForUpdates(poc);
+        CheckUpdatesResponse response = new CheckUpdatesResponse(result.updateAvailable())
+                .latestMainCommitSha(result.latestMainCommitSha())
+                .deployedCommitSha(result.deployedCommitSha());
+        return ResponseEntity.ok(response);
+    }
+
+    /** Runs asynchronously — 202 just confirms the pipeline was triggered, not that it finished. */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deployNewPocVersion(String slug, DeployNewVersionRequest deployNewVersionRequest) {
+        Poc poc = pocService.getBySlug(slug);
+        BumpType bumpType = toBumpType(deployNewVersionRequest);
+        deploymentOrchestrator.triggerNewVersion(poc.getId(), bumpType, CurrentUser.id());
+        return ResponseEntity.accepted().build();
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PocDeploymentResponse> getLatestPocDeployment(String slug) {
+        Poc poc = pocService.getBySlug(slug);
+        PocDeployment deployment = pocDeploymentRepository.findFirstByPocIdOrderByCreatedAtDesc(poc.getId())
+                .orElseThrow(() -> new PocDeploymentNotFoundException(slug));
+        return ResponseEntity.ok(PocDeploymentResponseMapper.toResponse(deployment));
+    }
+
+    private static BumpType toBumpType(DeployNewVersionRequest request) {
+        if (request == null || request.getBump() == null) {
+            return BumpType.MINOR;
+        }
+        return BumpType.valueOf(request.getBump().getValue().toUpperCase());
     }
 }

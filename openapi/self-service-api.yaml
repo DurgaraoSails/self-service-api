@@ -736,6 +736,95 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/{slug}/check-updates:
+    post:
+      summary: Re-fetch the repo's main branch and compare it to what's deployed (admin only)
+      operationId: checkPocUpdates
+      tags:
+        - Poc
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Update-availability result
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/CheckUpdatesResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{slug}/deploy-new-version:
+    post:
+      summary: Tag, build, and deploy a new release of an existing POC (admin only)
+      description: >
+        Runs asynchronously — returns immediately once the pipeline has been kicked off, well
+        before the tag/build/deploy sequence actually finishes. Poll deployments/latest for progress.
+      operationId: deployNewPocVersion
+      tags:
+        - Poc
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/poc.yaml#/DeployNewVersionRequest'
+      responses:
+        '202':
+          description: Deployment pipeline triggered
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{slug}/deployments/latest:
+    get:
+      summary: Most recent deployment attempt for a POC — for the admin progress view (admin only)
+      operationId: getLatestPocDeployment
+      tags:
+        - Poc
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Most recent deployment
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocDeploymentResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /activity/heartbeat:
     post:
       summary: Record that the caller is actively using a POC

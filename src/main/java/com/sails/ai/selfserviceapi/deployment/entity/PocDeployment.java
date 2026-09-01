@@ -30,6 +30,11 @@ public class PocDeployment {
     @Column(name = "release_tag", nullable = false)
     private String releaseTag;
 
+    // The commit main's HEAD pointed at when this deployment's tag was created — what
+    // check-updates compares a fresh HEAD fetch against for the most recent active deployment.
+    @Column(name = "commit_sha")
+    private String commitSha;
+
     @Column(name = "cloud_build_id")
     private String cloudBuildId;
 

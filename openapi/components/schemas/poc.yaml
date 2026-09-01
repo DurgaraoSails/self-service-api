@@ -126,13 +126,37 @@ PocResponse:
           description: Container image reference the POC is deployed from.
           example: "registry/company/rag-assistant:1.2.0"
 
+        slug:
+          type: string
+          description: URL-safe identifier — Cloud Run service name, image path segment, and deployment-pipeline key.
+          example: "contract-agent"
+
+        deploymentStatus:
+          type: string
+          enum: [not_deployed, building, active, failed]
+          description: >
+            Pipeline lifecycle state. Deliberately separate from `status` (ACTIVE/HIDDEN), which
+            is an admin visibility toggle unrelated to whether a deploy actually succeeded.
+          example: "active"
+
+        currentReleaseTag:
+          type: string
+          nullable: true
+          description: Version tag of the release currently live, or null if none has gone live yet.
+          example: "1.0.0"
+
 
 CreatePocRequest:
   type: object
-  description: Request to create a new POC.
+  description: >
+    Request to create a new POC. Creating a POC always kicks off the deploy pipeline
+    (tag main, build, push, deploy) — appUrl and containerImage are populated by the pipeline
+    itself once a deployment succeeds, not supplied here.
   required:
     - name
     - description
+    - slug
+    - githubUrl
   properties:
     name:
       type: string
@@ -143,6 +167,13 @@ CreatePocRequest:
       type: string
       maxLength: 2000
       example: "Review & generate contracts."
+
+    slug:
+      type: string
+      maxLength: 100
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      description: URL-safe identifier, lowercase letters/digits/hyphens only. Used as the Cloud Run service name — must be unique.
+      example: "contract-agent"
 
     iconUrl:
       type: string
@@ -157,6 +188,7 @@ CreatePocRequest:
     githubUrl:
       type: string
       maxLength: 500
+      description: Repository the pipeline clones and tags. Required — this is what triggers the deploy.
       example: "https://github.com/example-org/contract-agent"
 
     version:
@@ -297,3 +329,94 @@ UpdatePocRequest:
       example:
         - "Click Launch to open the assistant in your session."
         - "Describe the process or task you need help with in plain language."
+
+
+DeployNewVersionRequest:
+  type: object
+  description: Request to tag, build, and deploy a new release of an existing POC.
+  properties:
+    bump:
+      type: string
+      enum: [major, minor, patch]
+      default: minor
+      description: Defaults to "minor" if omitted.
+      example: "minor"
+
+
+CheckUpdatesResponse:
+  type: object
+  description: Result of re-fetching the repo's main branch and comparing it to what's deployed.
+  required:
+    - updateAvailable
+  properties:
+    updateAvailable:
+      type: boolean
+      example: true
+
+    latestMainCommitSha:
+      type: string
+      description: HEAD of main as of this check.
+      example: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+
+    deployedCommitSha:
+      type: string
+      nullable: true
+      description: Commit the currently-active deployment was built from, or null if none is active yet.
+      example: "0011223344556677889900112233445566778899"
+
+
+PocDeploymentResponse:
+  type: object
+  description: One tag-build-deploy attempt, for the admin-facing progress/status view.
+  required:
+    - id
+    - releaseTag
+    - status
+    - startedAt
+  properties:
+    id:
+      type: integer
+      format: int64
+      example: 42
+
+    releaseTag:
+      type: string
+      example: "1.1.0"
+
+    cloudBuildId:
+      type: string
+      nullable: true
+      description: Null until the build has actually been submitted to Cloud Build.
+      example: "302df041-2b75-400f-930d-9225f3d89010"
+
+    imageUri:
+      type: string
+      nullable: true
+      description: Artifact Registry image reference, once the build has pushed it.
+      example: "us-central1-docker.pkg.dev/sails-agenthub/poc-images/contract-agent/app:1.1.0"
+
+    status:
+      type: string
+      enum: [building, active, failed]
+      example: "building"
+
+    failureReason:
+      type: string
+      nullable: true
+      description: Set only when status is "failed".
+      example: "PermissionDenied: secretmanager.versions.access denied"
+
+    triggeredBy:
+      type: string
+      nullable: true
+      description: User id of the admin who triggered this deployment.
+
+    startedAt:
+      type: string
+      format: date-time
+
+    finishedAt:
+      type: string
+      format: date-time
+      nullable: true
+      description: Null while still building.

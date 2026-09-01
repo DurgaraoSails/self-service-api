@@ -21,8 +21,35 @@ import org.springframework.web.client.RestClient;
 @EnabledIfEnvironmentVariable(named = "RUN_CLOUD_BUILD_IT", matches = "true")
 class BuildServiceIT {
 
+    // From the manual DeploymentOrchestrator-adjacent run on 2026-08-31 — failed at the expected
+    // secretAccessor gap. Reused here (read-only) to prove getBuildStatus's parsing against a
+    // real terminal-failure response, at no extra GCP cost.
+    private static final String KNOWN_FAILED_BUILD_ID = "302df041-2b75-400f-930d-9225f3d89010";
+
     @Test
     void submitsARealBuildAgainstDummyPoc() throws IOException {
+        BuildService buildService = buildService();
+        GitHubRepoRef repo = new GitHubRepoRef("DurgaraoSails", "dummy-poc");
+
+        var submission = buildService.submitBuild(new BuildRequest("dummy-poc", "1.0.0", repo));
+
+        assertThat(submission.cloudBuildId()).isNotBlank();
+        System.out.println("Submitted Cloud Build job: " + submission.cloudBuildId());
+    }
+
+    @Test
+    void fetchesTheRealTerminalStatusOfAKnownFailedBuild() throws IOException {
+        BuildService buildService = buildService();
+
+        BuildService.BuildStatus status = buildService.getBuildStatus(KNOWN_FAILED_BUILD_ID);
+
+        assertThat(status.isTerminal()).isTrue();
+        assertThat(status.isSuccess()).isFalse();
+        assertThat(status.status()).isEqualTo("FAILURE");
+        assertThat(status.failureDetail()).contains("secretmanager.versions.access");
+    }
+
+    private BuildService buildService() throws IOException {
         GoogleCredentials credentials = GoogleCredentials.getApplicationDefault()
                 .createScoped("https://www.googleapis.com/auth/cloud-platform");
 
@@ -37,12 +64,6 @@ class BuildServiceIT {
                 .build();
 
         GcpProperties gcpProperties = new GcpProperties("sails-agenthub", "us-central1", "dev");
-        BuildService buildService = new BuildService(restClient, gcpProperties);
-        GitHubRepoRef repo = new GitHubRepoRef("DurgaraoSails", "dummy-poc");
-
-        var submission = buildService.submitBuild(new BuildRequest("dummy-poc", "1.0.0", repo));
-
-        assertThat(submission.cloudBuildId()).isNotBlank();
-        System.out.println("Submitted Cloud Build job: " + submission.cloudBuildId());
+        return new BuildService(restClient, gcpProperties);
     }
 }

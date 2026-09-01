@@ -40,7 +40,10 @@ public final class PocResponseMapper {
                 .deletedAt(toUtcOffset(poc.getDeletedAt()))
                 .appUrl(poc.getAppUrl())
                 .githubUrl(poc.getGithubUrl())
-                .containerImage(poc.getContainerImage());
+                .containerImage(poc.getContainerImage())
+                .slug(poc.getSlug())
+                .deploymentStatus(PocResponse.DeploymentStatusEnum.fromValue(poc.getDeploymentStatus()))
+                .currentReleaseTag(poc.getCurrentReleaseTag());
     }
 
     private static OffsetDateTime toUtcOffset(Instant instant) {

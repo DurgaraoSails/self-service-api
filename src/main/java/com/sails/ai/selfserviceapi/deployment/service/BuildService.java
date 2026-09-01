@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.sails.ai.selfserviceapi.deployment.config.GcpProperties;
 import com.sails.ai.selfserviceapi.deployment.exception.CloudBuildApiException;
 import java.util.List;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -34,6 +35,23 @@ public class BuildService {
             throw new CloudBuildApiException(
                     "Failed to submit build for %s@%s: %d %s".formatted(
                             request.repo(), request.releaseTag(), e.getStatusCode().value(), e.getResponseBodyAsString()),
+                    e);
+        }
+    }
+
+    /** Fetches a previously-submitted build's current state — polled by DeploymentStatusPoller. */
+    public BuildStatus getBuildStatus(String cloudBuildId) {
+        try {
+            BuildStatusResponse response = cloudBuildRestClient.get()
+                    .uri("/projects/{project}/builds/{id}", gcpProperties.projectId(), cloudBuildId)
+                    .retrieve()
+                    .body(BuildStatusResponse.class);
+            String failureDetail = response.failureInfo() != null ? response.failureInfo().detail() : null;
+            return new BuildStatus(response.status(), failureDetail);
+        } catch (RestClientResponseException e) {
+            throw new CloudBuildApiException(
+                    "Failed to fetch status for build %s: %d %s".formatted(
+                            cloudBuildId, e.getStatusCode().value(), e.getResponseBodyAsString()),
                     e);
         }
     }
@@ -91,6 +109,22 @@ public class BuildService {
     public record BuildSubmission(String cloudBuildId, String imageUri) {
     }
 
+    /** Cloud Build's own status strings: QUEUED, WORKING, SUCCESS, FAILURE, INTERNAL_ERROR,
+     *  TIMEOUT, CANCELLED, EXPIRED. failureDetail is only ever set on a non-SUCCESS terminal state. */
+    public record BuildStatus(String status, String failureDetail) {
+
+        private static final Set<String> TERMINAL =
+                Set.of("SUCCESS", "FAILURE", "INTERNAL_ERROR", "TIMEOUT", "CANCELLED", "EXPIRED");
+
+        public boolean isTerminal() {
+            return TERMINAL.contains(status);
+        }
+
+        public boolean isSuccess() {
+            return "SUCCESS".equals(status);
+        }
+    }
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record BuildStep(String name, String entrypoint, List<String> args, List<String> secretEnv) {
     }
@@ -118,5 +152,11 @@ public class BuildService {
     }
 
     private record BuildInfo(String id, String status) {
+    }
+
+    private record BuildStatusResponse(String status, FailureInfo failureInfo) {
+    }
+
+    private record FailureInfo(String type, String detail) {
     }
 }
