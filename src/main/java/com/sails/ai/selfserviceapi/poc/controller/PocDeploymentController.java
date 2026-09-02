@@ -2,6 +2,7 @@ package com.sails.ai.selfserviceapi.poc.controller;
 
 import com.sails.ai.selfserviceapi.generated.api.DeploymentApi;
 import com.sails.ai.selfserviceapi.generated.model.PocDeploymentResponse;
+import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSourceRepositoryResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocVersionResponse;
 import com.sails.ai.selfserviceapi.generated.model.ReportDeploymentStatusRequest;
@@ -13,12 +14,15 @@ import com.sails.ai.selfserviceapi.poc.entity.PocDeployment;
 import com.sails.ai.selfserviceapi.poc.exception.InvalidWebhookSecretException;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
+import com.sails.ai.selfserviceapi.poc.service.PocResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
@@ -109,6 +113,37 @@ public class PocDeploymentController implements DeploymentApi {
                 reportDeploymentStatusRequest.getErrorMessage()
         );
         return ResponseEntity.ok(PocDeploymentResponseMapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<PocResponse>> getPocsWithDeploymentIssues() {
+        List<Poc> deployable = pocService.listDeployable();
+        Map<Long, String> latestStatuses = pocDeploymentService.latestDeploymentStatuses(
+                deployable.stream().map(Poc::getId).toList());
+
+        List<Poc> withIssues = deployable.stream()
+                .filter(poc -> needsAttention(latestStatuses.get(poc.getId())))
+                .toList();
+
+        Map<Long, String> activeVersionLabels = pocDeploymentService.activeVersionLabels(
+                withIssues.stream().map(Poc::getActiveVersionId).filter(Objects::nonNull).toList());
+
+        List<PocResponse> responses = withIssues.stream()
+                .map(poc -> {
+                    Long activeVersionId = poc.getActiveVersionId();
+                    String activeVersionLabel = activeVersionId != null ? activeVersionLabels.get(activeVersionId) : null;
+                    return PocResponseMapper.toResponse(poc, activeVersionLabel, latestStatuses.get(poc.getId()));
+                })
+                .toList();
+        return ResponseEntity.ok(responses);
+    }
+
+    /** Never deployed, or the last attempt didn't succeed. Not BUILDING/DEPLOYING — those are still in flight. */
+    private static final Set<String> ISSUE_STATUSES = Set.of("FAILED", "SKIPPED");
+
+    private boolean needsAttention(String latestStatus) {
+        return latestStatus == null || ISSUE_STATUSES.contains(latestStatus);
     }
 
     @Override

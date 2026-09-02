@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,10 +53,14 @@ public class PocDeploymentService {
     private final PocDeploymentRepository pocDeploymentRepository;
     private final DeploymentTrigger deploymentTrigger;
 
+    // @Lazy breaks a real cycle: the default DeploymentTrigger (InProcessDeploymentTrigger) wraps
+    // PipelineRunner, which itself depends on this service to report status back. Spring can't
+    // eagerly construct all three; a lazy proxy here defers resolving the real bean until the
+    // first actual trigger call, by which point construction has finished.
     public PocDeploymentService(PocRepository pocRepository,
                                  PocVersionRepository pocVersionRepository,
                                  PocDeploymentRepository pocDeploymentRepository,
-                                 DeploymentTrigger deploymentTrigger) {
+                                 @Lazy DeploymentTrigger deploymentTrigger) {
         this.pocRepository = pocRepository;
         this.pocVersionRepository = pocVersionRepository;
         this.pocDeploymentRepository = pocDeploymentRepository;

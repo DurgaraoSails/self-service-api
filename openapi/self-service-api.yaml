@@ -857,6 +857,32 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/deployment-issues:
+    get:
+      summary: POCs needing attention — deployable but never deployed, or whose latest attempt didn't succeed (admin only)
+      description: >
+        A POC appears here if it has a githubUrl and slug (so it's deployable) and either has never
+        had a deployment triggered, or its most recent deployment is FAILED or SKIPPED. Nothing in
+        BUILDING/DEPLOYING (still in progress, not an issue yet) or SUCCEEDED is included.
+      operationId: getPocsWithDeploymentIssues
+      tags:
+        - Deployment
+      responses:
+        '200':
+          description: POCs needing attention
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/poc.yaml#/PocResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/{id}/deployments:
     get:
       summary: Deployment history for a POC, newest first (admin only)

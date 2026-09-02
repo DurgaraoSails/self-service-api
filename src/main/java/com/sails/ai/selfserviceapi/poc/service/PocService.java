@@ -51,6 +51,11 @@ public class PocService {
         return pocRepository.findByGithubUrlIsNotNullAndDeletedAtIsNull();
     }
 
+    /** Every POC that actually can be deployed — has both a githubUrl and a slug. */
+    public List<Poc> listDeployable() {
+        return pocRepository.findByGithubUrlIsNotNullAndSlugIsNotNullAndDeletedAtIsNull();
+    }
+
     /**
      * Records what the pipeline observed at each repository's head. Unknown ids are skipped
      * rather than failing the batch: a POC deleted between the pipeline listing repositories
