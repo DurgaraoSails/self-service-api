@@ -133,6 +133,7 @@ All new endpoints are unprefixed (`/auth/...`), public (`security: []`, overridi
 - **Account enumeration via `POST /auth/register`**: see Security Considerations. Not addressed yet.
 - **`/api/v1` prefix mismatch**: tracked as a separate, pre-existing issue — not fixed as part of this feature.
 - **Dead stub DTOs** (`user/dto/UserResponse.java`, `UpdateUserRequest.java`): left in place, out of scope for this feature.
+- **The signing key is not published, and tokens carry no `kid`.** `JwtKeyConfig` loads the RSA public key from a mounted file straight into this app's own validator, so nothing outside `self-service-api` can verify a token it issued. `docs/specs/poc-hosting-architecture.md` requires a public `GET /.well-known/jwks.json` for POC backends written in other stacks, along with a `kid` header on issued tokens — the latter matters independently of that feature, since without a key id there is no way to rotate the signing key without invalidating every token at once. Both belong to this feature's surface and should be implemented here.
 
 ## Changelog
 
