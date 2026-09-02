@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PocRepository extends JpaRepository<Poc, Long> {
 
-    List<Poc> findByStatusAndDeletedAtIsNull(String status);
+    List<Poc> findByVisibilityStatusAndDeletedAtIsNull(String visibilityStatus);
 
     List<Poc> findByDeletedAtIsNull();
 

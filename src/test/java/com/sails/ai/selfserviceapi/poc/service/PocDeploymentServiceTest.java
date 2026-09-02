@@ -196,7 +196,7 @@ class PocDeploymentServiceTest {
         PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
         when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
 
-        PocDeployment updated = service.reportStatus(deployment.getId(), "FAILED", null, null, "https://logs", "Build failed.");
+        PocDeployment updated = service.reportStatus(deployment.getId(), "FAILED", null, null, null, "https://logs", "Build failed.");
 
         assertThat(updated.getStatus()).isEqualTo("FAILED");
         assertThat(updated.getErrorMessage()).isEqualTo("Build failed.");
@@ -214,10 +214,11 @@ class PocDeploymentServiceTest {
         Poc poc = pocWithGithubUrl(deployment.getPocId());
         when(pocRepository.findById(deployment.getPocId())).thenReturn(Optional.of(poc));
 
-        service.reportStatus(deployment.getId(), "SUCCEEDED", "registry/company/contract-agent:1.0.1", "abc123def456", null, null);
+        service.reportStatus(deployment.getId(), "SUCCEEDED", "registry/company/contract-agent:1.0.1", "abc123def456", "https://dummy-poc-abc123-uc.a.run.app", null, null);
 
         assertThat(version.getContainerImage()).isEqualTo("registry/company/contract-agent:1.0.1");
         assertThat(poc.getActiveVersionId()).isEqualTo(version.getId());
+        assertThat(poc.getAppUrl()).isEqualTo("https://dummy-poc-abc123-uc.a.run.app");
     }
 
     @Test
@@ -231,9 +232,10 @@ class PocDeploymentServiceTest {
         Poc poc = pocWithGithubUrl(deployment.getPocId());
         when(pocRepository.findById(deployment.getPocId())).thenReturn(Optional.of(poc));
 
-        service.reportStatus(deployment.getId(), "SUCCEEDED", null, null, null, null);
+        service.reportStatus(deployment.getId(), "SUCCEEDED", null, null, "https://dummy-poc-abc123-uc.a.run.app", null, null);
 
         assertThat(poc.getActiveVersionId()).isEqualTo(version.getId());
+        assertThat(poc.getAppUrl()).isEqualTo("https://dummy-poc-abc123-uc.a.run.app");
         verify(pocVersionRepository, never()).save(any());
     }
 
@@ -245,10 +247,35 @@ class PocDeploymentServiceTest {
         version.setId(deployment.getPocVersionId());
         when(pocVersionRepository.findById(deployment.getPocVersionId())).thenReturn(Optional.of(version));
 
-        assertThatThrownBy(() -> service.reportStatus(deployment.getId(), "SUCCEEDED", null, null, null, null))
+        assertThatThrownBy(() -> service.reportStatus(deployment.getId(), "SUCCEEDED", null, null,
+                "https://dummy-poc-abc123-uc.a.run.app", null, null))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getCode())
                 .isEqualTo("MISSING_CONTAINER_IMAGE");
+    }
+
+    @Test
+    void reportStatusThrowsWhenSucceededIsReportedWithNoHostedUrl() {
+        PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
+        when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
+
+        assertThatThrownBy(() -> service.reportStatus(deployment.getId(), "SUCCEEDED",
+                "registry/company/contract-agent:1.0.1", "abc123def456", null, null, null))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getCode())
+                .isEqualTo("MISSING_HOSTED_URL");
+    }
+
+    @Test
+    void reportStatusOnSkippedMarksTheDeploymentTerminalWithoutTouchingThePoc() {
+        PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
+        when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
+
+        PocDeployment updated = service.reportStatus(deployment.getId(), "SKIPPED", null, null, null, null, null);
+
+        assertThat(updated.getStatus()).isEqualTo("SKIPPED");
+        assertThat(updated.getCompletedAt()).isNotNull();
+        verify(pocRepository, never()).save(any());
     }
 
     @Test
@@ -257,7 +284,7 @@ class PocDeploymentServiceTest {
         deployment.setStatus("SUCCEEDED");
         when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
 
-        assertThatThrownBy(() -> service.reportStatus(deployment.getId(), "BUILDING", null, null, null, null))
+        assertThatThrownBy(() -> service.reportStatus(deployment.getId(), "BUILDING", null, null, null, null, null))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getStatus())
                 .isEqualTo(HttpStatus.CONFLICT);
@@ -408,14 +435,4 @@ class PocDeploymentServiceTest {
                 .isEqualTo("DEPLOYMENT_ALREADY_IN_PROGRESS");
     }
 
-    @Test
-    void recordHostedUrlSetsThePocsAppUrl() {
-        Poc poc = pocWithGithubUrl(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
-
-        service.recordHostedUrl(1L, "https://dummy-poc-abc123-uc.a.run.app");
-
-        assertThat(poc.getAppUrl()).isEqualTo("https://dummy-poc-abc123-uc.a.run.app");
-        verify(pocRepository).save(poc);
-    }
 }

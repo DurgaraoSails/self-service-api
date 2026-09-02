@@ -16,6 +16,10 @@ public record PipelineProperties(
          * cloud-build — submits the work to Cloud Build and polls it. For production; the only
          *         option that works once self-service-api itself runs on Cloud Run, which has no
          *         Docker daemon.
+         * skip — does none of the above: no GitHub tag, no build, no deploy. Every deploy request
+         *         is immediately reported SKIPPED. For teammates running the app locally with no
+         *         GCP account/credentials, so triggering a deploy never fails with a confusing
+         *         "docker: command not found"-style error — it just says it didn't run.
          */
         String executor,
 
@@ -74,6 +78,10 @@ public record PipelineProperties(
 
     public boolean isCloudBuild() {
         return "cloud-build".equalsIgnoreCase(executor);
+    }
+
+    public boolean isSkip() {
+        return "skip".equalsIgnoreCase(executor);
     }
 
     public boolean usesSecretManagerToken() {

@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.deploypipeline;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
@@ -26,16 +27,22 @@ public class PipelineRunner {
     private final GitHubService gitHubService;
     private final PipelineExecutor executor;
     private final PocDeploymentService pocDeploymentService;
+    private final PipelineProperties properties;
 
     public PipelineRunner(GitHubService gitHubService, PipelineExecutor executor,
-                           PocDeploymentService pocDeploymentService) {
+                           PocDeploymentService pocDeploymentService, PipelineProperties properties) {
         this.gitHubService = gitHubService;
         this.executor = executor;
         this.pocDeploymentService = pocDeploymentService;
+        this.properties = properties;
     }
 
     @Async
-    public void runBuildAndDeploy(UUID deploymentId, Long pocId, String pocSlug, String githubUrl, String versionLabel) {
+    public void runBuildAndDeploy(UUID deploymentId, String pocSlug, String githubUrl, String versionLabel) {
+        if (properties.isSkip()) {
+            skip(deploymentId, pocSlug, versionLabel);
+            return;
+        }
         try {
             GitHubRepoRef repo = gitHubService.parseRepoUrl(githubUrl);
             String commitSha = gitHubService.getDefaultBranchHeadSha(repo);
@@ -44,14 +51,13 @@ public class PipelineRunner {
             // this reproducible — the image can only ever contain the commit the tag points at.
             gitHubService.createTagIfAbsent(repo, versionLabel, commitSha);
 
-            pocDeploymentService.reportStatus(deploymentId, "BUILDING", null, null, null, null);
+            pocDeploymentService.reportStatus(deploymentId, "BUILDING", null, null, null, null, null);
             String image = executor.buildAndPushImage(repo, versionLabel, pocSlug);
 
-            pocDeploymentService.reportStatus(deploymentId, "DEPLOYING", null, null, null, null);
+            pocDeploymentService.reportStatus(deploymentId, "DEPLOYING", null, null, null, null, null);
             String hostedUrl = executor.deploy(pocSlug, image);
 
-            pocDeploymentService.reportStatus(deploymentId, "SUCCEEDED", image, commitSha, null, null);
-            pocDeploymentService.recordHostedUrl(pocId, hostedUrl);
+            pocDeploymentService.reportStatus(deploymentId, "SUCCEEDED", image, commitSha, hostedUrl, null, null);
             log.info("Deployment {} succeeded — '{}' version {} is live at {}",
                     deploymentId, pocSlug, versionLabel, hostedUrl);
         } catch (Exception e) {
@@ -61,13 +67,16 @@ public class PipelineRunner {
 
     /** Rollback: the image already exists, so there is nothing to clone, tag or build. */
     @Async
-    public void runRedeploy(UUID deploymentId, Long pocId, String pocSlug, String containerImage, String versionLabel) {
+    public void runRedeploy(UUID deploymentId, String pocSlug, String containerImage, String versionLabel) {
+        if (properties.isSkip()) {
+            skip(deploymentId, pocSlug, versionLabel);
+            return;
+        }
         try {
-            pocDeploymentService.reportStatus(deploymentId, "DEPLOYING", null, null, null, null);
+            pocDeploymentService.reportStatus(deploymentId, "DEPLOYING", null, null, null, null, null);
             String hostedUrl = executor.deploy(pocSlug, containerImage);
 
-            pocDeploymentService.reportStatus(deploymentId, "SUCCEEDED", containerImage, null, null, null);
-            pocDeploymentService.recordHostedUrl(pocId, hostedUrl);
+            pocDeploymentService.reportStatus(deploymentId, "SUCCEEDED", containerImage, null, hostedUrl, null, null);
             log.info("Deployment {} succeeded — '{}' rolled back to version {} at {}",
                     deploymentId, pocSlug, versionLabel, hostedUrl);
         } catch (Exception e) {
@@ -75,10 +84,21 @@ public class PipelineRunner {
         }
     }
 
+    /** No GitHub tag, no build, no deploy — pipeline.executor=skip means none of it runs at all. */
+    private void skip(UUID deploymentId, String pocSlug, String versionLabel) {
+        log.info("Deployment {} skipped — pipeline.executor=skip, poc '{}' version {} was not built or deployed",
+                deploymentId, pocSlug, versionLabel);
+        try {
+            pocDeploymentService.reportStatus(deploymentId, "SKIPPED", null, null, null, null, null);
+        } catch (Exception reportFailure) {
+            log.error("Could not record deployment {} as SKIPPED — it will look stuck", deploymentId, reportFailure);
+        }
+    }
+
     private void fail(UUID deploymentId, String pocSlug, String versionLabel, Exception e) {
         log.error("Deployment {} failed — poc '{}' version {}", deploymentId, pocSlug, versionLabel, e);
         try {
-            pocDeploymentService.reportStatus(deploymentId, "FAILED", null, null, null, truncate(e.getMessage()));
+            pocDeploymentService.reportStatus(deploymentId, "FAILED", null, null, null, null, truncate(e.getMessage()));
         } catch (Exception reportFailure) {
             // Nothing else will ever touch this deployment again — if even this fails, the
             // admin is left with a deployment stuck mid-flight and only the log above to explain it.

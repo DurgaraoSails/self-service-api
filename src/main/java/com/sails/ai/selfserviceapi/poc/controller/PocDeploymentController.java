@@ -104,6 +104,7 @@ public class PocDeploymentController implements DeploymentApi {
                 reportDeploymentStatusRequest.getStatus().getValue(),
                 reportDeploymentStatusRequest.getContainerImage(),
                 reportDeploymentStatusRequest.getCommitSha(),
+                reportDeploymentStatusRequest.getHostedUrl(),
                 reportDeploymentStatusRequest.getLogsUrl(),
                 reportDeploymentStatusRequest.getErrorMessage()
         );

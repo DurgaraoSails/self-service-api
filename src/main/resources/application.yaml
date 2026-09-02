@@ -85,8 +85,12 @@ gcp:
 pipeline:
   # 'local' clones/builds/deploys on this machine with your own gcloud credentials — the default,
   # so the pipeline is testable immediately with no GCP IAM setup beyond
-  # `gcloud auth application-default login`. 'cloud-build' is what production uses.
-  executor: ${PIPELINE_EXECUTOR:local}
+  # `gcloud auth application-default login`. 'cloud-build' is what production uses. 'skip' does
+  # none of that — every deploy request just gets reported SKIPPED — for anyone running this
+  # locally with no GCP account/credentials at all, so triggering a deploy never fails with a
+  # `docker`/`gcloud`-not-found error. Put PIPELINE_EXECUTOR=skip in your own
+  # application-local.yaml if that's you.
+  executor: ${PIPELINE_EXECUTOR:skip}
 
   # The single source for this token — used by GitHubService (both executors, to create release
   # tags via the GitHub API), the local executor's clone, and as a fallback for cloud-build's

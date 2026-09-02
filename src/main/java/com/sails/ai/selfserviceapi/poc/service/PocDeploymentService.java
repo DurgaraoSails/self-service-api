@@ -11,6 +11,7 @@ import com.sails.ai.selfserviceapi.poc.exception.DeploymentAlreadyTerminalExcept
 import com.sails.ai.selfserviceapi.poc.exception.DeploymentNotRetryableException;
 import com.sails.ai.selfserviceapi.poc.exception.MissingContainerImageException;
 import com.sails.ai.selfserviceapi.poc.exception.MissingGithubUrlException;
+import com.sails.ai.selfserviceapi.poc.exception.MissingHostedUrlException;
 import com.sails.ai.selfserviceapi.poc.exception.MissingPocSlugException;
 import com.sails.ai.selfserviceapi.poc.exception.NoBuiltImageException;
 import com.sails.ai.selfserviceapi.poc.exception.PocDeploymentNotFoundException;
@@ -43,6 +44,7 @@ public class PocDeploymentService {
     private static final String DEPLOYING = "DEPLOYING";
     private static final String SUCCEEDED = "SUCCEEDED";
     private static final String FAILED = "FAILED";
+    private static final String SKIPPED = "SKIPPED";
     private static final List<String> IN_PROGRESS_STATUSES = List.of(PENDING, BUILDING, DEPLOYING);
 
     private final PocRepository pocRepository;
@@ -154,14 +156,6 @@ public class PocDeploymentService {
         return retry;
     }
 
-    /** Written once a deployment succeeds — the pipeline's own view of "where is this POC live". */
-    @Transactional
-    public void recordHostedUrl(Long pocId, String hostedUrl) {
-        Poc poc = getPoc(pocId);
-        poc.setAppUrl(hostedUrl);
-        pocRepository.save(poc);
-    }
-
     public List<PocVersion> listVersions(Long pocId) {
         return pocVersionRepository.findByPocIdOrderByMajorDescMinorDescPatchDesc(pocId);
     }
@@ -183,7 +177,7 @@ public class PocDeploymentService {
 
     @Transactional
     public PocDeployment reportStatus(UUID deploymentId, String status, String containerImage, String commitSha,
-                                       String logsUrl, String errorMessage) {
+                                       String hostedUrl, String logsUrl, String errorMessage) {
         PocDeployment deployment = getDeploymentById(deploymentId);
         if (isTerminal(deployment.getStatus())) {
             throw new DeploymentAlreadyTerminalException(deploymentId);
@@ -197,7 +191,12 @@ public class PocDeploymentService {
         if (FAILED.equals(status)) {
             deployment.setErrorMessage(errorMessage);
             deployment.setCompletedAt(Instant.now());
+        } else if (SKIPPED.equals(status)) {
+            deployment.setCompletedAt(Instant.now());
         } else if (SUCCEEDED.equals(status)) {
+            if (hostedUrl == null || hostedUrl.isBlank()) {
+                throw new MissingHostedUrlException(deploymentId);
+            }
             PocVersion version = pocVersionRepository.findById(deployment.getPocVersionId())
                     .orElseThrow(() -> new PocVersionNotFoundException(deployment.getPocVersionId()));
             if (BUILD_AND_DEPLOY.equals(deployment.getKind())) {
@@ -212,8 +211,12 @@ public class PocDeploymentService {
                 }
                 pocVersionRepository.save(version);
             }
+            // Set together, in this one transaction: a POC's "active" version and its appUrl must
+            // never disagree — activeVersionId with a stale/absent appUrl would mean "active, but
+            // nowhere to reach it".
             Poc poc = getPoc(deployment.getPocId());
             poc.setActiveVersionId(version.getId());
+            poc.setAppUrl(hostedUrl);
             pocRepository.save(poc);
             deployment.setCompletedAt(Instant.now());
         }
@@ -279,6 +282,6 @@ public class PocDeploymentService {
     }
 
     private boolean isTerminal(String status) {
-        return SUCCEEDED.equals(status) || FAILED.equals(status);
+        return SUCCEEDED.equals(status) || FAILED.equals(status) || SKIPPED.equals(status);
     }
 }

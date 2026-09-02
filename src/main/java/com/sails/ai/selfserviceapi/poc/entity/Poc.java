@@ -55,8 +55,8 @@ public class Poc {
     @Column(name = "demo_type", length = 50)
     private String demoType;
 
-    @Column(name = "status", nullable = false, length = 50)
-    private String status = "ACTIVE";
+    @Column(name = "visibility_status", nullable = false, length = 50)
+    private String visibilityStatus = "ACTIVE";
 
     @Column(name = "details")
     private String details;
