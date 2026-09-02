@@ -70,10 +70,49 @@ support:
   sales-email: ${SALES_EMAIL:no.reply.sails.poc@gmail.com}
 
 deployment:
-  # 'queue' hands work to poc-deploy-pipeline via the deployment_jobs table. 'logging' is a
-  # local-dev stub that only logs, letting you drive status transitions by hand.
-  trigger: ${DEPLOYMENT_TRIGGER:queue}
+  # 'in-process' runs the real pipeline asynchronously in this JVM. 'logging' is a stub that
+  # only logs, letting you drive status transitions by hand via POST .../status.
+  trigger: ${DEPLOYMENT_TRIGGER:in-process}
+  # Unused by the in-process trigger; kept for the (still-wired, still-working) manual status
+  # callback and the source-repository/upstream-commit endpoints, none of which this needs.
   webhook-secret: ${DEPLOYMENT_WEBHOOK_SECRET:local-dev-deployment-webhook-secret-change-me}
+
+gcp:
+  project-id: ${GCP_PROJECT_ID:sails-agenthub}
+  region: ${GCP_REGION:us-central1}
+  environment: ${GCP_ENVIRONMENT:dev}
+
+pipeline:
+  # 'local' clones/builds/deploys on this machine with your own gcloud credentials — the default,
+  # so the pipeline is testable immediately with no GCP IAM setup beyond
+  # `gcloud auth application-default login`. 'cloud-build' is what production uses.
+  executor: ${PIPELINE_EXECUTOR:local}
+
+  # The single source for this token — used by GitHubService (both executors, to create release
+  # tags via the GitHub API), the local executor's clone, and as a fallback for cloud-build's
+  # clone step. Blank works only for a public repository.
+  github-token: ${GITHUB_TOKEN:}
+
+  # cloud-build only. Blank runs the build as Cloud Build's own default service account, which is
+  # what you need until self-service-builder holds its intended bindings.
+  build-service-account: ${BUILD_SERVICE_ACCOUNT:}
+  # cloud-build only. Blank falls back to github-token below (see BuildService for why that's
+  # worse — an inline token is stored permanently on the Build resource).
+  github-token-secret-id: ${BUILD_GITHUB_TOKEN_SECRET:}
+
+  # Needs run.services.setIamPolicy, which roles/editor excludes. Off by default so a deploy under
+  # Editor doesn't fail on this step; the deploy itself still fully succeeds.
+  grant-gateway-invoker: ${BUILD_GRANT_GATEWAY_INVOKER:false}
+  # Also needs setIamPolicy. Off by default — test a deployed POC with an identity token instead:
+  # `gcloud run services proxy <slug> --region <region>`, which works under Editor with no grant.
+  allow-unauthenticated: ${BUILD_ALLOW_UNAUTHENTICATED:false}
+
+  # local only. Blank uses the system temp directory.
+  workspace-dir: ${PIPELINE_WORKSPACE_DIR:}
+  command-timeout: ${PIPELINE_COMMAND_TIMEOUT:20m}
+  # cloud-build only.
+  build-timeout: ${PIPELINE_BUILD_TIMEOUT:20m}
+  build-poll-interval: ${PIPELINE_BUILD_POLL_INTERVAL:10s}
 
 app:
   mail:

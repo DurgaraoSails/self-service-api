@@ -918,6 +918,41 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/deployments/{deploymentId}/retry:
+    post:
+      summary: Re-run a FAILED deployment (admin only)
+      description: >
+        Retries the same version and kind — no new version number is allocated, unlike
+        POST /pocs/{id}/deploy. 409 if the deployment isn't FAILED (nothing to retry) or if the
+        POC already has another deployment in progress.
+      operationId: retryDeployment
+      tags:
+        - Deployment
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Retry started
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc-deployment.yaml#/PocDeploymentResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/deployments/{deploymentId}/status:
     post:
       summary: Report a deployment's status (called by the deploy pipeline, not the portal)

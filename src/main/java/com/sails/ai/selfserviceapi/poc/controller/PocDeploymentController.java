@@ -83,6 +83,14 @@ public class PocDeploymentController implements DeploymentApi {
     }
 
     @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PocDeploymentResponse> retryDeployment(UUID deploymentId) {
+        PocDeployment retry = pocDeploymentService.retryDeployment(deploymentId, CurrentUser.id());
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(PocDeploymentResponseMapper.toDeploymentResponse(retry, versionLabelOf(retry)));
+    }
+
+    @Override
     public ResponseEntity<PocDeploymentResponse> reportDeploymentStatus(UUID deploymentId, String xPipelineWebhookSecret,
                                                                           ReportDeploymentStatusRequest reportDeploymentStatusRequest) {
         if (!MessageDigest.isEqual(

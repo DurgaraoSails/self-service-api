@@ -123,6 +123,14 @@
 			<optional>true</optional>
 		</dependency>
 
+		<!-- Application Default Credentials for the deploy pipeline's Cloud Build / Cloud Run
+		     Admin API calls (no full GCP SDK / gRPC needed for these two REST calls). -->
+		<dependency>
+			<groupId>com.google.auth</groupId>
+			<artifactId>google-auth-library-oauth2-http</artifactId>
+			<version>1.48.0</version>
+		</dependency>
+
 		<!-- test dependecies -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

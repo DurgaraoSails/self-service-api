@@ -310,4 +310,112 @@ class PocDeploymentServiceTest {
         verify(pocVersionRepository, never()).save(any());
     }
 
+    @Test
+    void deployNewVersionRefusesAPocThatAlreadyHasADeploymentInProgress() {
+        Poc poc = pocWithGithubUrl(1L);
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+        when(pocDeploymentRepository.existsByPocIdAndStatusIn(1L, List.of("PENDING", "BUILDING", "DEPLOYING")))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.deployNewVersion(1L, "admin-1"))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getCode())
+                .isEqualTo("DEPLOYMENT_ALREADY_IN_PROGRESS");
+
+        verify(pocVersionRepository, never()).save(any());
+        verify(deploymentTrigger, never()).buildAndDeploy(any());
+    }
+
+    @Test
+    void redeployVersionRefusesAPocThatAlreadyHasADeploymentInProgress() {
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
+        when(pocDeploymentRepository.existsByPocIdAndStatusIn(1L, List.of("PENDING", "BUILDING", "DEPLOYING")))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.redeployVersion(1L, 1L, "admin-1"))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getCode())
+                .isEqualTo("DEPLOYMENT_ALREADY_IN_PROGRESS");
+
+        verify(deploymentTrigger, never()).redeploy(any());
+    }
+
+    @Test
+    void retryDeploymentReusesTheSameVersionAndKindWithoutAllocatingANewNumber() {
+        PocDeployment failed = pendingDeployment("BUILD_AND_DEPLOY");
+        failed.setStatus("FAILED");
+        when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
+        PocVersion version = versionOf(1, 0, 1);
+        version.setId(1L);
+        when(pocVersionRepository.findById(1L)).thenReturn(Optional.of(version));
+
+        PocDeployment retry = service.retryDeployment(failed.getId(), "admin-1");
+
+        assertThat(retry.getId()).isNotEqualTo(failed.getId());
+        assertThat(retry.getKind()).isEqualTo("BUILD_AND_DEPLOY");
+        assertThat(retry.getPocVersionId()).isEqualTo(1L);
+        verify(pocVersionRepository, never()).save(any());
+
+        ArgumentCaptor<BuildAndDeployRequest> requestCaptor = ArgumentCaptor.forClass(BuildAndDeployRequest.class);
+        verify(deploymentTrigger).buildAndDeploy(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().versionLabel()).isEqualTo("1.0.1");
+    }
+
+    @Test
+    void retryDeploymentOfARedeployCallsRedeployNotBuildAndDeploy() {
+        PocDeployment failed = pendingDeployment("REDEPLOY");
+        failed.setStatus("FAILED");
+        when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
+        PocVersion version = versionOf(1, 0, 1);
+        version.setId(1L);
+        version.setContainerImage("registry/company/contract-agent:1.0.1");
+        when(pocVersionRepository.findById(1L)).thenReturn(Optional.of(version));
+
+        service.retryDeployment(failed.getId(), "admin-1");
+
+        verify(deploymentTrigger).redeploy(any());
+        verify(deploymentTrigger, never()).buildAndDeploy(any());
+    }
+
+    @Test
+    void retryDeploymentRefusesADeploymentThatIsNotFailed() {
+        PocDeployment succeeded = pendingDeployment("BUILD_AND_DEPLOY");
+        succeeded.setStatus("SUCCEEDED");
+        when(pocDeploymentRepository.findById(succeeded.getId())).thenReturn(Optional.of(succeeded));
+
+        assertThatThrownBy(() -> service.retryDeployment(succeeded.getId(), "admin-1"))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getCode())
+                .isEqualTo("DEPLOYMENT_NOT_RETRYABLE");
+
+        verify(deploymentTrigger, never()).buildAndDeploy(any());
+        verify(deploymentTrigger, never()).redeploy(any());
+    }
+
+    @Test
+    void retryDeploymentRefusesAPocThatAlreadyHasAnotherDeploymentInProgress() {
+        PocDeployment failed = pendingDeployment("BUILD_AND_DEPLOY");
+        failed.setStatus("FAILED");
+        when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        when(pocDeploymentRepository.existsByPocIdAndStatusIn(1L, List.of("PENDING", "BUILDING", "DEPLOYING")))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.retryDeployment(failed.getId(), "admin-1"))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getCode())
+                .isEqualTo("DEPLOYMENT_ALREADY_IN_PROGRESS");
+    }
+
+    @Test
+    void recordHostedUrlSetsThePocsAppUrl() {
+        Poc poc = pocWithGithubUrl(1L);
+        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+
+        service.recordHostedUrl(1L, "https://dummy-poc-abc123-uc.a.run.app");
+
+        assertThat(poc.getAppUrl()).isEqualTo("https://dummy-poc-abc123-uc.a.run.app");
+        verify(pocRepository).save(poc);
+    }
 }

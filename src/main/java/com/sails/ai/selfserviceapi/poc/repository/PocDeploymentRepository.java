@@ -11,6 +11,9 @@ public interface PocDeploymentRepository extends JpaRepository<PocDeployment, UU
 
     List<PocDeployment> findByPocIdOrderByStartedAtDesc(Long pocId);
 
+    /** Powers the one-active-deployment-per-POC rule. */
+    boolean existsByPocIdAndStatusIn(Long pocId, List<String> statuses);
+
     /** One row per poc_id: its most recently started deployment. Powers latestDeploymentStatus on GET /pocs without an N+1. */
     @Query(value = "SELECT DISTINCT ON (poc_id) * FROM poc_deployments WHERE poc_id IN (:pocIds) ORDER BY poc_id, started_at DESC",
             nativeQuery = true)
