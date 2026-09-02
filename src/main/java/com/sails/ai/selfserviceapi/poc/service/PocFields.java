@@ -19,7 +19,7 @@ public record PocFields(
         String category,
         List<String> technologies,
         String demoType,
-        String status,
+        String visibilityStatus,
         String details,
         List<String> guideSteps
 ) {

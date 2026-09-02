@@ -7,7 +7,7 @@ PocSummaryResponse:
     - id
     - name
     - description
-    - status
+    - visibilityStatus
   properties:
     id:
       type: integer
@@ -42,9 +42,12 @@ PocSummaryResponse:
 
     latestDeploymentStatus:
       type: string
-      enum: [PENDING, BUILDING, DEPLOYING, SUCCEEDED, FAILED]
+      enum: [PENDING, BUILDING, DEPLOYING, SUCCEEDED, FAILED, SKIPPED]
       nullable: true
-      description: Status of the most recent deploy/rollback attempt, or null if one was never triggered.
+      description: >
+        Status of the most recent deploy/rollback attempt, or null if one was never triggered.
+        Not to be confused with visibilityStatus below, which is an unrelated admin toggle —
+        this reflects whether the pipeline actually succeeded, not whether the POC is shown.
       example: null
 
     owner:
@@ -76,12 +79,13 @@ PocSummaryResponse:
       description: How the demo is presented.
       example: "interactive"
 
-    status:
+    visibilityStatus:
       type: string
       enum: [ACTIVE, HIDDEN]
       description: >
-        Lifecycle status of the POC. HIDDEN removes it from the regular (non-admin) dashboard
-        listing without deleting it.
+        Admin-controlled catalog visibility — HIDDEN removes the POC from the regular
+        (non-admin) dashboard listing without deleting it. Unrelated to whether the POC's
+        pipeline actually succeeded; see latestDeploymentStatus above for that.
       example: "ACTIVE"
 
     details:
@@ -227,7 +231,7 @@ CreatePocRequest:
       maxLength: 50
       example: "interactive"
 
-    status:
+    visibilityStatus:
       type: string
       enum: [ACTIVE, HIDDEN]
       description: Defaults to "ACTIVE" if omitted.
@@ -313,7 +317,7 @@ UpdatePocRequest:
       maxLength: 50
       example: "interactive"
 
-    status:
+    visibilityStatus:
       type: string
       enum: [ACTIVE, HIDDEN]
       description: Defaults to "ACTIVE" if omitted.
@@ -330,60 +334,3 @@ UpdatePocRequest:
       example:
         - "Click Launch to open the assistant in your session."
         - "Describe the process or task you need help with in plain language."
-
-
-PocDeploymentResponse:
-  type: object
-  description: One tag-build-deploy attempt, for the admin-facing progress/status view.
-  required:
-    - id
-    - releaseTag
-    - status
-    - startedAt
-  properties:
-    id:
-      type: integer
-      format: int64
-      example: 42
-
-    releaseTag:
-      type: string
-      example: "1.1.0"
-
-    cloudBuildId:
-      type: string
-      nullable: true
-      description: Null until the build has actually been submitted to Cloud Build.
-      example: "302df041-2b75-400f-930d-9225f3d89010"
-
-    imageUri:
-      type: string
-      nullable: true
-      description: Artifact Registry image reference, once the build has pushed it.
-      example: "us-central1-docker.pkg.dev/sails-agenthub/poc-images/contract-agent/app:1.1.0"
-
-    status:
-      type: string
-      enum: [building, active, failed]
-      example: "building"
-
-    failureReason:
-      type: string
-      nullable: true
-      description: Set only when status is "failed".
-      example: "PermissionDenied: secretmanager.versions.access denied"
-
-    triggeredBy:
-      type: string
-      nullable: true
-      description: User id of the admin who triggered this deployment.
-
-    startedAt:
-      type: string
-      format: date-time
-
-    finishedAt:
-      type: string
-      format: date-time
-      nullable: true
-      description: Null while still building.

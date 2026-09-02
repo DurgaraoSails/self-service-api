@@ -44,7 +44,7 @@ class PocServiceTest {
     @Test
     void listForViewerReturnsOnlyActiveNonDeletedForNonAdmins() {
         List<Poc> pocs = List.of(pocWithId(1L), pocWithId(2L));
-        when(pocRepository.findByStatusAndDeletedAtIsNull("ACTIVE")).thenReturn(pocs);
+        when(pocRepository.findByVisibilityStatusAndDeletedAtIsNull("ACTIVE")).thenReturn(pocs);
 
         assertThat(pocService.listForViewer(false, true)).isEqualTo(pocs);
     }
@@ -162,7 +162,7 @@ class PocServiceTest {
         assertThat(created.getCategory()).isEqualTo("Generative AI");
         assertThat(created.getTechnologies()).containsExactly("Python", "FastAPI", "PostgreSQL", "LLM");
         assertThat(created.getDemoType()).isEqualTo("interactive");
-        assertThat(created.getStatus()).isEqualTo("ACTIVE");
+        assertThat(created.getVisibilityStatus()).isEqualTo("ACTIVE");
         assertThat(created.getDetails()).isEqualTo("Longer-form details shown on the public details page.");
         assertThat(created.getGuideSteps()).containsExactly("Step one.", "Step two.");
     }
@@ -176,7 +176,7 @@ class PocServiceTest {
                 null, null, null, null, null, null, null
         ));
 
-        assertThat(created.getStatus()).isEqualTo("ACTIVE");
+        assertThat(created.getVisibilityStatus()).isEqualTo("ACTIVE");
         assertThat(created.getTechnologies()).isEmpty();
         assertThat(created.getGuideSteps()).isEmpty();
     }
@@ -212,7 +212,7 @@ class PocServiceTest {
         assertThat(updated.getCategory()).isEqualTo("Automation");
         assertThat(updated.getTechnologies()).containsExactly("Java", "Spring Boot");
         assertThat(updated.getDemoType()).isEqualTo("video");
-        assertThat(updated.getStatus()).isEqualTo("INACTIVE");
+        assertThat(updated.getVisibilityStatus()).isEqualTo("INACTIVE");
         assertThat(updated.getDetails()).isEqualTo("Updated details.");
         assertThat(updated.getGuideSteps()).containsExactly("Only step.");
     }
@@ -267,18 +267,18 @@ class PocServiceTest {
 
         Poc hidden = pocService.hide(1L);
 
-        assertThat(hidden.getStatus()).isEqualTo("HIDDEN");
+        assertThat(hidden.getVisibilityStatus()).isEqualTo("HIDDEN");
     }
 
     @Test
     void unhideSetsStatusBackToActive() {
         Poc existing = pocWithId(1L);
-        existing.setStatus("HIDDEN");
+        existing.setVisibilityStatus("HIDDEN");
         when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Poc unhidden = pocService.unhide(1L);
 
-        assertThat(unhidden.getStatus()).isEqualTo("ACTIVE");
+        assertThat(unhidden.getVisibilityStatus()).isEqualTo("ACTIVE");
     }
 }

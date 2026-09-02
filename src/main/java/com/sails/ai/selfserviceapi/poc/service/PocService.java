@@ -32,7 +32,7 @@ public class PocService {
      */
     public List<Poc> listForViewer(boolean isAdmin, boolean includeDeleted) {
         if (!isAdmin) {
-            return pocRepository.findByStatusAndDeletedAtIsNull(DEFAULT_STATUS);
+            return pocRepository.findByVisibilityStatusAndDeletedAtIsNull(DEFAULT_STATUS);
         }
         return includeDeleted ? pocRepository.findAll() : pocRepository.findByDeletedAtIsNull();
     }
@@ -49,6 +49,11 @@ public class PocService {
     /** Every POC the pipeline can poll for upstream changes — i.e. those with a repository. */
     public List<Poc> listSourceRepositories() {
         return pocRepository.findByGithubUrlIsNotNullAndDeletedAtIsNull();
+    }
+
+    /** Every POC that actually can be deployed — has both a githubUrl and a slug. */
+    public List<Poc> listDeployable() {
+        return pocRepository.findByGithubUrlIsNotNullAndSlugIsNotNullAndDeletedAtIsNull();
     }
 
     /**
@@ -98,14 +103,14 @@ public class PocService {
     @Transactional
     public Poc hide(Long id) {
         Poc poc = getById(id);
-        poc.setStatus(HIDDEN_STATUS);
+        poc.setVisibilityStatus(HIDDEN_STATUS);
         return pocRepository.save(poc);
     }
 
     @Transactional
     public Poc unhide(Long id) {
         Poc poc = getById(id);
-        poc.setStatus(DEFAULT_STATUS);
+        poc.setVisibilityStatus(DEFAULT_STATUS);
         return pocRepository.save(poc);
     }
 
@@ -125,7 +130,7 @@ public class PocService {
         poc.setCategory(fields.category());
         poc.setTechnologies(fields.technologies() != null ? fields.technologies() : new ArrayList<>());
         poc.setDemoType(fields.demoType());
-        poc.setStatus(fields.status() != null ? fields.status() : DEFAULT_STATUS);
+        poc.setVisibilityStatus(fields.visibilityStatus() != null ? fields.visibilityStatus() : DEFAULT_STATUS);
         poc.setDetails(fields.details());
         poc.setGuideSteps(fields.guideSteps() != null ? fields.guideSteps() : new ArrayList<>());
     }

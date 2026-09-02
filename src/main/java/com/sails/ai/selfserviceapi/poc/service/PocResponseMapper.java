@@ -16,7 +16,7 @@ public final class PocResponseMapper {
 
     public static PocSummaryResponse toSummaryResponse(Poc poc, String activeVersionLabel, String latestDeploymentStatus) {
         return new PocSummaryResponse(poc.getId(), poc.getName(), poc.getDescription(),
-                PocSummaryResponse.StatusEnum.fromValue(poc.getStatus()))
+                PocSummaryResponse.VisibilityStatusEnum.fromValue(poc.getVisibilityStatus()))
                 .iconUrl(poc.getIconUrl())
                 .activeVersion(activeVersionLabel)
                 .latestDeploymentStatus(latestDeploymentStatus != null
@@ -33,7 +33,7 @@ public final class PocResponseMapper {
 
     public static PocResponse toResponse(Poc poc, String activeVersionLabel, String latestDeploymentStatus) {
         return new PocResponse(poc.getId(), poc.getName(), poc.getDescription(),
-                PocResponse.StatusEnum.fromValue(poc.getStatus()))
+                PocResponse.VisibilityStatusEnum.fromValue(poc.getVisibilityStatus()))
                 .iconUrl(poc.getIconUrl())
                 .activeVersion(activeVersionLabel)
                 .latestDeploymentStatus(latestDeploymentStatus != null

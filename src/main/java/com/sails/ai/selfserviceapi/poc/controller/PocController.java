@@ -78,7 +78,7 @@ public class PocController implements PocApi {
                 createPocRequest.getCategory(),
                 createPocRequest.getTechnologies(),
                 createPocRequest.getDemoType(),
-                createPocRequest.getStatus() != null ? createPocRequest.getStatus().getValue() : null,
+                createPocRequest.getVisibilityStatus() != null ? createPocRequest.getVisibilityStatus().getValue() : null,
                 createPocRequest.getDetails(),
                 createPocRequest.getGuideSteps()
         );
@@ -100,7 +100,7 @@ public class PocController implements PocApi {
                 updatePocRequest.getCategory(),
                 updatePocRequest.getTechnologies(),
                 updatePocRequest.getDemoType(),
-                updatePocRequest.getStatus() != null ? updatePocRequest.getStatus().getValue() : null,
+                updatePocRequest.getVisibilityStatus() != null ? updatePocRequest.getVisibilityStatus().getValue() : null,
                 updatePocRequest.getDetails(),
                 updatePocRequest.getGuideSteps()
         );
