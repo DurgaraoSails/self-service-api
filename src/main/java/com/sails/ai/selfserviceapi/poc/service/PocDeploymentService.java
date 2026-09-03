@@ -6,6 +6,7 @@ import com.sails.ai.selfserviceapi.poc.deployment.RedeployRequest;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.entity.PocDeployment;
 import com.sails.ai.selfserviceapi.poc.entity.PocVersion;
+import com.sails.ai.selfserviceapi.poc.entity.PocVersionContainer;
 import com.sails.ai.selfserviceapi.poc.exception.DeploymentAlreadyInProgressException;
 import com.sails.ai.selfserviceapi.poc.exception.DeploymentAlreadyTerminalException;
 import com.sails.ai.selfserviceapi.poc.exception.DeploymentNotRetryableException;
@@ -19,8 +20,10 @@ import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocVersionNotFoundException;
 import com.sails.ai.selfserviceapi.poc.repository.PocDeploymentRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
+import com.sails.ai.selfserviceapi.poc.repository.PocVersionContainerRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocVersionRepository;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -48,8 +51,12 @@ public class PocDeploymentService {
     private static final String SKIPPED = "SKIPPED";
     private static final List<String> IN_PROGRESS_STATUSES = List.of(PENDING, BUILDING, DEPLOYING);
 
+    /** The ingress container's name in the manifest synthesized for a repo with no poc.yaml. */
+    private static final String DEFAULT_CONTAINER_NAME = "app";
+
     private final PocRepository pocRepository;
     private final PocVersionRepository pocVersionRepository;
+    private final PocVersionContainerRepository pocVersionContainerRepository;
     private final PocDeploymentRepository pocDeploymentRepository;
     private final DeploymentTrigger deploymentTrigger;
 
@@ -59,10 +66,12 @@ public class PocDeploymentService {
     // first actual trigger call, by which point construction has finished.
     public PocDeploymentService(PocRepository pocRepository,
                                  PocVersionRepository pocVersionRepository,
+                                 PocVersionContainerRepository pocVersionContainerRepository,
                                  PocDeploymentRepository pocDeploymentRepository,
                                  @Lazy DeploymentTrigger deploymentTrigger) {
         this.pocRepository = pocRepository;
         this.pocVersionRepository = pocVersionRepository;
+        this.pocVersionContainerRepository = pocVersionContainerRepository;
         this.pocDeploymentRepository = pocDeploymentRepository;
         this.deploymentTrigger = deploymentTrigger;
     }
@@ -101,15 +110,34 @@ public class PocDeploymentService {
         if (!version.getPocId().equals(pocId)) {
             throw new PocVersionNotFoundException(versionId);
         }
-        if (version.getContainerImage() == null || version.getContainerImage().isBlank()) {
-            throw new NoBuiltImageException(versionId);
-        }
+        Map<String, String> imagesByContainer = resolveImagesByContainer(version);
 
         PocDeployment deployment = createDeployment(pocId, versionId, REDEPLOY, initiatedByUserId);
 
         deploymentTrigger.redeploy(new RedeployRequest(
-                deployment.getId(), pocId, poc.getSlug(), version.getContainerImage(), version.getVersionLabel()));
+                deployment.getId(), pocId, poc.getSlug(), imagesByContainer, version.getManifestYaml(), version.getVersionLabel()));
         return deployment;
+    }
+
+    /**
+     * Every container's already-built image for a version, keyed by name. A pre-manifest version
+     * (no {@code poc_version_containers} rows — everything built before this feature existed)
+     * falls back to its single {@code containerImage}, under the same name
+     * ({@code DEFAULT_CONTAINER_NAME}) the synthesized single-container manifest uses for its
+     * ingress container — that's what makes an old version redeploy correctly through the new,
+     * manifest-aware pipeline with no data migration.
+     */
+    private Map<String, String> resolveImagesByContainer(PocVersion version) {
+        List<PocVersionContainer> containers = pocVersionContainerRepository.findByPocVersionId(version.getId());
+        if (!containers.isEmpty()) {
+            return containers.stream()
+                    .collect(Collectors.toMap(PocVersionContainer::getName, PocVersionContainer::getContainerImage,
+                            (a, b) -> a, LinkedHashMap::new));
+        }
+        if (version.getContainerImage() == null || version.getContainerImage().isBlank()) {
+            throw new NoBuiltImageException(version.getId());
+        }
+        return Map.of(DEFAULT_CONTAINER_NAME, version.getContainerImage());
     }
 
     /**
@@ -156,7 +184,8 @@ public class PocDeploymentService {
                     retry.getId(), poc.getId(), poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel()));
         } else {
             deploymentTrigger.redeploy(new RedeployRequest(
-                    retry.getId(), poc.getId(), poc.getSlug(), version.getContainerImage(), version.getVersionLabel()));
+                    retry.getId(), poc.getId(), poc.getSlug(), resolveImagesByContainer(version),
+                    version.getManifestYaml(), version.getVersionLabel()));
         }
         return retry;
     }
@@ -180,9 +209,15 @@ public class PocDeploymentService {
                 .orElseThrow(() -> new PocVersionNotFoundException(versionId));
     }
 
+    /**
+     * {@code buildOutcome} carries the per-container detail a BUILD_AND_DEPLOY reports alongside
+     * SUCCEEDED — null for every other transition, and null even for a REDEPLOY's SUCCEEDED,
+     * since a redeploy rebuilds nothing and its version already carries this from the original
+     * build.
+     */
     @Transactional
     public PocDeployment reportStatus(UUID deploymentId, String status, String containerImage, String commitSha,
-                                       String hostedUrl, String logsUrl, String errorMessage) {
+                                       String hostedUrl, String logsUrl, String errorMessage, PocBuildOutcome buildOutcome) {
         PocDeployment deployment = getDeploymentById(deploymentId);
         if (isTerminal(deployment.getStatus())) {
             throw new DeploymentAlreadyTerminalException(deploymentId);
@@ -214,6 +249,10 @@ public class PocDeploymentService {
                 if (commitSha != null && !commitSha.isBlank()) {
                     version.setCommitSha(commitSha);
                 }
+                if (buildOutcome != null) {
+                    version.setManifestYaml(buildOutcome.manifestYaml());
+                    recordVersionContainers(version.getId(), buildOutcome.containers());
+                }
                 pocVersionRepository.save(version);
             }
             // Set together, in this one transaction: a POC's "active" version and its appUrl must
@@ -227,6 +266,21 @@ public class PocDeploymentService {
         }
 
         return pocDeploymentRepository.save(deployment);
+    }
+
+    private void recordVersionContainers(Long versionId, List<PocContainerReport> containers) {
+        if (containers == null) {
+            return;
+        }
+        for (PocContainerReport report : containers) {
+            PocVersionContainer row = new PocVersionContainer();
+            row.setPocVersionId(versionId);
+            row.setName(report.name());
+            row.setRole(report.role());
+            row.setContainerImage(report.containerImage());
+            row.setPort(report.port());
+            pocVersionContainerRepository.save(row);
+        }
     }
 
     /** Batch lookup for GET /pocs — versionIds come from each POC's activeVersionId. */

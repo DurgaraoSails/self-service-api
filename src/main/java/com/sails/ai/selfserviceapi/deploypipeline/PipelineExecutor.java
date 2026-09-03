@@ -1,6 +1,8 @@
 package com.sails.ai.selfserviceapi.deploypipeline;
 
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
+import java.util.Map;
 
 /**
  * Where the actual build and deploy work happens — the one seam between the two executors. Both
@@ -9,9 +11,17 @@ import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
  */
 public interface PipelineExecutor {
 
-    /** Clones the given version's tag, builds an image, and pushes it. Returns the pushed image URI. */
-    String buildAndPushImage(GitHubRepoRef repo, String versionLabel, String pocSlug);
+    /**
+     * Clones the given version's tag once, builds every container the manifest declares, and
+     * pushes each image. Returns the pushed image URI keyed by container name — one entry per
+     * {@code manifest.containers()}.
+     */
+    Map<String, String> buildAndPushImages(GitHubRepoRef repo, String versionLabel, String pocSlug, PocManifest manifest);
 
-    /** Deploys an image (freshly built or pre-existing) and returns the resulting hosted URL. */
-    String deploy(String pocSlug, String image);
+    /**
+     * Deploys every image (freshly built, or a version's previously-built ones for a redeploy) as
+     * one Cloud Run service — the manifest's ingress container plus its sidecars. Returns the
+     * resulting hosted URL.
+     */
+    String deploy(String pocSlug, String versionLabel, PocManifest manifest, Map<String, String> imagesByContainer);
 }

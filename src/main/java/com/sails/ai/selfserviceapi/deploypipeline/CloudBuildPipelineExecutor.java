@@ -1,9 +1,10 @@
 package com.sails.ai.selfserviceapi.deploypipeline;
 
 import com.sails.ai.selfserviceapi.deploypipeline.build.BuildService;
-import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.deploypipeline.run.CloudRunService;
+import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -25,13 +26,13 @@ public class CloudBuildPipelineExecutor implements PipelineExecutor {
     }
 
     @Override
-    public String buildAndPushImage(GitHubRepoRef repo, String versionLabel, String pocSlug) {
-        return buildService.buildAndPush(repo, versionLabel, pocSlug);
+    public Map<String, String> buildAndPushImages(GitHubRepoRef repo, String versionLabel, String pocSlug, PocManifest manifest) {
+        return buildService.buildAndPushAll(repo, versionLabel, pocSlug, manifest);
     }
 
     @Override
-    public String deploy(String pocSlug, String image) {
-        buildService.deploy(pocSlug, image);
+    public String deploy(String pocSlug, String versionLabel, PocManifest manifest, Map<String, String> imagesByContainer) {
+        buildService.deploy(pocSlug, versionLabel, manifest, imagesByContainer);
         return cloudRunService.getServiceUrl(pocSlug);
     }
 }

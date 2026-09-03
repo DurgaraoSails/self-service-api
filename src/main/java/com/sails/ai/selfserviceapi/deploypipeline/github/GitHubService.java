@@ -2,6 +2,9 @@ package com.sails.ai.selfserviceapi.deploypipeline.github;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -106,6 +109,33 @@ public class GitHubService {
         log.info("Tag {} already present on {} at the expected commit — carrying on", tagName, repo);
     }
 
+    /**
+     * Reads one file from the repo at a specific ref, or empty if it doesn't exist there — used
+     * to check for an optional poc.yaml without a full git clone first. A missing file is a
+     * completely ordinary outcome here (most repos have no manifest), not an error.
+     */
+    public Optional<String> tryGetFileContent(GitHubRepoRef repo, String path, String ref) {
+        requireToken();
+        try {
+            ContentResponse response = gitHubRestClient.get()
+                    .uri("/repos/{owner}/{repo}/contents/{path}?ref={ref}", repo.owner(), repo.name(), path, ref)
+                    .retrieve()
+                    .body(ContentResponse.class);
+            if (response == null || response.content() == null) {
+                return Optional.empty();
+            }
+            // GitHub's contents API wraps base64 at 60 chars with embedded newlines — the plain
+            // (non-MIME) decoder rejects those, so this must be the MIME decoder specifically.
+            byte[] decoded = Base64.getMimeDecoder().decode(response.content());
+            return Optional.of(new String(decoded, StandardCharsets.UTF_8));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                return Optional.empty();
+            }
+            throw wrap(e, "GET contents of " + path + " on " + repo);
+        }
+    }
+
     private <T> T get(String uri, Class<T> type, Object... uriVars) {
         requireToken();
         try {
@@ -141,5 +171,8 @@ public class GitHubService {
     }
 
     private record CreateRefRequest(String ref, String sha) {
+    }
+
+    private record ContentResponse(String content, String encoding) {
     }
 }

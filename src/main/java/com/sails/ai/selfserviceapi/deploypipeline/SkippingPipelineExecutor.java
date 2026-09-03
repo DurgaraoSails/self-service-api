@@ -1,6 +1,8 @@
 package com.sails.ai.selfserviceapi.deploypipeline;
 
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
+import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -16,13 +18,13 @@ import org.springframework.stereotype.Component;
 public class SkippingPipelineExecutor implements PipelineExecutor {
 
     @Override
-    public String buildAndPushImage(GitHubRepoRef repo, String versionLabel, String pocSlug) {
+    public Map<String, String> buildAndPushImages(GitHubRepoRef repo, String versionLabel, String pocSlug, PocManifest manifest) {
         throw new IllegalStateException("SkippingPipelineExecutor should never be invoked — "
                 + "PipelineRunner must short-circuit on PipelineProperties.isSkip() first.");
     }
 
     @Override
-    public String deploy(String pocSlug, String image) {
+    public String deploy(String pocSlug, String versionLabel, PocManifest manifest, Map<String, String> imagesByContainer) {
         throw new IllegalStateException("SkippingPipelineExecutor should never be invoked — "
                 + "PipelineRunner must short-circuit on PipelineProperties.isSkip() first.");
     }

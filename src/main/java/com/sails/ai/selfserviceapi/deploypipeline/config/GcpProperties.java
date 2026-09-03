@@ -21,8 +21,8 @@ public record GcpProperties(
         return "projects/%s/secrets/%s-%s/versions/latest".formatted(projectId, secretId, environment);
     }
 
-    /** One shared Artifact Registry repo for every POC, namespaced by slug. */
-    public String imageUri(String slug, String versionLabel) {
-        return "%s-docker.pkg.dev/%s/poc-images/%s/app:%s".formatted(region, projectId, slug, versionLabel);
+    /** One shared Artifact Registry repo for every POC, namespaced by slug then container name. */
+    public String imageUri(String slug, String componentName, String versionLabel) {
+        return "%s-docker.pkg.dev/%s/poc-images/%s/%s:%s".formatted(region, projectId, slug, componentName, versionLabel);
     }
 }

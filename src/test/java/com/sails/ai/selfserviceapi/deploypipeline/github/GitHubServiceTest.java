@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.deploypipeline.github;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -9,6 +10,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import java.time.Duration;
+import java.util.Base64;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -117,6 +120,49 @@ class GitHubServiceTest {
         assertThatThrownBy(() -> new GitHubService(client, noToken).getDefaultBranch(REPO))
                 .isInstanceOf(GitHubApiException.class)
                 .hasMessageContaining("No GitHub token configured");
+    }
+
+    @Test
+    void tryGetFileContentDecodesGitHubsWrappedBase64() {
+        String yaml = "apiVersion: sails.poc/v1\ncontainers:\n  - name: web\n    role: ingress\n";
+        // GitHub's contents API wraps base64 at 60 chars with embedded newlines — this is
+        // exactly what the MIME encoder produces, and what the MIME *decoder* is specifically
+        // needed to read back.
+        String wrapped = Base64.getMimeEncoder(60, "\n".getBytes()).encodeToString(yaml.getBytes());
+        String url = BASE + "/repos/DurgaraoSails/dummy-poc/contents/poc.yaml?ref=abc123def456";
+        server.expect(requestTo(url)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"content\":\"" + wrapped.replace("\n", "\\n") + "\",\"encoding\":\"base64\"}",
+                        MediaType.APPLICATION_JSON));
+
+        Optional<String> content = gitHubService.tryGetFileContent(REPO, "poc.yaml", "abc123def456");
+
+        assertThat(content).contains(yaml);
+        server.verify();
+    }
+
+    @Test
+    void tryGetFileContentReturnsEmptyOn404() {
+        String url = BASE + "/repos/DurgaraoSails/dummy-poc/contents/poc.yaml?ref=abc123def456";
+        server.expect(requestTo(url)).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                        .body("{\"message\":\"Not Found\"}").contentType(MediaType.APPLICATION_JSON));
+
+        Optional<String> content = gitHubService.tryGetFileContent(REPO, "poc.yaml", "abc123def456");
+
+        assertThat(content).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void tryGetFileContentSurfacesAnyErrorOtherThanNotFound() {
+        String url = BASE + "/repos/DurgaraoSails/dummy-poc/contents/poc.yaml?ref=abc123def456";
+        server.expect(requestTo(url)).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN)
+                        .body("{\"message\":\"API rate limit exceeded\"}").contentType(MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> gitHubService.tryGetFileContent(REPO, "poc.yaml", "abc123def456"))
+                .isInstanceOf(GitHubApiException.class)
+                .hasMessageContaining("rate limit");
     }
 
     @Test

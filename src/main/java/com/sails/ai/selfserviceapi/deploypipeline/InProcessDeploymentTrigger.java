@@ -29,7 +29,7 @@ public class InProcessDeploymentTrigger implements DeploymentTrigger {
 
     @Override
     public void redeploy(RedeployRequest request) {
-        pipelineRunner.runRedeploy(
-                request.deploymentId(), request.pocSlug(), request.containerImage(), request.versionLabel());
+        pipelineRunner.runRedeploy(request.deploymentId(), request.pocSlug(),
+                request.imagesByContainer(), request.manifestYaml(), request.versionLabel());
     }
 }

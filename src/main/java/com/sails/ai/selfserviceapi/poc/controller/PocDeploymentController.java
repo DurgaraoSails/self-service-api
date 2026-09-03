@@ -103,6 +103,9 @@ public class PocDeploymentController implements DeploymentApi {
             throw new InvalidWebhookSecretException();
         }
 
+        // No PocBuildOutcome here — this webhook is the manual-testing path
+        // (deployment.trigger=logging) for the old single-image flow, not something a real
+        // manifest-aware deploy goes through, so it never has per-container detail to report.
         PocDeployment deployment = pocDeploymentService.reportStatus(
                 deploymentId,
                 reportDeploymentStatusRequest.getStatus().getValue(),
@@ -110,7 +113,8 @@ public class PocDeploymentController implements DeploymentApi {
                 reportDeploymentStatusRequest.getCommitSha(),
                 reportDeploymentStatusRequest.getHostedUrl(),
                 reportDeploymentStatusRequest.getLogsUrl(),
-                reportDeploymentStatusRequest.getErrorMessage()
+                reportDeploymentStatusRequest.getErrorMessage(),
+                null
         );
         return ResponseEntity.ok(PocDeploymentResponseMapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
     }

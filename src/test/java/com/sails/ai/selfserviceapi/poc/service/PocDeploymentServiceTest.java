@@ -16,6 +16,7 @@ import com.sails.ai.selfserviceapi.poc.entity.PocDeployment;
 import com.sails.ai.selfserviceapi.poc.entity.PocVersion;
 import com.sails.ai.selfserviceapi.poc.repository.PocDeploymentRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
+import com.sails.ai.selfserviceapi.poc.repository.PocVersionContainerRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocVersionRepository;
 import java.time.Instant;
 import java.util.List;
@@ -32,6 +33,7 @@ class PocDeploymentServiceTest {
 
     private PocRepository pocRepository;
     private PocVersionRepository pocVersionRepository;
+    private PocVersionContainerRepository pocVersionContainerRepository;
     private PocDeploymentRepository pocDeploymentRepository;
     private DeploymentTrigger deploymentTrigger;
     private PocDeploymentService service;
@@ -40,9 +42,11 @@ class PocDeploymentServiceTest {
     void setUp() {
         pocRepository = Mockito.mock(PocRepository.class);
         pocVersionRepository = Mockito.mock(PocVersionRepository.class);
+        pocVersionContainerRepository = Mockito.mock(PocVersionContainerRepository.class);
         pocDeploymentRepository = Mockito.mock(PocDeploymentRepository.class);
         deploymentTrigger = Mockito.mock(DeploymentTrigger.class);
-        service = new PocDeploymentService(pocRepository, pocVersionRepository, pocDeploymentRepository, deploymentTrigger);
+        service = new PocDeploymentService(pocRepository, pocVersionRepository, pocVersionContainerRepository,
+                pocDeploymentRepository, deploymentTrigger);
 
         when(pocVersionRepository.save(any(PocVersion.class))).thenAnswer(invocation -> {
             PocVersion version = invocation.getArgument(0);
@@ -162,7 +166,9 @@ class PocDeploymentServiceTest {
 
         ArgumentCaptor<RedeployRequest> requestCaptor = ArgumentCaptor.forClass(RedeployRequest.class);
         verify(deploymentTrigger).redeploy(requestCaptor.capture());
-        assertThat(requestCaptor.getValue().containerImage()).isEqualTo("registry/company/contract-agent:1.0.1");
+        // No poc_version_containers rows mocked (a pre-manifest version) — falls back to the
+        // single stored image under the synthesized default manifest's ingress container name.
+        assertThat(requestCaptor.getValue().imagesByContainer()).containsEntry("app", "registry/company/contract-agent:1.0.1");
     }
 
     @Test
@@ -196,7 +202,7 @@ class PocDeploymentServiceTest {
         PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
         when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
 
-        PocDeployment updated = service.reportStatus(deployment.getId(), "FAILED", null, null, null, "https://logs", "Build failed.");
+        PocDeployment updated = service.reportStatus(deployment.getId(), "FAILED", null, null, null, "https://logs", "Build failed.", null);
 
         assertThat(updated.getStatus()).isEqualTo("FAILED");
         assertThat(updated.getErrorMessage()).isEqualTo("Build failed.");
@@ -214,11 +220,41 @@ class PocDeploymentServiceTest {
         Poc poc = pocWithGithubUrl(deployment.getPocId());
         when(pocRepository.findById(deployment.getPocId())).thenReturn(Optional.of(poc));
 
-        service.reportStatus(deployment.getId(), "SUCCEEDED", "registry/company/contract-agent:1.0.1", "abc123def456", "https://dummy-poc-abc123-uc.a.run.app", null, null);
+        service.reportStatus(deployment.getId(), "SUCCEEDED", "registry/company/contract-agent:1.0.1", "abc123def456",
+                "https://dummy-poc-abc123-uc.a.run.app", null, null, null);
 
         assertThat(version.getContainerImage()).isEqualTo("registry/company/contract-agent:1.0.1");
         assertThat(poc.getActiveVersionId()).isEqualTo(version.getId());
         assertThat(poc.getAppUrl()).isEqualTo("https://dummy-poc-abc123-uc.a.run.app");
+    }
+
+    @Test
+    void reportStatusOnSuccessWithABuildOutcomeStoresTheManifestAndEveryContainer() {
+        PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
+        when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
+        PocVersion version = versionOf(1, 0, 1);
+        version.setId(deployment.getPocVersionId());
+        when(pocVersionRepository.findById(deployment.getPocVersionId())).thenReturn(Optional.of(version));
+        when(pocRepository.findById(deployment.getPocId())).thenReturn(Optional.of(pocWithGithubUrl(deployment.getPocId())));
+
+        List<PocContainerReport> containers = List.of(
+                new PocContainerReport("web", "INGRESS", "registry/company/web:1.0.1", null),
+                new PocContainerReport("api", "SIDECAR", "registry/company/api:1.0.1", 8081));
+        PocBuildOutcome outcome = new PocBuildOutcome("apiVersion: sails.poc/v1\ncontainers: []\n", containers);
+
+        service.reportStatus(deployment.getId(), "SUCCEEDED", "registry/company/web:1.0.1", "abc123def456",
+                "https://research-assistant-suite-uc.a.run.app", null, null, outcome);
+
+        assertThat(version.getManifestYaml()).isEqualTo(outcome.manifestYaml());
+
+        ArgumentCaptor<com.sails.ai.selfserviceapi.poc.entity.PocVersionContainer> rowCaptor =
+                ArgumentCaptor.forClass(com.sails.ai.selfserviceapi.poc.entity.PocVersionContainer.class);
+        verify(pocVersionContainerRepository, Mockito.times(2)).save(rowCaptor.capture());
+        assertThat(rowCaptor.getAllValues())
+                .extracting("name", "role", "containerImage", "port")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("web", "INGRESS", "registry/company/web:1.0.1", null),
+                        org.assertj.core.groups.Tuple.tuple("api", "SIDECAR", "registry/company/api:1.0.1", 8081));
     }
 
     @Test
@@ -232,7 +268,7 @@ class PocDeploymentServiceTest {
         Poc poc = pocWithGithubUrl(deployment.getPocId());
         when(pocRepository.findById(deployment.getPocId())).thenReturn(Optional.of(poc));
 
-        service.reportStatus(deployment.getId(), "SUCCEEDED", null, null, "https://dummy-poc-abc123-uc.a.run.app", null, null);
+        service.reportStatus(deployment.getId(), "SUCCEEDED", null, null, "https://dummy-poc-abc123-uc.a.run.app", null, null, null);
 
         assertThat(poc.getActiveVersionId()).isEqualTo(version.getId());
         assertThat(poc.getAppUrl()).isEqualTo("https://dummy-poc-abc123-uc.a.run.app");
@@ -248,7 +284,7 @@ class PocDeploymentServiceTest {
         when(pocVersionRepository.findById(deployment.getPocVersionId())).thenReturn(Optional.of(version));
 
         assertThatThrownBy(() -> service.reportStatus(deployment.getId(), "SUCCEEDED", null, null,
-                "https://dummy-poc-abc123-uc.a.run.app", null, null))
+                "https://dummy-poc-abc123-uc.a.run.app", null, null, null))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getCode())
                 .isEqualTo("MISSING_CONTAINER_IMAGE");
@@ -260,7 +296,7 @@ class PocDeploymentServiceTest {
         when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
 
         assertThatThrownBy(() -> service.reportStatus(deployment.getId(), "SUCCEEDED",
-                "registry/company/contract-agent:1.0.1", "abc123def456", null, null, null))
+                "registry/company/contract-agent:1.0.1", "abc123def456", null, null, null, null))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getCode())
                 .isEqualTo("MISSING_HOSTED_URL");
@@ -271,7 +307,7 @@ class PocDeploymentServiceTest {
         PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
         when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
 
-        PocDeployment updated = service.reportStatus(deployment.getId(), "SKIPPED", null, null, null, null, null);
+        PocDeployment updated = service.reportStatus(deployment.getId(), "SKIPPED", null, null, null, null, null, null);
 
         assertThat(updated.getStatus()).isEqualTo("SKIPPED");
         assertThat(updated.getCompletedAt()).isNotNull();
@@ -284,7 +320,7 @@ class PocDeploymentServiceTest {
         deployment.setStatus("SUCCEEDED");
         when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
 
-        assertThatThrownBy(() -> service.reportStatus(deployment.getId(), "BUILDING", null, null, null, null, null))
+        assertThatThrownBy(() -> service.reportStatus(deployment.getId(), "BUILDING", null, null, null, null, null, null))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getStatus())
                 .isEqualTo(HttpStatus.CONFLICT);

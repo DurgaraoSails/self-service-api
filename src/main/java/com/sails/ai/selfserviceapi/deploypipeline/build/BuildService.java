@@ -5,10 +5,15 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.sails.ai.selfserviceapi.deploypipeline.config.GcpProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
+import com.sails.ai.selfserviceapi.deploypipeline.run.CloudRunDeployCommandBuilder;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -19,9 +24,11 @@ import org.springframework.web.client.RestClientResponseException;
  * deployment and sent inline rather than stored as triggers — nothing fires on a git push, every
  * build is one the async pipeline run asked for.
  *
- * Two separate submissions rather than one five-step build: a build-and-push job, then a deploy
- * job. That maps directly onto the BUILDING → DEPLOYING status transitions the caller reports,
- * and it means a rollback (which only ever needs the deploy half) reuses the same method.
+ * Two separate submissions rather than one build: a build-and-push job (one clone step, then a
+ * build+push pair per manifest container), then a deploy job (one `gcloud run deploy` covering
+ * every container as a single Cloud Run service). That maps directly onto the BUILDING →
+ * DEPLOYING status transitions the caller reports, and it means a rollback (which only ever needs
+ * the deploy half) reuses the same method.
  */
 @Service
 public class BuildService {
@@ -29,31 +36,48 @@ public class BuildService {
     private final RestClient cloudBuildRestClient;
     private final GcpProperties gcp;
     private final PipelineProperties properties;
+    private final CloudRunDeployCommandBuilder deployCommandBuilder;
 
-    public BuildService(RestClient cloudBuildRestClient, GcpProperties gcp, PipelineProperties properties) {
+    public BuildService(RestClient cloudBuildRestClient, GcpProperties gcp, PipelineProperties properties,
+                         CloudRunDeployCommandBuilder deployCommandBuilder) {
         this.cloudBuildRestClient = cloudBuildRestClient;
         this.gcp = gcp;
         this.properties = properties;
+        this.deployCommandBuilder = deployCommandBuilder;
     }
 
-    /** Clones the tag, builds, and pushes. Blocks until Cloud Build finishes; returns the pushed image URI. */
-    public String buildAndPush(GitHubRepoRef repo, String versionLabel, String slug) {
-        String image = gcp.imageUri(slug, versionLabel);
-
+    /**
+     * Clones the tag once, then builds and pushes every container the manifest declares. Blocks
+     * until Cloud Build finishes; returns the pushed image URI keyed by container name.
+     */
+    public Map<String, String> buildAndPushAll(GitHubRepoRef repo, String versionLabel, String slug, PocManifest manifest) {
         List<BuildStep> steps = new ArrayList<>();
         steps.add(cloneStep(versionLabel, repo));
-        steps.add(new BuildStep("gcr.io/cloud-builders/docker", null, List.of("build", "-t", image, "src"), null));
-        steps.add(new BuildStep("gcr.io/cloud-builders/docker", null, List.of("push", image), null));
+
+        Map<String, String> imagesByContainer = new LinkedHashMap<>();
+        for (ManifestContainer container : manifest.containers()) {
+            String image = gcp.imageUri(slug, container.name(), versionLabel);
+            imagesByContainer.put(container.name(), image);
+            steps.add(new BuildStep("gcr.io/cloud-builders/docker", null,
+                    List.of("build", "-t", image, "-f", "src/" + container.dockerfile(), "src/" + container.context()),
+                    null));
+            steps.add(new BuildStep("gcr.io/cloud-builders/docker", null, List.of("push", image), null));
+        }
 
         String buildId = submit(steps, availableSecrets());
-        awaitSuccess(buildId, "build " + image);
-        return image;
+        awaitSuccess(buildId, "build " + slug);
+        return imagesByContainer;
     }
 
-    /** Deploys an image (freshly built or pre-existing) and, if configured, grants self-service-api access. */
-    public void deploy(String slug, String image) {
+    /**
+     * Deploys every image (freshly built, or a version's previously-built ones for a redeploy) as
+     * one Cloud Run service and, if configured, grants self-service-api access.
+     */
+    public void deploy(String slug, String versionLabel, PocManifest manifest, Map<String, String> imagesByContainer) {
         List<BuildStep> steps = new ArrayList<>();
-        steps.add(deployStep(slug, image));
+        steps.add(new BuildStep("gcr.io/google.com/cloudsdktool/cloud-sdk", "gcloud",
+                deployCommandBuilder.buildDeployArgs(slug, versionLabel, manifest, imagesByContainer, gcp, properties),
+                null));
         if (properties.grantApiInvoker()) {
             steps.add(grantApiInvokerStep(slug));
         }
@@ -145,16 +169,6 @@ public class BuildService {
         }
         return new AvailableSecrets(List.of(new SecretManagerSecret(
                 gcp.secretVersionName(properties.githubTokenSecretId()), "GITHUB_TOKEN")));
-    }
-
-    private BuildStep deployStep(String slug, String image) {
-        return new BuildStep("gcr.io/google.com/cloudsdktool/cloud-sdk", "gcloud",
-                List.of("run", "deploy", slug,
-                        "--image=" + image,
-                        "--region=" + gcp.region(),
-                        "--service-account=" + gcp.serviceAccountEmail("poc-runtime"),
-                        properties.allowUnauthenticated() ? "--allow-unauthenticated" : "--no-allow-unauthenticated"),
-                null);
     }
 
     /**

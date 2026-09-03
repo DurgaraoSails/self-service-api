@@ -44,6 +44,14 @@ public class PocVersion {
     @Column(name = "commit_sha")
     private String commitSha;
 
+    /**
+     * The manifest exactly as it was at build time, or null for a repo with no poc.yaml. Redeploy
+     * parses this rather than re-reading whatever poc.yaml says in the repo today — reconstructing
+     * exactly what was deployed then.
+     */
+    @Column(name = "manifest_yaml")
+    private String manifestYaml;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
