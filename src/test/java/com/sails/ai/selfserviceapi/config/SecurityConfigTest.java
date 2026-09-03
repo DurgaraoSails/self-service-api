@@ -1,9 +1,13 @@
 package com.sails.ai.selfserviceapi.config;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sails.ai.selfserviceapi.file.controller.PocFilesController;
+import com.sails.ai.selfserviceapi.file.service.FileService;
 import com.sails.ai.selfserviceapi.security.JwtKeySet;
 import com.sails.ai.selfserviceapi.security.JwksController;
 import com.sails.ai.selfserviceapi.security.JwtProperties;
@@ -18,25 +22,29 @@ import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * The wiring nothing else covers. Both classes of token are signed by the same key and carry the
- * same issuer, so what separates them is configuration in one file — and a mistake there is
- * invisible until a POC-scoped token reaches something it should never have reached.
+ * The wiring nothing else covers. Two classes of token, signed by the same key with the same
+ * issuer, are meant to work on disjoint sets of endpoints — the portal's decoder on one filter
+ * chain, the POC-files decoder on another — and a mistake in that split is invisible until the
+ * wrong token reaches something it should never have reached. This exercises both directions on
+ * both chains: a portal endpoint with a POC token, and a POC-files endpoint with a portal token.
  *
- * <p>Only {@link JwksController} is registered, which is what makes the last two cases legible: a
- * request that authenticates reaches a route that does not exist and gets 404, while one that fails
- * to authenticate is stopped at the filter and gets 401. The difference between those two codes is
- * the assertion.
+ * <p>{@link JwksController} and {@link PocFilesController} are the only controllers registered.
+ * That is what makes the portal-side assertions legible: a request that authenticates reaches a
+ * route this slice does not serve and gets 404, while one that fails to authenticate is stopped at
+ * the filter and gets 401 — two different codes for two different failures.
  */
-@WebMvcTest(controllers = JwksController.class)
+@WebMvcTest(controllers = {JwksController.class, PocFilesController.class})
 @Import({SecurityConfig.class, CorsConfig.class, SecurityConfigTest.TestKeys.class})
 class SecurityConfigTest {
 
@@ -44,6 +52,9 @@ class SecurityConfigTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private FileService fileService;
 
     @Test
     void jwksIsReachableWithoutAToken() throws Exception {
@@ -79,8 +90,9 @@ class SecurityConfigTest {
     }
 
     /**
-     * The one that matters. Same key, same issuer, still unusable here — otherwise a token handed
-     * to JavaScript on a POC's origin would read the portal user's own profile.
+     * The one that matters on the portal side. Same key, same issuer, still unusable here —
+     * otherwise a token handed to JavaScript on a POC's origin would read the portal user's own
+     * profile.
      */
     @Test
     void rejectsAPocScopedTokenOnAPortalEndpoint() throws Exception {
@@ -88,12 +100,41 @@ class SecurityConfigTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void rejectsARequestWithNoTokenOnPocFiles() throws Exception {
+        mockMvc.perform(get("/poc-files"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * The mirror image, and just as load-bearing: the POC-facing endpoints take no user or POC
+     * parameter — everything comes from the token's claims — so a portal access token succeeding
+     * here would have nothing downstream left to stop it from reading whichever (user, POC) pair
+     * a caller cared to try.
+     */
+    @Test
+    void rejectsAUserAccessTokenOnAPocFilesEndpoint() throws Exception {
+        mockMvc.perform(get("/poc-files").header("Authorization", "Bearer " + userToken()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void acceptsAPocScopedTokenOnAPocFilesEndpoint() throws Exception {
+        when(fileService.list(any(), any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/poc-files").header("Authorization", "Bearer " + pocToken()))
+                .andExpect(status().isOk());
+    }
+
     private static String userToken() {
         return baseToken().compact();
     }
 
     private static String pocToken() {
-        return baseToken().audience().add(PocAudience.forSlug("contract-agent")).and().compact();
+        return baseToken()
+                .audience().add(PocAudience.forSlug("contract-agent")).and()
+                .claim("pocId", 4L)
+                .compact();
     }
 
     private static io.jsonwebtoken.JwtBuilder baseToken() {

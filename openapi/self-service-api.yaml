@@ -920,6 +920,142 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /poc-files:
+    post:
+      summary: Upload a file for the calling user, scoped to the POC named by the token
+      description: >
+        multipart/form-data, single file. Authenticated with a POC-scoped token only — there is no
+        user or POC parameter anywhere on this path, by design: both come from the token's claims,
+        so a POC has nothing to tamper with to reach another user's files or its own files under a
+        different (user, POC) pair. Rejects on quota (too many files for this pair, or this user's
+        total across every POC), size, or a content type outside the configured allowlist —
+        verified against the file's magic bytes, not the declared header.
+      operationId: uploadPocFile
+      tags:
+        - PocFiles
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: File stored
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/file.yaml#/FileResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '409':
+          description: The (user, POC) file-count quota or the user's total-bytes quota is exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '413':
+          description: The file exceeds the configured per-file size ceiling.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    get:
+      summary: List the calling user's non-deleted files for the POC named by the token
+      operationId: listPocFiles
+      tags:
+        - PocFiles
+      responses:
+        '200':
+          description: The files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/file.yaml#/FileResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /poc-files/{fileId}/content:
+    get:
+      summary: Stream a file's bytes, after confirming it belongs to the calling (user, POC) pair
+      description: >
+        Served with Content-Disposition: attachment and X-Content-Type-Options: nosniff, so a
+        user-uploaded HTML or SVG file cannot execute in a browser origin regardless of its
+        declared content type.
+      operationId: getPocFileContent
+      tags:
+        - PocFiles
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The file's raw bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /poc-files/{fileId}:
+    delete:
+      summary: Soft-delete a file belonging to the calling (user, POC) pair
+      description: >
+        The object is removed from storage immediately, freeing the caller's quota right away; the
+        row is retained (deleted_at set) for purge accounting rather than deleted outright.
+      operationId: deletePocFile
+      tags:
+        - PocFiles
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/deployment-issues:
     get:
       summary: POCs needing attention — deployable but never deployed, or whose latest attempt didn't succeed (admin only)
