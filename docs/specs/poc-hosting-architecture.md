@@ -2,11 +2,12 @@
 
 ## Status
 
-Draft — design decided. Implementation of two pieces of it started 2026-09-03 as Phase 2 of
-`docs/specs/file-management.md`: the JWKS endpoint and `POST /pocs/{slug}/launch`. They are built
-there because file management's only upload path is authenticated by the launch token, so that
-feature cannot be exercised at all until this token exists. Everything else here — the bridge
-library, the design-token package, the Tier 1 state API, Tier 2 schemas — remains unimplemented.
+Draft — design decided. Two pieces of it are **implemented** as of 2026-09-03, built as Phase 2 of
+`docs/specs/file-management.md`: `GET /.well-known/jwks.json` and `POST /pocs/{slug}/launch`, with
+the `kid` header and audience separation that both depend on. They live there because file
+management's only upload path is authenticated by the launch token, so that feature could not be
+exercised at all until this token existed. Everything else here — the bridge library, the
+design-token package, the Tier 1 state API, Tier 2 schemas — remains unimplemented.
 
 ## Overview / Purpose
 
@@ -180,6 +181,12 @@ Additions to `self-service-api`:
 
 ## Open Questions / Future Work
 
+- **`/pocs/{slug}/launch` is the only POC endpoint keyed by slug.** Every other one — `hide`,
+  `deploy`, `versions`, `deployments` — takes the numeric id, so the two now sit side by side under
+  the same path prefix. Slug was kept because it is what the token's audience names and what a POC
+  identifies itself by, but the inconsistency is real and the portal holds the id already. Worth
+  settling before POC-facing endpoints multiply.
+
 - **Cold-start UX.** Scale-to-zero means clicking Launch on an idle POC waits for a container start. Options are warming the POC from the `/launch` call while the portal shows a skeleton, or `min-instances=1` for a small set of featured POCs at a known cost.
 - **Per-POC secrets.** No convention exists for a POC holding its own credentials, and one is needed before any POC calls an external model provider.
 - **`self-service-gateway` is superseded but deliberately retained.** With no custom domain, no load balancer, and no proxying, the service account and its blocked invoker IAM binding in `self-service-terraform` have no purpose under this design. Removal was considered and deferred: it costs nothing to leave in place, and keeping it preserves the option should custom domains ever be adopted, at which point the gateway model above becomes the better answer.
@@ -188,6 +195,12 @@ Additions to `self-service-api`:
 
 ## Changelog
 
+- 2026-09-03 — **Implemented** the JWKS endpoint, the `kid` header, `POST /pocs/{slug}/launch` and
+  audience separation. Entitlement decisions the design left implicit: a hidden POC is a 404 rather
+  than a 403, since distinguishing them tells an unentitled caller that a POC by that name exists
+  and is merely withheld — which is what hiding one is meant to prevent — and admins are not
+  exempted, because a withdrawn POC should not be launchable while withdrawn. A POC that has never
+  deployed (`appUrl` null) is a 409, not a 404: it is real, and the caller did nothing wrong.
 - 2026-09-03 — `GET /.well-known/jwks.json`, the `kid` header on issued tokens, `POST
   /pocs/{slug}/launch`, and audience separation moved into `file-management.md`'s implementation
   plan as its Phase 2, rather than waiting for a branch of their own. The reason is a dependency

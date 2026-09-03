@@ -188,7 +188,7 @@ No HTTP surface; nothing user-visible.
 - `file/storage/ObjectPaths.java` — the object layout in one place, because upload, download and
   purge all have to agree on it.
 
-### Phase 2 — POC-scoped token and JWKS
+### Phase 2 — POC-scoped token and JWKS (implemented)
 
 Prerequisite work owned by `poc-hosting-architecture.md`; see above for why it lands here.
 
@@ -200,7 +200,11 @@ Prerequisite work owned by `poc-hosting-architecture.md`; see above for why it l
   that exact mismatch causing a failure before.
 - `POST /pocs/{slug}/launch` — the single point where "may this user open this POC" is decided:
   active trial, POC `ACTIVE`, not hidden, not soft-deleted.
-- Audience separation, so a POC token is accepted on `/poc-files` and nowhere else.
+- Audience separation. Implemented as the half that is safe to ship first: the portal's decoder
+  *rejects* any token carrying a `poc:` audience, so a POC-scoped token is currently accepted
+  nowhere at all. Phase 3 adds the decoder that requires it, opening exactly one door. Checked at
+  decode time rather than as an authorization rule, so such a token fails to authenticate rather
+  than authenticating and then being denied.
 
 ### Phase 3 — POC-facing `/poc-files`
 
@@ -243,6 +247,15 @@ service with an explicit ownership check instead of a claim-derived one.
 
 ## Changelog
 
+- 2026-09-03 — **Phase 2 implemented**: `kid` on every issued token, `GET /.well-known/jwks.json`,
+  `POST /pocs/{slug}/launch`, and audience separation. The POC token carries `sub`, `aud`,
+  `pocId`, display name, theme and `trialEndDate` — and deliberately no `roles`, so a POC launched
+  by an admin does not inherit admin authority, and no email. `pocId` is carried in addition to the
+  slug in the audience, which the design did not call for: file storage is keyed on the id
+  precisely because a slug can be renamed, so carrying it saves a lookup on every request a POC
+  makes. `SecurityConfigTest` is this repo's first test of its security wiring, and covers the case
+  that motivated the phase — a POC-scoped token getting 401 on `/users/me` while a user token
+  passes the filter. See `poc-hosting-architecture.md` for the launch endpoint's own details.
 - 2026-09-03 — **Phase 1 implemented**: `google-cloud-storage` (pinned through `libraries-bom`,
   which also took over the version of the `google-auth-library-oauth2-http` the deploy pipeline
   already used, so the two cannot drift), migration `V18`, `UserFile` + `UserFileRepository`,
