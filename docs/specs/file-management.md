@@ -2,8 +2,15 @@
 
 ## Status
 
-In Progress — implementation started 2026-09-03 on branch `file-management`. See Implementation Plan
+In Progress — Phases 1-4 implemented 2026-09-03 on branch `file-management` (storage foundation,
+POC-scoped tokens/JWKS, `/poc-files`, portal-facing `/pocs/{id}/files`). Phase 5 (trial-expiry
+purge) is deliberately deferred, not blocked — see that phase's note below. See Implementation Plan
 for the phase breakdown and what has landed.
+
+**Until Phase 5 lands, uploaded files are never purged.** The platform's trial-expiry purge
+obligation this spec exists partly to satisfy (see Overview) is not yet met: a user's documents
+outlive their trial indefinitely. Acceptable for now at the scale this is being exercised at: not
+acceptable to ship broadly, or leave forgotten, without Phase 5.
 
 ## Overview / Purpose
 
@@ -233,7 +240,12 @@ check this surface needs — no new logic, only a second controller reading the 
 every other `/pocs/{id}/...` route in this API, not the `pocId` the API Surface section below uses
 in prose; the two names the same thing.
 
-### Phase 5 — Trial-expiry purge
+### Phase 5 — Trial-expiry purge (deferred)
+
+Deferred at the user's request 2026-09-03, to be picked up later — not a technical blocker, and
+nothing about Phases 1-4 assumed it would follow immediately. Flagged here rather than left
+implicit so it isn't mistaken for forgotten: see the Status note above for what this leaves
+unmet in the meantime.
 
 - `users.purged_at` (migration), `trial.purge-*` properties.
 - `@EnableScheduling` — the first scheduled work in this service. `AsyncConfig` enables `@Async` for
@@ -258,6 +270,11 @@ in prose; the two names the same thing.
 
 ## Changelog
 
+- 2026-09-03 — Phase 5 deferred at the user's request: Phases 1-4 (storage foundation, POC-scoped
+  tokens/JWKS, both file endpoint surfaces) are implemented and left in a working, independently
+  reviewable state; the purge sweep will be built as a separate, later piece of work rather than
+  continuing in the same sitting. Status revised to say so explicitly, since the feature is
+  incomplete without it — the trial-expiry purge guarantee is not met until Phase 5 exists.
 - 2026-09-03 — **Phase 4 implemented**: `/pocs/{id}/files` (list, download, delete), on the
   portal's existing filter chain — no `SecurityConfig` change needed, since the path falls through
   to the same `anyRequest().access(authenticated + trial)` rule every other portal route already
