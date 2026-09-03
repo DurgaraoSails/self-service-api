@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sails.ai.selfserviceapi.file.controller.PocFilesController;
+import com.sails.ai.selfserviceapi.file.controller.PortalFilesController;
 import com.sails.ai.selfserviceapi.file.service.FileService;
 import com.sails.ai.selfserviceapi.security.JwtKeySet;
 import com.sails.ai.selfserviceapi.security.JwksController;
@@ -39,12 +40,14 @@ import org.springframework.test.web.servlet.MockMvc;
  * wrong token reaches something it should never have reached. This exercises both directions on
  * both chains: a portal endpoint with a POC token, and a POC-files endpoint with a portal token.
  *
- * <p>{@link JwksController} and {@link PocFilesController} are the only controllers registered.
- * That is what makes the portal-side assertions legible: a request that authenticates reaches a
- * route this slice does not serve and gets 404, while one that fails to authenticate is stopped at
- * the filter and gets 401 — two different codes for two different failures.
+ * <p>{@link JwksController}, {@link PocFilesController} and {@link PortalFilesController} are the
+ * only controllers registered. That is what makes the portal-side assertions against {@code
+ * /users/me} legible: a request that authenticates reaches a route this slice does not serve and
+ * gets 404, while one that fails to authenticate is stopped at the filter and gets 401 — two
+ * different codes for two different failures. {@code /pocs/{id}/files} is served for real, since
+ * proving it stays on the portal's chain needs a route that actually responds.
  */
-@WebMvcTest(controllers = {JwksController.class, PocFilesController.class})
+@WebMvcTest(controllers = {JwksController.class, PocFilesController.class, PortalFilesController.class})
 @Import({SecurityConfig.class, CorsConfig.class, SecurityConfigTest.TestKeys.class})
 class SecurityConfigTest {
 
@@ -123,6 +126,25 @@ class SecurityConfigTest {
         when(fileService.list(any(), any())).thenReturn(List.of());
 
         mockMvc.perform(get("/poc-files").header("Authorization", "Bearer " + pocToken()))
+                .andExpect(status().isOk());
+    }
+
+    /**
+     * The portal-facing surface (Phase 4) shares nothing with /poc-files except the FileService
+     * underneath it — it must stay on the portal's own chain, gated the same as any other portal
+     * route, not accept the token minted for the POC-facing one.
+     */
+    @Test
+    void rejectsAPocScopedTokenOnAPortalFilesEndpoint() throws Exception {
+        mockMvc.perform(get("/pocs/4/files").header("Authorization", "Bearer " + pocToken()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void acceptsAUserAccessTokenOnAPortalFilesEndpoint() throws Exception {
+        when(fileService.list(any(), any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/pocs/4/files").header("Authorization", "Bearer " + userToken()))
                 .andExpect(status().isOk());
     }
 

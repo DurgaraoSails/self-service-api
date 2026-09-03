@@ -1479,6 +1479,115 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/{id}/files:
+    get:
+      summary: List the caller's non-deleted files stored for this POC
+      description: >
+        The portal-facing half of file management, authenticated with the user's own access token
+        and trial-gated as normal — unlike /poc-files, this is not part of the upload flow.
+        It exists so the portal can offer a user a view of everything they have stored across a
+        POC and a way to remove it, which is worth having independently of any POC. Ownership is
+        an explicit (userId, id) query rather than the claim-derived scoping /poc-files uses, since
+        the caller here supplies id itself.
+      operationId: listPocFilesForUser
+      tags:
+        - PortalFiles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/file.yaml#/FileResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/files/{fileId}/content:
+    get:
+      summary: Stream a file's bytes, after confirming it belongs to the caller and this POC
+      description: >
+        Served with Content-Disposition: attachment and X-Content-Type-Options: nosniff, the same
+        as the POC-facing download endpoint.
+      operationId: getPocFileContentForUser
+      tags:
+        - PortalFiles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The file's raw bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/files/{fileId}:
+    delete:
+      summary: Soft-delete a file, after confirming it belongs to the caller and this POC
+      description: >
+        Same effect as the POC-facing delete: the object is removed from storage immediately, and
+        the row is retained (deleted_at set) for purge accounting.
+      operationId: deletePocFileForUser
+      tags:
+        - PortalFiles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
 components:
   securitySchemes:
     bearerAuth:
