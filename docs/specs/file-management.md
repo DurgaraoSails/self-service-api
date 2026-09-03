@@ -134,9 +134,9 @@ Two surfaces, deliberately not merged: they differ in caller, in authorization, 
 
 **Portal-facing**, authenticated with the user's own access token, trial-gated as normal. Not part of the upload flow; this exists so the portal can offer the user a view of everything they have stored and a way to remove it, which is worth having independently of any POC.
 
-- **`GET /pocs/{pocId}/files`** — the caller's non-deleted files for that POC.
-- **`GET /pocs/{pocId}/files/{fileId}/content`** — streams the bytes.
-- **`DELETE /pocs/{pocId}/files/{fileId}`** — soft delete, `204`.
+- **`GET /pocs/{id}/files`** — the caller's non-deleted files for that POC.
+- **`GET /pocs/{id}/files/{fileId}/content`** — streams the bytes.
+- **`DELETE /pocs/{id}/files/{fileId}`** — soft delete, `204`.
 
 The surfaces stay separate rather than merging behind one path with two authorization rules, for the reason given under Access control: the POC-facing endpoints must have no parameter naming a user or a POC, so cross-tenant access is a request the API cannot express rather than one it rejects.
 
@@ -223,10 +223,15 @@ Prerequisite work owned by `poc-hosting-architecture.md`; see above for why it l
   limit so uploads never touch Cloud Run's memory-backed filesystem.
 - Error mapping through `ApiException`, matching the existing `poc` exception package.
 
-### Phase 4 — Portal-facing `/pocs/{pocId}/files`
+### Phase 4 — Portal-facing `/pocs/{id}/files` (implemented)
 
 Read and delete only, on the user's own access token, trial-gated as normal. Reuses the Phase 3
-service with an explicit ownership check instead of a claim-derived one.
+`FileService` unchanged: every method there already scopes strictly by `(userId, pocId)`, so an id
+belonging to another user or a different POC is simply not found, which is exactly the ownership
+check this surface needs — no new logic, only a second controller reading the pair from
+`CurrentUser` and the path instead of the token's claims. The path parameter is `id`, matching
+every other `/pocs/{id}/...` route in this API, not the `pocId` the API Surface section below uses
+in prose; the two names the same thing.
 
 ### Phase 5 — Trial-expiry purge
 
@@ -253,6 +258,13 @@ service with an explicit ownership check instead of a claim-derived one.
 
 ## Changelog
 
+- 2026-09-03 — **Phase 4 implemented**: `/pocs/{id}/files` (list, download, delete), on the
+  portal's existing filter chain — no `SecurityConfig` change needed, since the path falls through
+  to the same `anyRequest().access(authenticated + trial)` rule every other portal route already
+  gets. `PortalFilesController` is a thin second controller over the unchanged Phase 3
+  `FileService`; `SecurityConfigTest` gained the matching pair of cases (a POC-scoped token
+  rejected here, a portal token accepted) to prove the new surface actually stayed on the portal
+  chain rather than assuming it from the routing table. 213 tests pass, 8 new.
 - 2026-09-03 — **Phase 3 implemented**: `/poc-files` (upload, list, download, delete), sitting
   behind a second Spring Security filter chain (`SecurityConfig.pocFilesFilterChain`, `@Order(1)`,
   matched to `/poc-files/**`) rather than a shared one with an authorization-time check. The two
