@@ -167,11 +167,15 @@ CreatePocRequest:
   type: object
   description: >
     Request to create a new POC. Creating a POC records metadata only — deploying is a separate,
-    explicit action (POST /pocs/{id}/deploy). slug and githubUrl are optional here, but both are
-    required before that POC can be deployed.
+    explicit action (POST /pocs/{id}/deploy) — but slug and githubUrl are required at creation
+    all the same. A POC missing either is inert: it cannot be deployed, so it never gets an appUrl,
+    so it can never be launched. Requiring them here turns that into a validation error on the form
+    that created the POC, rather than a 409 at deploy time or a POC that quietly never goes live.
   required:
     - name
     - description
+    - slug
+    - githubUrl
   properties:
     name:
       type: string
@@ -252,10 +256,17 @@ CreatePocRequest:
 
 UpdatePocRequest:
   type: object
-  description: Request to replace an existing POC's fields.
+  description: >
+    Request to replace an existing POC's fields. slug and githubUrl are required for the same
+    reason they are on create, and because this endpoint replaces rather than merges: an update
+    omitting githubUrl would otherwise null it out and silently make a working POC undeployable.
+    Sending slug for a POC that already has one is harmless — it is assigned once and then ignored,
+    since it names a live Cloud Run service.
   required:
     - name
     - description
+    - slug
+    - githubUrl
   properties:
     name:
       type: string
