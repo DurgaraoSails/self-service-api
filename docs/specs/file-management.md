@@ -126,7 +126,8 @@ Two surfaces, deliberately not merged: they differ in caller, in authorization, 
 
 **POC-facing** — the primary surface, authenticated with the POC-scoped token, with no user or POC parameter anywhere. Called from the POC's browser code via the bridge library's uploader, and from the POC's backend for reads.
 
-- **`POST /poc-files`** — `multipart/form-data`, single file. Rejects on quota, size, or disallowed content type. Returns `201` with the file's metadata.
+- **`POST /poc-files`** — `multipart/form-data`, single file. Rejects on quota (`409`), size (`413`),
+  or disallowed content type (`400`). Returns `201` with the file's metadata.
 - **`GET /poc-files`** — the non-deleted files belonging to the `(user, POC)` pair named by the token's claims.
 - **`GET /poc-files/{fileId}/content`** — streams the bytes, after confirming the file belongs to that pair.
 - **`DELETE /poc-files/{fileId}`** — soft delete, `204`.
@@ -206,12 +207,17 @@ Prerequisite work owned by `poc-hosting-architecture.md`; see above for why it l
   decode time rather than as an authorization rule, so such a token fails to authenticate rather
   than authenticating and then being denied.
 
-### Phase 3 — POC-facing `/poc-files`
+### Phase 3 — POC-facing `/poc-files` (implemented)
 
 - OpenAPI paths and a `file.yaml` schema component; the controller implements the generated
   interface, as every controller in this repo does.
 - `POST` (multipart), `GET`, `GET /{fileId}/content`, `DELETE` — no user or POC parameter anywhere,
-  both read from token claims.
+  both read from token claims. Status codes settled beyond what the API Surface section originally
+  said: `413` for the per-file size ceiling, `409` for either quota (file count or total bytes),
+  `400` for a rejected or mismatched content type. `413`/`409` split rather than folding both into
+  `400` because they are different questions — one about the request just made, the other about the
+  caller's existing state — and a client distinguishing "this file is too big" from "you're out of
+  room" needs the codes to say so.
 - `FileService` — quota enforcement, content-type validation, object naming, soft delete.
 - Multipart configuration in `application.yaml`, with the spool threshold set above the file-size
   limit so uploads never touch Cloud Run's memory-backed filesystem.
@@ -247,6 +253,22 @@ service with an explicit ownership check instead of a claim-derived one.
 
 ## Changelog
 
+- 2026-09-03 — **Phase 3 implemented**: `/poc-files` (upload, list, download, delete), sitting
+  behind a second Spring Security filter chain (`SecurityConfig.pocFilesFilterChain`, `@Order(1)`,
+  matched to `/poc-files/**`) rather than a shared one with an authorization-time check. The two
+  chains are the actual isolation — a portal access token cannot authenticate against
+  `/poc-files/**` at all, and a POC-scoped token cannot authenticate against anything else — with
+  `RequirePocAudienceValidator` (the mirror of `PortalAudienceValidator` from Phase 2) as the
+  decoder-level rule that decides which chain accepts which token. `CurrentPoc`, alongside the
+  existing `CurrentUser`, reads `pocId` off the token so the controller never takes a POC parameter.
+  Delete removes the object immediately (freeing quota right away) and only then soft-deletes the
+  row, so the row's `deleted_at` is purge accounting, not a recycle bin — matching what Phase 1's
+  `UserFile` Javadoc already said before this phase existed to implement it. Multipart limits
+  (`MultipartUploadConfig`) are derived from `files.max-file-size` in code rather than set
+  independently in YAML, which is what guarantees the spool threshold stays above the file-size
+  ceiling for whatever that property is configured to, rather than two numbers that happen to
+  agree today. `SecurityConfigTest` gained the mirror-image cases Phase 2 didn't yet need: a portal
+  token rejected on `/poc-files`, and a POC token accepted there. `MultipartUploadConfigTest` exists because `@WebMvcTest`'s mock dispatcher never touches a real `MultipartConfigElement` — without it, the file whose entire purpose is the spool-threshold guarantee would be untested. 205 tests pass, 30 new.
 - 2026-09-03 — **Phase 2 implemented**: `kid` on every issued token, `GET /.well-known/jwks.json`,
   `POST /pocs/{slug}/launch`, and audience separation. The POC token carries `sub`, `aud`,
   `pocId`, display name, theme and `trialEndDate` — and deliberately no `roles`, so a POC launched
