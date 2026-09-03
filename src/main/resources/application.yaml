@@ -59,6 +59,39 @@ jwt:
 trial:
   length-days: ${TRIAL_LENGTH_DAYS:14}
 
+files:
+  # 'gcs' is production. 'local' writes under a directory on this machine instead, so the feature
+  # runs with no GCP credentials at all — the same reasoning as pipeline.executor=skip. Never
+  # durable in a deploy: Cloud Run's filesystem is memory-backed and per-instance.
+  storage: ${FILE_STORAGE:local}
+  # gcs only. Its own bucket, not a prefix in the pipeline's — retention and access are this
+  # bucket's whole purpose. Blank with storage=gcs fails at startup rather than at first upload.
+  bucket: ${FILE_STORAGE_BUCKET:}
+  # local only. Blank uses <system temp>/self-service-files.
+  local-dir: ${FILE_STORAGE_LOCAL_DIR:}
+
+  # Raised from the 5 MB first specced: 5 MB rejects most *scanned* documents (10-20 MB), which is
+  # what a prospect actually uploads to a contract-review demo. Still under a third of Cloud Run's
+  # 32 MiB request ceiling — the headroom that lets the multipart spool threshold sit above this
+  # limit, so an upload never touches the (memory-backed) filesystem. Changing this means changing
+  # the spool threshold and the container's memory together, not on its own.
+  max-file-size: ${FILE_MAX_FILE_SIZE:10MB}
+  max-files-per-poc: ${FILE_MAX_FILES_PER_POC:20}
+  max-bytes-per-user: ${FILE_MAX_BYTES_PER_USER:250MB}
+
+  # Selects from the types ContentTypeValidator has a content signature for. Adding one that has
+  # no signature fails startup: skipping validation for it would quietly turn this allowlist back
+  # into a claim from the client, which is the thing it exists to replace.
+  allowed-content-types:
+    - application/pdf
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    - application/vnd.openxmlformats-officedocument.presentationml.presentation
+    - text/plain
+    - text/csv
+    - image/png
+    - image/jpeg
+
 admin:
   emails: ${ADMIN_EMAILS:}
 

@@ -6,3 +6,10 @@ jwt:
 # TODO: confirm the SMTP credentials source with ops before deploy (SMTP_USERNAME/SMTP_PASSWORD
 # env vars, likely Secret Manager-backed) — Gmail SMTP is the current default, see
 # docs/specs/transactional-email.md.
+
+files:
+  storage: gcs
+  # TODO: confirm the bucket name with ops before deploy. It does not exist yet — user files get
+  # their own bucket rather than sharing the deploy pipeline's (docs/specs/file-management.md).
+  # Startup fails with storage=gcs and no bucket, deliberately.
+  bucket: ${FILE_STORAGE_BUCKET:}
