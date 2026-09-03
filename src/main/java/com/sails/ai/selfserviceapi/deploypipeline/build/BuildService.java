@@ -50,12 +50,12 @@ public class BuildService {
         return image;
     }
 
-    /** Deploys an image (freshly built or pre-existing) and, if configured, grants the gateway access. */
+    /** Deploys an image (freshly built or pre-existing) and, if configured, grants self-service-api access. */
     public void deploy(String slug, String image) {
         List<BuildStep> steps = new ArrayList<>();
         steps.add(deployStep(slug, image));
-        if (properties.grantGatewayInvoker()) {
-            steps.add(grantGatewayInvokerStep(slug));
+        if (properties.grantApiInvoker()) {
+            steps.add(grantApiInvokerStep(slug));
         }
 
         String buildId = submit(steps, null);
@@ -158,14 +158,16 @@ public class BuildService {
     }
 
     /**
-     * Without this the gateway can never reach what was just deployed —
-     * --no-allow-unauthenticated locks the service to nobody until something is granted.
+     * Without this self-service-api can never reach what was just deployed —
+     * --no-allow-unauthenticated locks the service to nobody until something is granted. The
+     * grantee is self-service-api's own service account: it proxies end-user traffic to a POC
+     * (see the deploy pipeline docs), there is no separate gateway service in this design.
      */
-    private BuildStep grantGatewayInvokerStep(String slug) {
+    private BuildStep grantApiInvokerStep(String slug) {
         return new BuildStep("gcr.io/google.com/cloudsdktool/cloud-sdk", "gcloud",
                 List.of("run", "services", "add-iam-policy-binding", slug,
                         "--region=" + gcp.region(),
-                        "--member=serviceAccount:" + gcp.serviceAccountEmail("self-service-gateway"),
+                        "--member=serviceAccount:" + gcp.serviceAccountEmail("self-service-api"),
                         "--role=roles/run.invoker"),
                 null);
     }

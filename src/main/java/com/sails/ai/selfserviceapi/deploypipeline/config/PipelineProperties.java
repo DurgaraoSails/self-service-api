@@ -46,18 +46,21 @@ public record PipelineProperties(
         String githubToken,
 
         /**
-         * Grants the gateway {@code run.invoker} on the service just deployed. Requires
-         * {@code run.services.setIamPolicy}, which {@code roles/editor} deliberately excludes —
-         * switch off for a local run without that binding. The deploy is still genuinely
-         * verified; only the access grant is skipped, and the gateway cannot reach it yet.
+         * Grants self-service-api's own service account {@code run.invoker} on the service just
+         * deployed — self-service-api is what proxies end-user traffic to a POC (there is no
+         * separate gateway service in this design), so this is the identity that must hold the
+         * grant. Requires {@code run.services.setIamPolicy}, which {@code roles/editor}
+         * deliberately excludes — switch off for a local run without that binding. The deploy is
+         * still genuinely verified; only the access grant is skipped, and self-service-api cannot
+         * reach it yet.
          */
-        boolean grantGatewayInvoker,
+        boolean grantApiInvoker,
 
         /**
          * Opens the deployed service to the public internet. Also needs
-         * {@code run.services.setIamPolicy}. Off by default: the eventual design is that only the
-         * gateway reaches a POC. To test a deployed POC yourself without this, use an identity
-         * token — {@code gcloud run services proxy <slug> --region <region>}, or
+         * {@code run.services.setIamPolicy}. Off by default: the design is that only
+         * self-service-api's proxy reaches a POC. To test a deployed POC yourself without this,
+         * use an identity token — {@code gcloud run services proxy <slug> --region <region>}, or
          * {@code curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" <url>} —
          * which works under a project Editor/Owner role without any IAM grant.
          */

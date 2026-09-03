@@ -104,9 +104,11 @@ pipeline:
   # worse — an inline token is stored permanently on the Build resource).
   github-token-secret-id: ${BUILD_GITHUB_TOKEN_SECRET:}
 
-  # Needs run.services.setIamPolicy, which roles/editor excludes. Off by default so a deploy under
+  # Grants self-service-api's own service account run.invoker on the deployed POC — it's the
+  # identity that proxies end-user traffic (no separate gateway service in this design). Needs
+  # run.services.setIamPolicy, which roles/editor excludes. Off by default so a deploy under
   # Editor doesn't fail on this step; the deploy itself still fully succeeds.
-  grant-gateway-invoker: ${BUILD_GRANT_GATEWAY_INVOKER:false}
+  grant-api-invoker: ${BUILD_GRANT_API_INVOKER:false}
   # Also needs setIamPolicy. Off by default — test a deployed POC with an identity token instead:
   # `gcloud run services proxy <slug> --region <region>`, which works under Editor with no grant.
   allow-unauthenticated: ${BUILD_ALLOW_UNAUTHENTICATED:false}

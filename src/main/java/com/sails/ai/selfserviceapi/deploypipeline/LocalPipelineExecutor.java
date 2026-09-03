@@ -70,16 +70,16 @@ public class LocalPipelineExecutor implements PipelineExecutor {
                 properties.allowUnauthenticated() ? "--allow-unauthenticated" : "--no-allow-unauthenticated",
                 "--quiet");
 
-        if (properties.grantGatewayInvoker()) {
+        if (properties.grantApiInvoker()) {
             run(null, "gcloud", "run", "services", "add-iam-policy-binding", pocSlug,
                     "--region=" + gcp.region(),
                     "--project=" + gcp.projectId(),
-                    "--member=serviceAccount:" + gcp.serviceAccountEmail("self-service-gateway"),
+                    "--member=serviceAccount:" + gcp.serviceAccountEmail("self-service-api"),
                     "--role=roles/run.invoker",
                     "--quiet");
         } else {
-            log.warn("Skipping the gateway invoker grant (pipeline.grant-gateway-invoker=false) — "
-                    + "'{}' is deployed but the gateway cannot reach it yet", pocSlug);
+            log.warn("Skipping the self-service-api invoker grant (pipeline.grant-api-invoker=false) — "
+                    + "'{}' is deployed but self-service-api cannot reach it yet", pocSlug);
         }
 
         return cloudRunService.getServiceUrl(pocSlug);
