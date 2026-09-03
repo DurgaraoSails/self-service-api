@@ -168,7 +168,7 @@ after it: nothing validates `aud` today, so a POC-scoped token would satisfy `an
 .authenticated()` and reach portal endpoints such as `/users/me`. Audience separation is part of
 Phase 2, not a follow-up to it.
 
-### Phase 1 — Storage foundation
+### Phase 1 — Storage foundation (implemented)
 
 No HTTP surface; nothing user-visible.
 
@@ -183,8 +183,10 @@ No HTTP surface; nothing user-visible.
 - `file/storage/FileStorage.java` with `GcsFileStorage` and `LocalFileStorage` implementations,
   selected by property. This mirrors the `PipelineExecutor` local/cloud/skip precedent, and exists
   for the same reason: the feature stays runnable by a developer with no GCP credentials.
-- `file/storage/ContentTypeValidator.java` — magic-byte sniffing, since the declared header is not
-  trusted.
+- `file/service/ContentTypeValidator.java` — magic-byte sniffing, since the declared header is not
+  trusted. Under `service` rather than `storage`: it validates a request, and storage never calls it.
+- `file/storage/ObjectPaths.java` — the object layout in one place, because upload, download and
+  purge all have to agree on it.
 
 ### Phase 2 — POC-scoped token and JWKS
 
@@ -231,7 +233,7 @@ service with an explicit ownership check instead of a claim-derived one.
 ## Open Questions / Future Work
 
 - ~~**Is 5 MB the right ceiling?**~~ Resolved 2026-09-03: raised to 10 MB before implementation, for the reason the question itself gave. See the quota decision above.
-- ~~**Which content types are on the allowlist?**~~ Resolved 2026-09-03: PDF, DOCX, XLSX, PPTX, TXT, CSV, PNG and JPEG, as proposed — the set that covers the document POCs described so far. It is a configuration property rather than a compiled-in constant, so widening it does not require a release, but widening it still widens what POC parsers must survive and should be a deliberate decision.
+- ~~**Which content types are on the allowlist?**~~ Resolved 2026-09-03: PDF, DOCX, XLSX, PPTX, TXT, CSV, PNG and JPEG, as proposed — the set that covers the document POCs described so far. It is a configuration property, but a narrowing one: it selects from the types `ContentTypeValidator` holds a content signature for, and naming one it does not fails startup. Anything else would mean skipping validation for that type, which quietly turns the allowlist back into a claim from the client — the thing it exists to replace. So removing a type is configuration; adding a genuinely new one is a signature, and therefore a release.
 - **Should users be warned before purge?** `transactional-email.md` and `email-templates.md` already provide the machinery, and "your trial data will be deleted in seven days" is both good practice and a conversion prompt. Purely additive to this design.
 - ~~**Which bucket?**~~ Resolved 2026-09-03: a separate, dedicated bucket, named by the `files.bucket` property (`FILE_STORAGE_BUCKET`). Retention and access are the whole point of this bucket and are entirely unlike the build artifacts sharing the pipeline's, so keeping them apart costs one resource and buys a lifecycle policy that can be reasoned about on its own. The bucket-level IAM binding this needs is the one category already demonstrated to succeed in this project (see the transport decision).
 - **What happens to files when a POC is soft-deleted?** The `(user, POC)` scoping means those files become unreachable but are not purged, since purge is keyed on the user's trial rather than the POC's existence. Probably wants a sweep, but it is a genuinely separate lifecycle.
@@ -241,6 +243,18 @@ service with an explicit ownership check instead of a claim-derived one.
 
 ## Changelog
 
+- 2026-09-03 — **Phase 1 implemented**: `google-cloud-storage` (pinned through `libraries-bom`,
+  which also took over the version of the `google-auth-library-oauth2-http` the deploy pipeline
+  already used, so the two cannot drift), migration `V18`, `UserFile` + `UserFileRepository`,
+  `ObjectPaths`, the `FileStorage` interface with GCS and local implementations, and
+  `ContentTypeValidator`. Two things the design did not anticipate. First, `user_files.user_id` is
+  `VARCHAR(36) REFERENCES users(id)` rather than the specified bare `TEXT`, matching
+  `activity_sessions` — but deliberately *without* that table's `ON DELETE CASCADE`, since cascading
+  would let a deleted user take these rows with them while their objects stayed in the bucket, which
+  is precisely the orphan this design orders its purge steps to avoid. Second, the allowlist turned
+  out to narrow rather than widen; see the resolved open question above. Verified against the real
+  local Postgres: Flyway applied `V18` and revalidated all 18 migrations, and Hibernate's
+  `ddl-auto: validate` accepted the mapping. 139 tests pass, 23 of them new.
 - 2026-09-03 — Implementation started. Three decisions taken off the Open Questions list before
   writing code: the per-file ceiling raised from 5 MB to 10 MB (5 MB rejects the scanned documents a
   contract-review prospect would actually upload, and 10 MB keeps every simplification that made
