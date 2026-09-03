@@ -2,7 +2,11 @@
 
 ## Status
 
-Draft — design decided, nothing implemented. Two prerequisites do not exist yet (a JWKS endpoint, and the file management system specified in `docs/specs/file-management.md`).
+Draft — design decided. Implementation of two pieces of it started 2026-09-03 as Phase 2 of
+`docs/specs/file-management.md`: the JWKS endpoint and `POST /pocs/{slug}/launch`. They are built
+there because file management's only upload path is authenticated by the launch token, so that
+feature cannot be exercised at all until this token exists. Everything else here — the bridge
+library, the design-token package, the Tier 1 state API, Tier 2 schemas — remains unimplemented.
 
 ## Overview / Purpose
 
@@ -181,3 +185,15 @@ Additions to `self-service-api`:
 - **`self-service-gateway` is superseded but deliberately retained.** With no custom domain, no load balancer, and no proxying, the service account and its blocked invoker IAM binding in `self-service-terraform` have no purpose under this design. Removal was considered and deferred: it costs nothing to leave in place, and keeping it preserves the option should custom domains ever be adopted, at which point the gateway model above becomes the better answer.
 - **Artifact Registry and Cloud Run revision retention.** Neither has a cleanup policy. At this scale it accumulates quietly rather than dramatically, but it is unbounded as written.
 - **Multi-component POCs.** `poc.yaml` defines the contract, but the pipeline still builds exactly one image per POC. The work to build and deploy `components[]` is deferred until a POC actually needs it.
+
+## Changelog
+
+- 2026-09-03 — `GET /.well-known/jwks.json`, the `kid` header on issued tokens, `POST
+  /pocs/{slug}/launch`, and audience separation moved into `file-management.md`'s implementation
+  plan as its Phase 2, rather than waiting for a branch of their own. The reason is a dependency
+  that only became obvious once file management was sequenced: its upload endpoint is deliberately
+  POC-facing only, so without a POC-scoped token there is no way to put a file into the system.
+  Audience separation is called out explicitly because issuing a second token class against the
+  same key, with no `aud` validation anywhere in `SecurityConfig`, would otherwise let a POC token
+  reach portal endpoints such as `/users/me`.
+- 2026-09-02 — Initial draft.
