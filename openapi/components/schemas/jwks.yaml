@@ -1,0 +1,55 @@
+JwkSet:
+  type: object
+  description: >
+    A JSON Web Key Set (RFC 7517). Holds every key currently valid for verifying a token this API
+    issued — more than one only during a rotation, while both the retiring and the new key must
+    verify.
+  required:
+    - keys
+  properties:
+    keys:
+      type: array
+      items:
+        $ref: '#/Jwk'
+
+
+Jwk:
+  type: object
+  description: An RSA public key in JWK form. Public material only; nothing here is secret.
+  required:
+    - kty
+    - kid
+    - n
+    - e
+  properties:
+    kty:
+      type: string
+      description: Key type. Always RSA here.
+      example: "RSA"
+
+    use:
+      type: string
+      description: Intended use. Always "sig" — these keys verify signatures and nothing else.
+      example: "sig"
+
+    alg:
+      type: string
+      description: The algorithm this key verifies.
+      example: "RS256"
+
+    kid:
+      type: string
+      description: >
+        Key id, carried in the header of every token this API issues. A verifier selects its key
+        by matching this, which is what lets a key be rotated without invalidating tokens signed
+        by the previous one — publish both, sign with the new, retire the old once caches turn over.
+      example: "0Xm2Yb1tGZ5lFqK9pQx3sV7cN4dR8eW6uT1iA0oJ2kM"
+
+    n:
+      type: string
+      description: Base64url-encoded modulus.
+
+    e:
+      type: string
+      description: Base64url-encoded public exponent.
+      example: "AQAB"

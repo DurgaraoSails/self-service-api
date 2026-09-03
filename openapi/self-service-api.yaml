@@ -502,6 +502,28 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /.well-known/jwks.json:
+    get:
+      summary: Public keys for verifying tokens this API issues
+      description: >
+        Lets a POC backend, in any stack, verify a POC-scoped token without sharing a secret with
+        this service. Public: a public key is not a credential, and every data path behind it is
+        still authenticated. Cacheable — standard clients cache the set and refetch on meeting an
+        unknown kid, which is what makes a future key rotation a non-event rather than a flag day.
+      operationId: getJwks
+      tags:
+        - WellKnown
+      security: []
+      responses:
+        '200':
+          description: The key set
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/jwks.yaml#/JwkSet'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs:
     get:
       summary: List POCs (public summary — no launch/repository links)
@@ -846,6 +868,47 @@ paths:
             application/json:
               schema:
                 $ref: './components/schemas/poc-deployment.yaml#/PocDeploymentResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{slug}/launch:
+    post:
+      summary: Mint a short-lived, POC-scoped token for opening this POC
+      description: >
+        The single point where "may this user open this POC" is decided: an active trial, and a POC
+        that is ACTIVE, not hidden, not deleted, and actually deployed. The portal calls this before
+        framing the POC, and again when the token nears expiry — which is what keeps the refresh
+        token in the portal and out of the POC entirely, so signing out of the portal ends POC
+        access at the next refresh with no revocation machinery.
+
+
+        Keyed by slug rather than the numeric id every other /pocs/{id}/... endpoint uses, because
+        the slug is what the token's audience names. See the spec's Open Questions.
+      operationId: launchPoc
+      tags:
+        - PocLaunch
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "contract-agent"
+      responses:
+        '200':
+          description: Token minted
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocLaunchResponse'
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
         '403':

@@ -1,6 +1,7 @@
 package com.sails.ai.selfserviceapi.config;
 
 import com.sails.ai.selfserviceapi.security.JwtProperties;
+import com.sails.ai.selfserviceapi.security.PortalAudienceValidator;
 import com.sails.ai.selfserviceapi.security.TrialAuthorizationManager;
 import com.sails.ai.selfserviceapi.security.TrialExpiredAccessDeniedHandler;
 import java.security.interfaces.RSAPublicKey;
@@ -15,6 +16,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -54,7 +57,13 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/public/**",
-                                "/auth/**"
+                                "/auth/**",
+                                // A public key is not a credential, and POC backends in other
+                                // stacks cannot verify a token without it. Listed here rather than
+                                // only marked `security: []` in OpenAPI: that documents intent
+                                // while Spring Security enforces its own anyRequest() fallback,
+                                // a mismatch that has broken a public route in this repo before.
+                                "/.well-known/jwks.json"
                         )
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/pocs")
@@ -89,9 +98,20 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * Validates the portal's own access tokens. POC-scoped tokens are signed by the same key and
+     * carry the same issuer, so the audience check is what keeps them out — and it belongs here,
+     * at decode time, rather than in an authorization rule: a POC token should fail to
+     * authenticate at all, not authenticate and then be denied.
+     *
+     * <p>Nothing accepts a POC-scoped token yet. The POC-facing endpoints that will, and their own
+     * decoder requiring the audience this one rejects, arrive with /poc-files.
+     */
     private JwtDecoder jwtDecoder() {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(jwtPublicKey).build();
-        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(jwtProperties.issuer()));
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<Jwt>(
+                JwtValidators.createDefaultWithIssuer(jwtProperties.issuer()),
+                new PortalAudienceValidator()));
         return decoder;
     }
 

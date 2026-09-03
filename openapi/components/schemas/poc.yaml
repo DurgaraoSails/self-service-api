@@ -334,3 +334,44 @@ UpdatePocRequest:
       example:
         - "Click Launch to open the assistant in your session."
         - "Describe the process or task you need help with in plain language."
+
+
+PocLaunchResponse:
+  type: object
+  description: >
+    Everything the portal needs to open a POC in its iframe. The token is POC-scoped and
+    short-lived; the portal is the refresh authority and re-calls this endpoint when it nears
+    expiry, so the POC never holds a refresh token of any kind.
+  required:
+    - token
+    - expiresIn
+    - launchUrl
+    - pocId
+    - slug
+  properties:
+    token:
+      type: string
+      description: >
+        A POC-scoped JWT, audience "poc:<slug>". Carries the user's id, display name and theme,
+        and no roles. Delivered to the iframe over postMessage, never in a URL — a token in a URL
+        ends up in server logs, Referer headers and browser history.
+
+    expiresIn:
+      type: integer
+      format: int64
+      description: Token lifetime in seconds.
+      example: 900
+
+    launchUrl:
+      type: string
+      description: The POC's deployed application URL, to be framed.
+      example: "https://contract-agent-abc123-uc.a.run.app"
+
+    pocId:
+      type: integer
+      format: int64
+      example: 4
+
+    slug:
+      type: string
+      example: "contract-agent"
