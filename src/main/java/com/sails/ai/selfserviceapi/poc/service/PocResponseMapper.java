@@ -48,7 +48,8 @@ public final class PocResponseMapper {
                 .deletedAt(toUtcOffset(poc.getDeletedAt()))
                 .appUrl(poc.getAppUrl())
                 .githubUrl(poc.getGithubUrl())
-                .activeVersionId(poc.getActiveVersionId());
+                .activeVersionId(poc.getActiveVersionId())
+                .slug(poc.getSlug());
     }
 
     public static PocCategoryResponse toCategoryResponse(PocCategory category) {
