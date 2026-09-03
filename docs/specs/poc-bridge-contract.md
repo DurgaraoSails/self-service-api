@@ -79,9 +79,15 @@ POC shell loads (public, unauthenticated, renders a skeleton)
 
 ### Origin handling
 
-**`PORTAL_ORIGIN` is a constant compiled into the bridge.** It is never derived from `document.referrer` or `location.ancestorOrigins`, both of which mean trusting the environment the POC finds itself in. There is exactly one portal.
+**`PORTAL_ORIGIN` is required runtime configuration, injected by the deployment pipeline.** It is never derived from `document.referrer` or `location.ancestorOrigins`, both of which mean trusting the environment the POC finds itself in.
 
-That constant does defensive work for free: a `postMessage` whose `targetOrigin` does not match the real parent is **silently discarded by the browser**. A POC embedded in a hostile page therefore never emits its `ready`, never receives a token, and produces no error worth probing. The failure is quiet and total.
+It is deliberately not compiled into the library, and equally deliberately not read from a committed `environment.prod.ts` in each POC. A published package that bakes environment config needs one build per environment, which is what versioned packages exist to avoid; and per-POC environment files make production correctness a matter of twenty teams' discipline, while making a change to the portal's origin a twenty-repo edit. Instead `poc-deploy-pipeline` sets it as a Cloud Run environment variable at deploy time, and the POC's container serves it into the page — a `/config.json` fetched before bootstrap, or a value written into `index.html` at serve time. The bridge accepts it through `providePocBridge({ portalOrigin })` with **no default**, so a missing or malformed value throws at bootstrap rather than degrading quietly.
+
+The same environment variable supplies the `frame-ancestors` origin in the POC server's `Content-Security-Policy` header, so the JavaScript origin check and the browser-enforced embedding restriction cannot disagree.
+
+A correct value does defensive work for free: a `postMessage` whose `targetOrigin` does not match the real parent is **silently discarded by the browser**. A POC embedded in a hostile page therefore never emits its `ready`, never receives a token, and produces no error worth probing. The failure is quiet and total.
+
+This is defence in depth rather than the primary control, and the distinction is worth keeping straight. A hostile parent that somehow completed a handshake could only inject a token, which then fails signature, `iss`, and `aud` verification at the POC's backend. The load-bearing controls are that verification and `frame-ancestors`; a misconfigured origin is a real weakness, not a breach.
 
 On the portal side, `pocOrigin` is `new URL(launchUrl).origin` — the origin it just launched. Both the `origin` and `source` checks are required: origin alone does not distinguish the POC's own document from a nested frame inside it.
 
@@ -183,10 +189,26 @@ Non-negotiable for any POC, and enforced by the template's conformance check whe
 - **No secrets in the POC's JavaScript bundle.** The shell is served publicly and unauthenticated by design, so anything in it is world-readable. Model provider keys, service credentials, and internal URLs live server-side without exception.
 - POC responses set `Content-Security-Policy: frame-ancestors` restricted to the portal origin. This is a browser control — it prevents a rogue site embedding the POC, and does nothing against a non-browser client presenting a stolen token, which is what token verification covers.
 
+## Ownership and Change Control
+
+**The library lives in `self-service-portal` as an Angular workspace library (`projects/poc-bridge`), not in a repository of its own.**
+The protocol has two implementations that must never drift: the bridge is one half, the portal's iframe host is the other. In separate repositories a protocol change becomes two pull requests that can land out of order, and disagreement between them surfaces as a runtime failure discovered by a POC team. In one repository the message types are declared once and imported by both halves, so drift is a compile error; a protocol change is a single atomic change; and the portal's own tests can exercise the entire handshake, host against bridge, without a POC involved.
+
+`@sails/design-tokens` lives there too. The tokens are the portal's design language extracted for reuse, and the package being framework-agnostic is a property of its contents rather than a reason to house it elsewhere. Both are published to GitHub Packages from that repository's CI (see `poc-hosting-architecture.md` for why GitHub Packages).
+
+The cost is that a POC author debugging the bridge clones the portal repository. That is real but rare, and POC teams are not the intended authors of protocol changes.
+
+**This document and the library are reviewed as one artifact.**
+`CODEOWNERS` covers `projects/poc-bridge/` and this spec together, because a contract change that lands without the document is how the document stops being true. The library is a shared dependency of every POC, so a breaking change to it breaks all of them simultaneously.
+
+Additive changes — a new message type, a new optional field — take normal review. Breaking changes require both versions to be supported for at least one release, which the version negotiation above exists to make possible.
+
+**The deprecation window is decided from data, not from argument.**
+`poc:ready` carries `v`, so the portal can record which protocol versions are actually live across the deployed fleet. "Can we drop v1?" is therefore a query rather than a guess, and the admin fleet view is the natural place to surface it.
+
 ## Open Questions / Future Work
 
-- **How is `PORTAL_ORIGIN` configured across environments?** A single compiled constant is right for production but breaks local development and any staging portal. Likely an environment-keyed build with a permitted list of origins in non-production only, but this needs deciding before the first POC is written, since it shapes the package's build.
-- **How many protocol versions does the portal support?** "Current and previous" is stated above as a starting rule; the actual support window should be agreed, along with what the portal does when it meets a bridge older than that.
+- **How many protocol versions does the portal support?** "Current and previous" is stated above as a starting rule. The real window should be set once `poc:ready` version telemetry exists to inform it, along with what the portal does when it meets a bridge older than the window — refuse to hand over a session, or hand one over and degrade.
 - **Is the uploader one component or a headless primitive plus a default UI?** A single component is faster to ship and enforces consistency; a headless core lets a POC style upload into an unusual flow. The second is more work and can follow.
 - **Deep-link semantics.** `poc:navigate` and `portal:navigate` assume the portal mirrors an opaque POC path into its own URL. Whether the portal validates that path, and what it does with a path a POC no longer recognises, is undefined.
-- **Where does the bridge repository live, and who reviews changes to this contract?** It is a shared dependency of every POC, so a breaking change to it is a breaking change to all of them.
+- **Does the pipeline verify that `PORTAL_ORIGIN` was actually injected?** The conformance check can assert the variable is set on the Cloud Run service at deploy time, which would catch the one failure mode this design still has — a deploy path that forgets it, leaving the POC to throw at bootstrap in production rather than in CI.

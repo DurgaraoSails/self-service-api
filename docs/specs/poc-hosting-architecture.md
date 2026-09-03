@@ -140,7 +140,7 @@ Honouring it costs nothing under the tiering above: Tier 0 has nothing to purge,
 
 Artifact Registry offers an npm repository and would keep everything inside GCP, which is tidier on paper. It is rejected because it requires another GCP IAM binding, and IAM grants are this project's demonstrated bottleneck — `poc-deployment-pipeline.md` records five still blocked awaiting an IT-granted role. GitHub Packages requires no GCP IAM, and the `github-token` secret it authenticates with already exists in Secret Manager and is already injected into Cloud Build for the pipeline's repository clone. The incremental infrastructure is an `.npmrc` in the POC template rather than a new dependency on what is already blocking this project. A paid npm organization adds cost and an external account for no capability these packages need.
 
-Two packages rather than one: `@sails/design-tokens` (CSS custom properties, no framework dependency, so it survives POC frontends ever diversifying past Angular) and `@sails/poc-bridge` (the Angular library, depending on the tokens package).
+Two packages rather than one: `@sails/design-tokens` (CSS custom properties, no framework dependency, so it survives POC frontends ever diversifying past Angular) and `@sails/poc-bridge` (the Angular library, depending on the tokens package). Both live in `self-service-portal` as workspace libraries and publish from its CI — see `poc-bridge-contract.md` for why the bridge is not housed separately from the portal half of the protocol it implements.
 
 ### Rejected alternatives
 
