@@ -12,8 +12,6 @@ import com.sails.ai.selfserviceapi.poc.service.PocFields;
 import com.sails.ai.selfserviceapi.poc.service.PocResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
-import com.sails.ai.selfserviceapi.security.JwtService;
-import com.sails.ai.selfserviceapi.user.service.UserService;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -27,15 +25,10 @@ public class PocController implements PocApi {
 
     private final PocService pocService;
     private final PocDeploymentService pocDeploymentService;
-    private final UserService userService;
-    private final JwtService jwtService;
 
-    public PocController(PocService pocService, PocDeploymentService pocDeploymentService,
-                          UserService userService, JwtService jwtService) {
+    public PocController(PocService pocService, PocDeploymentService pocDeploymentService) {
         this.pocService = pocService;
         this.pocDeploymentService = pocDeploymentService;
-        this.userService = userService;
-        this.jwtService = jwtService;
     }
 
     @Override
