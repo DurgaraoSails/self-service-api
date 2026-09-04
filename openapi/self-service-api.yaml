@@ -777,6 +777,67 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/{slug}/launch:
+    post:
+      summary: Mint a short-lived, POC-scoped token for embedding this POC in an iframe
+      description: >
+        Authenticated, trial-gated (falls through to the default authorization rule — see
+        SecurityConfig). Validates that the POC exists, isn't soft-deleted, isn't hidden from
+        this caller, and has been deployed (has an appUrl), then mints a token whose `aud` claim
+        is `poc:<slug>` and whose lifetime is minutes, not the normal session length. The portal
+        hands this token to the POC's iframe over postMessage — never in the URL — and the POC's
+        own backend verifies it against GET /.well-known/jwks.json. Re-called by the portal to
+        refresh the token before it expires; a user whose trial has since ended or who has
+        logged out stops getting new ones, which is what ends POC access with no revocation list.
+      operationId: launchPoc
+      tags:
+        - Poc
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: POC launch token issued
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocLaunchResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /.well-known/jwks.json:
+    get:
+      summary: Publish the RSA public key as a JWK Set
+      description: >
+        Public. Lets a POC backend, in any stack, verify tokens this API issues (both normal
+        access tokens and POST /pocs/{slug}/launch tokens) without ever being handed the private
+        key. Cached by clients keyed on `kid`; a rotated key appears here before tokens are ever
+        signed with it.
+      operationId: getJwks
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: JSON Web Key Set containing the current RSA public key
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/{id}/deploy:
     post:
       summary: Deploy a new version of a POC, building from its githubUrl (admin only)

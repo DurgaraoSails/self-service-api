@@ -10,6 +10,7 @@ import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
+import com.sails.ai.selfserviceapi.poc.exception.PocNotLaunchableException;
 import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.util.List;
@@ -81,6 +82,62 @@ class PocServiceTest {
                 .isInstanceOf(PocNotFoundException.class)
                 .extracting(ex -> ((ApiException) ex).getStatus())
                 .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void getLaunchableReturnsAnActivePocWithAnAppUrl() {
+        Poc poc = pocWithId(1L);
+        poc.setSlug("contract-agent");
+        poc.setAppUrl("https://contract-agent.example.com");
+        when(pocRepository.findBySlugAndDeletedAtIsNull("contract-agent")).thenReturn(Optional.of(poc));
+
+        assertThat(pocService.getLaunchable("contract-agent", false)).isEqualTo(poc);
+    }
+
+    @Test
+    void getLaunchableThrowsNotFoundWhenSlugIsUnknown() {
+        when(pocRepository.findBySlugAndDeletedAtIsNull("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> pocService.getLaunchable("missing", false))
+                .isInstanceOf(PocNotFoundException.class)
+                .extracting(ex -> ((ApiException) ex).getStatus())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void getLaunchableThrowsNotFoundForAHiddenPocWhenCallerIsNotAdmin() {
+        Poc poc = pocWithId(1L);
+        poc.setSlug("contract-agent");
+        poc.setAppUrl("https://contract-agent.example.com");
+        poc.setVisibilityStatus("HIDDEN");
+        when(pocRepository.findBySlugAndDeletedAtIsNull("contract-agent")).thenReturn(Optional.of(poc));
+
+        assertThatThrownBy(() -> pocService.getLaunchable("contract-agent", false))
+                .isInstanceOf(PocNotFoundException.class);
+    }
+
+    @Test
+    void getLaunchableAllowsAHiddenPocForAnAdmin() {
+        Poc poc = pocWithId(1L);
+        poc.setSlug("contract-agent");
+        poc.setAppUrl("https://contract-agent.example.com");
+        poc.setVisibilityStatus("HIDDEN");
+        when(pocRepository.findBySlugAndDeletedAtIsNull("contract-agent")).thenReturn(Optional.of(poc));
+
+        assertThat(pocService.getLaunchable("contract-agent", true)).isEqualTo(poc);
+    }
+
+    @Test
+    void getLaunchableThrowsConflictWhenThePocHasNeverBeenDeployed() {
+        Poc poc = pocWithId(1L);
+        poc.setSlug("contract-agent");
+        poc.setAppUrl(null);
+        when(pocRepository.findBySlugAndDeletedAtIsNull("contract-agent")).thenReturn(Optional.of(poc));
+
+        assertThatThrownBy(() -> pocService.getLaunchable("contract-agent", false))
+                .isInstanceOf(PocNotLaunchableException.class)
+                .extracting(ex -> ((ApiException) ex).getStatus())
+                .isEqualTo(HttpStatus.CONFLICT);
     }
 
     @Test

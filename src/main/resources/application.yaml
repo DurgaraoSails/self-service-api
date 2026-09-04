@@ -55,11 +55,15 @@ jwt:
   public-key-path: ${JWT_PUBLIC_KEY_PATH:file:./secrets/jwt/public-key.pem}
   access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:30m}
   refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:7d}
+
   # POC-scoped tokens (POST /pocs/{slug}/launch). Deliberately far shorter than an access token:
   # this one lives in JavaScript on a POC's own origin, and the portal is the only thing that can
   # refresh it — which is what makes signing out of the portal end POC access within one TTL,
   # with no revocation infrastructure anywhere.
   poc-token-ttl: ${JWT_POC_TOKEN_TTL:15m}
+  # Identifies which signing key issued a token (JWT `kid` header / JWKS `kid`). Bump this
+  # alongside rotating the RSA key pair so old and new tokens verify against the right entry.
+  key-id: ${JWT_KEY_ID:1}
 
 trial:
   length-days: ${TRIAL_LENGTH_DAYS:14}

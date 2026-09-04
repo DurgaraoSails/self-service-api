@@ -33,7 +33,7 @@ class JwtServiceTest {
 
         JwtProperties properties = new JwtProperties(
                 "self-service-api", "unused", "unused",
-                Duration.ofMinutes(30), Duration.ofDays(7), Duration.ofMinutes(15));
+                Duration.ofMinutes(30), Duration.ofDays(7), Duration.ofMinutes(15),"1");
         keySet = new JwtKeySet(publicKey);
         jwtService = new JwtService((RSAPrivateKey) keyPair.getPrivate(), properties, keySet);
     }
@@ -58,7 +58,6 @@ class JwtServiceTest {
 
         assertThat(claims.get("trialEndDate")).isNull();
     }
-
 
     @Test
     void stampsEveryAccessTokenWithTheKeyId() {

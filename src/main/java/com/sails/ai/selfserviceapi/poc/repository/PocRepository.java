@@ -11,6 +11,9 @@ public interface PocRepository extends JpaRepository<Poc, Long> {
 
     List<Poc> findByDeletedAtIsNull();
 
+    /** Looked up by slug for POST /pocs/{slug}/launch — slugs, not ids, name POCs externally. */
+    Optional<Poc> findBySlugAndDeletedAtIsNull(String slug);
+
     /** The repositories the deploy pipeline polls for upstream changes. */
     List<Poc> findByGithubUrlIsNotNullAndDeletedAtIsNull();
 
