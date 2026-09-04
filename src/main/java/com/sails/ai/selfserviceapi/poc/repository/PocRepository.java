@@ -19,7 +19,4 @@ public interface PocRepository extends JpaRepository<Poc, Long> {
 
     /** POCs that actually can be deployed — deployNewVersion/redeployVersion require both. */
     List<Poc> findByGithubUrlIsNotNullAndSlugIsNotNullAndDeletedAtIsNull();
-
-    /** The launch endpoint's lookup: slug is unique, and a deleted POC is not launchable. */
-    Optional<Poc> findBySlugAndDeletedAtIsNull(String slug);
 }

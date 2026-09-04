@@ -195,7 +195,7 @@ class SecurityConfigTest {
         @Bean
         JwtProperties jwtProperties() {
             return new JwtProperties("self-service-api", "unused", "unused",
-                    Duration.ofMinutes(30), Duration.ofDays(7), Duration.ofMinutes(15));
+                    Duration.ofMinutes(30), Duration.ofDays(7), Duration.ofMinutes(15), "1");
         }
 
         @Bean
