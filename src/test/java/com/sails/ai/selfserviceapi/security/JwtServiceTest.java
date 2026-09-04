@@ -29,7 +29,8 @@ class JwtServiceTest {
         publicKey = (RSAPublicKey) keyPair.getPublic();
 
         JwtProperties properties = new JwtProperties(
-                "self-service-api", "unused", "unused", Duration.ofMinutes(30), Duration.ofDays(7));
+                "self-service-api", "unused", "unused", Duration.ofMinutes(30), Duration.ofDays(7),
+                Duration.ofMinutes(10), "1");
         jwtService = new JwtService((RSAPrivateKey) keyPair.getPrivate(), properties);
     }
 
@@ -52,6 +53,48 @@ class JwtServiceTest {
         Claims claims = parse(jwtService.issueAccessToken(user));
 
         assertThat(claims.get("trialEndDate")).isNull();
+    }
+
+    @Test
+    void accessTokenCarriesTheConfiguredKeyId() {
+        String token = jwtService.issueAccessToken(baseUser());
+
+        String kid = Jwts.parser().verifyWith(publicKey).build()
+                .parseSignedClaims(token).getHeader().getKeyId();
+
+        assertThat(kid).isEqualTo("1");
+    }
+
+    @Test
+    void pocTokenScopesAudienceToTheGivenSlug() {
+        Claims claims = parse(jwtService.issuePocToken(baseUser(), "contract-agent"));
+
+        assertThat(claims.getAudience()).containsExactly("poc:contract-agent");
+    }
+
+    @Test
+    void pocTokenExpiresMuchSoonerThanAnAccessToken() {
+        User user = baseUser();
+        Instant beforeIssue = Instant.now();
+
+        Claims accessClaims = parse(jwtService.issueAccessToken(user));
+        Claims pocClaims = parse(jwtService.issuePocToken(user, "contract-agent"));
+
+        Instant accessExpiry = accessClaims.getExpiration().toInstant();
+        Instant pocExpiry = pocClaims.getExpiration().toInstant();
+        assertThat(pocExpiry).isBefore(accessExpiry);
+        assertThat(Duration.between(beforeIssue, pocExpiry)).isCloseTo(Duration.ofMinutes(10), Duration.ofSeconds(5));
+    }
+
+    @Test
+    void pocTokenCarriesTrialEndDateWhenPresent() {
+        User user = baseUser();
+        Instant trialEnd = Instant.now().plus(14, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        user.setTrialEndDate(trialEnd);
+
+        Claims claims = parse(jwtService.issuePocToken(user, "contract-agent"));
+
+        assertThat(claims.get("trialEndDate", Long.class)).isEqualTo(trialEnd.getEpochSecond());
     }
 
     private Claims parse(String token) {

@@ -163,6 +163,53 @@ PocResponse:
           example: "contract-agent"
 
 
+PocLaunchResponse:
+  type: object
+  description: >
+    Answer to POST /pocs/{slug}/launch. The portal hands token to the POC's iframe over
+    postMessage — never in the URL. user/theme are a convenience so the POC frontend doesn't
+    have to decode the JWT itself; the token's claims remain authoritative.
+  required:
+    - token
+    - expiresAt
+    - appUrl
+    - user
+    - theme
+  properties:
+    token:
+      type: string
+      description: Short-lived JWT scoped to this POC via its `aud` claim (`poc:<slug>`).
+      example: "eyJhbGciOiJSUzI1NiIsImtpZCI6IjEifQ..."
+
+    expiresAt:
+      type: string
+      format: date-time
+      description: When the token expires. The POC (via the bridge library) re-launches before this.
+      example: "2026-09-04T10:10:00Z"
+
+    appUrl:
+      type: string
+      maxLength: 500
+      description: URL of the deployed POC application to load in the iframe.
+      example: "https://contract-agent.example.com"
+
+    user:
+      type: object
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          type: string
+          example: "01JABC123XYZ"
+        displayName:
+          type: string
+          example: "Jane Doe"
+
+    theme:
+      $ref: './user.yaml#/ThemeMode'
+
+
 CreatePocRequest:
   type: object
   description: >
