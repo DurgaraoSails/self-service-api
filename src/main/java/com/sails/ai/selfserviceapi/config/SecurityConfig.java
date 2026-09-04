@@ -59,6 +59,11 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/pocs")
                         .permitAll()
+                        // Lets POC backends in any stack verify tokens this API issues without
+                        // holding the private key. Must be listed here, not just in OpenAPI's
+                        // `security: []` — that documents intent but doesn't bypass this filter.
+                        .requestMatchers(HttpMethod.GET, "/.well-known/jwks.json")
+                        .permitAll()
                         // Pipeline-facing endpoints. permitAll only bypasses the JWT filter —
                         // each one still verifies the X-Pipeline-Webhook-Secret header itself.
                         .requestMatchers(HttpMethod.POST, "/pocs/deployments/*/status")

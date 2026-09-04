@@ -3,6 +3,7 @@ package com.sails.ai.selfserviceapi.poc.service;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
+import com.sails.ai.selfserviceapi.poc.exception.PocNotLaunchableException;
 import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.time.Instant;
@@ -40,6 +41,28 @@ public class PocService {
     public Poc getById(Long id) {
         return pocRepository.findById(id)
                 .orElseThrow(() -> new PocNotFoundException(id));
+    }
+
+    /**
+     * Resolves a POC for POST /pocs/{slug}/launch. A missing slug and a HIDDEN one look
+     * identical to a non-admin caller — 404 either way — mirroring {@link #listForViewer} so
+     * hidden POCs don't leak their existence via this endpoint either. A POC that is visible but
+     * was never deployed (no appUrl) is a distinct, admin-fixable problem, so it gets its own
+     * 409 rather than being folded into "not found".
+     */
+    public Poc getLaunchable(String slug, boolean isAdmin) {
+        Poc poc = pocRepository.findBySlugAndDeletedAtIsNull(slug)
+                .orElseThrow(() -> new PocNotFoundException(slug));
+
+        if (!isAdmin && HIDDEN_STATUS.equals(poc.getVisibilityStatus())) {
+            throw new PocNotFoundException(slug);
+        }
+
+        if (poc.getAppUrl() == null || poc.getAppUrl().isBlank()) {
+            throw new PocNotLaunchableException(slug);
+        }
+
+        return poc;
     }
 
     public List<PocCategory> listCategories() {
