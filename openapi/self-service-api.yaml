@@ -502,6 +502,28 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /.well-known/jwks.json:
+    get:
+      summary: Public keys for verifying tokens this API issues
+      description: >
+        Lets a POC backend, in any stack, verify a POC-scoped token without sharing a secret with
+        this service. Public: a public key is not a credential, and every data path behind it is
+        still authenticated. Cacheable — standard clients cache the set and refetch on meeting an
+        unknown kid, which is what makes a future key rotation a non-event rather than a flag day.
+      operationId: getJwks
+      tags:
+        - WellKnown
+      security: []
+      responses:
+        '200':
+          description: The key set
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/jwks.yaml#/JwkSet'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs:
     get:
       summary: List POCs (public summary — no launch/repository links)
@@ -755,67 +777,6 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
-  /pocs/{slug}/launch:
-    post:
-      summary: Mint a short-lived, POC-scoped token for embedding this POC in an iframe
-      description: >
-        Authenticated, trial-gated (falls through to the default authorization rule — see
-        SecurityConfig). Validates that the POC exists, isn't soft-deleted, isn't hidden from
-        this caller, and has been deployed (has an appUrl), then mints a token whose `aud` claim
-        is `poc:<slug>` and whose lifetime is minutes, not the normal session length. The portal
-        hands this token to the POC's iframe over postMessage — never in the URL — and the POC's
-        own backend verifies it against GET /.well-known/jwks.json. Re-called by the portal to
-        refresh the token before it expires; a user whose trial has since ended or who has
-        logged out stops getting new ones, which is what ends POC access with no revocation list.
-      operationId: launchPoc
-      tags:
-        - Poc
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: POC launch token issued
-          content:
-            application/json:
-              schema:
-                $ref: './components/schemas/poc.yaml#/PocLaunchResponse'
-        '401':
-          $ref: './components/responses.yaml#/Unauthorized'
-        '403':
-          $ref: './components/responses.yaml#/Forbidden'
-        '404':
-          $ref: './components/responses.yaml#/NotFound'
-        '409':
-          $ref: './components/responses.yaml#/Conflict'
-        '500':
-          $ref: './components/responses.yaml#/InternalServerError'
-
-  /.well-known/jwks.json:
-    get:
-      summary: Publish the RSA public key as a JWK Set
-      description: >
-        Public. Lets a POC backend, in any stack, verify tokens this API issues (both normal
-        access tokens and POST /pocs/{slug}/launch tokens) without ever being handed the private
-        key. Cached by clients keyed on `kid`; a rotated key appears here before tokens are ever
-        signed with it.
-      operationId: getJwks
-      tags:
-        - System
-      security: []
-      responses:
-        '200':
-          description: JSON Web Key Set containing the current RSA public key
-          content:
-            application/json:
-              schema:
-                type: object
-        '500':
-          $ref: './components/responses.yaml#/InternalServerError'
-
   /pocs/{id}/deploy:
     post:
       summary: Deploy a new version of a POC, building from its githubUrl (admin only)
@@ -915,6 +876,183 @@ paths:
           $ref: './components/responses.yaml#/NotFound'
         '409':
           $ref: './components/responses.yaml#/Conflict'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{slug}/launch:
+    post:
+      summary: Mint a short-lived, POC-scoped token for opening this POC
+      description: >
+        The single point where "may this user open this POC" is decided: an active trial, and a POC
+        that is ACTIVE, not hidden, not deleted, and actually deployed. The portal calls this before
+        framing the POC, and again when the token nears expiry — which is what keeps the refresh
+        token in the portal and out of the POC entirely, so signing out of the portal ends POC
+        access at the next refresh with no revocation machinery.
+
+
+        Keyed by slug rather than the numeric id every other /pocs/{id}/... endpoint uses, because
+        the slug is what the token's audience names. See the spec's Open Questions.
+      operationId: launchPoc
+      tags:
+        - PocLaunch
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "contract-agent"
+      responses:
+        '200':
+          description: Token minted
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocLaunchResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /poc-files:
+    post:
+      summary: Upload a file for the calling user, scoped to the POC named by the token
+      description: >
+        multipart/form-data, single file. Authenticated with a POC-scoped token only — there is no
+        user or POC parameter anywhere on this path, by design: both come from the token's claims,
+        so a POC has nothing to tamper with to reach another user's files or its own files under a
+        different (user, POC) pair. Rejects on quota (too many files for this pair, or this user's
+        total across every POC), size, or a content type outside the configured allowlist —
+        verified against the file's magic bytes, not the declared header.
+      operationId: uploadPocFile
+      tags:
+        - PocFiles
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: File stored
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/file.yaml#/FileResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '409':
+          description: The (user, POC) file-count quota or the user's total-bytes quota is exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '413':
+          description: The file exceeds the configured per-file size ceiling.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    get:
+      summary: List the calling user's non-deleted files for the POC named by the token
+      operationId: listPocFiles
+      tags:
+        - PocFiles
+      responses:
+        '200':
+          description: The files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/file.yaml#/FileResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /poc-files/{fileId}/content:
+    get:
+      summary: Stream a file's bytes, after confirming it belongs to the calling (user, POC) pair
+      description: >
+        Served with Content-Disposition: attachment and X-Content-Type-Options: nosniff, so a
+        user-uploaded HTML or SVG file cannot execute in a browser origin regardless of its
+        declared content type.
+      operationId: getPocFileContent
+      tags:
+        - PocFiles
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The file's raw bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /poc-files/{fileId}:
+    delete:
+      summary: Soft-delete a file belonging to the calling (user, POC) pair
+      description: >
+        The object is removed from storage immediately, freeing the caller's quota right away; the
+        row is retained (deleted_at set) for purge accounting rather than deleted outright.
+      operationId: deletePocFile
+      tags:
+        - PocFiles
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
@@ -1338,6 +1476,115 @@ paths:
           $ref: './components/responses.yaml#/Unauthorized'
         '403':
           $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/files:
+    get:
+      summary: List the caller's non-deleted files stored for this POC
+      description: >
+        The portal-facing half of file management, authenticated with the user's own access token
+        and trial-gated as normal — unlike /poc-files, this is not part of the upload flow.
+        It exists so the portal can offer a user a view of everything they have stored across a
+        POC and a way to remove it, which is worth having independently of any POC. Ownership is
+        an explicit (userId, id) query rather than the claim-derived scoping /poc-files uses, since
+        the caller here supplies id itself.
+      operationId: listPocFilesForUser
+      tags:
+        - PortalFiles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/file.yaml#/FileResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/files/{fileId}/content:
+    get:
+      summary: Stream a file's bytes, after confirming it belongs to the caller and this POC
+      description: >
+        Served with Content-Disposition: attachment and X-Content-Type-Options: nosniff, the same
+        as the POC-facing download endpoint.
+      operationId: getPocFileContentForUser
+      tags:
+        - PortalFiles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The file's raw bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/files/{fileId}:
+    delete:
+      summary: Soft-delete a file, after confirming it belongs to the caller and this POC
+      description: >
+        Same effect as the POC-facing delete: the object is removed from storage immediately, and
+        the row is retained (deleted_at set) for purge accounting.
+      operationId: deletePocFileForUser
+      tags:
+        - PortalFiles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 

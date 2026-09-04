@@ -2,7 +2,15 @@
 
 ## Status
 
-Draft — designed, not implemented.
+In Progress — Phases 1-4 implemented 2026-09-03 on branch `file-management` (storage foundation,
+POC-scoped tokens/JWKS, `/poc-files`, portal-facing `/pocs/{id}/files`). Phase 5 (trial-expiry
+purge) is deliberately deferred, not blocked — see that phase's note below. See Implementation Plan
+for the phase breakdown and what has landed.
+
+**Until Phase 5 lands, uploaded files are never purged.** The platform's trial-expiry purge
+obligation this spec exists partly to satisfy (see Overview) is not yet met: a user's documents
+outlive their trial indefinitely. Acceptable for now at the scale this is being exercised at: not
+acceptable to ship broadly, or leave forgotten, without Phase 5.
 
 ## Overview / Purpose
 
@@ -55,10 +63,10 @@ What makes the proxy design buildable is a detail from that same investigation. 
 
 The API contract below is deliberately shaped so the upload mechanism can be swapped for signed URLs later without changing how a client lists, reads, or deletes.
 
-**Quotas are enforced rather than assumed, with a 5 MB per-file ceiling.**
-Configurable defaults: 5 MB per file, 20 files per `(user, POC)`, and 250 MB total per user across all POCs. A trial portal open to prospects is precisely the context where an unbounded upload path becomes a cost problem, and a limit present from the first release avoids retrofitting one onto users who have already exceeded it.
+**Quotas are enforced rather than assumed, with a 10 MB per-file ceiling.**
+Configurable defaults: 10 MB per file, 20 files per `(user, POC)`, and 250 MB total per user across all POCs. A trial portal open to prospects is precisely the context where an unbounded upload path becomes a cost problem, and a limit present from the first release avoids retrofitting one onto users who have already exceeded it.
 
-5 MB sits far below Cloud Run's 32 MiB request ceiling, which materially simplifies the proxy design: the multipart spool threshold can be set above the file-size limit so uploads never touch the filesystem, and resumability stops being a question worth asking. The tradeoff is that 5 MB accommodates text-based documents comfortably but rejects most scanned ones — see Open Questions.
+10 MB still sits well below Cloud Run's 32 MiB request ceiling — under a third of it — which preserves what makes the proxy design simple: the multipart spool threshold can be set above the file-size limit so uploads never touch the filesystem, and resumability stops being a question worth asking. The ceiling was raised from the originally drafted 5 MB before implementation, because 5 MB rejects most *scanned* documents (commonly 10–20 MB), and a scanned contract is exactly what a prospect would upload to a contract-review demo. The failure mode being avoided is a prospect hitting a wall on their first realistic document during an evaluation.
 
 **`google-cloud-storage` is used, a deliberate departure from the `RestClient` precedent.**
 `poc-deployment-pipeline.md` chose a plain `RestClient` over the Cloud Build SDK to avoid pulling gRPC and a large dependency surface into an app with no GCP client libraries. That reasoning does not transfer. Cloud Build was a single JSON `POST` and a single `GET`, whereas GCS upload involves session handling, chunked transfer, and retry semantics — real logic rather than request construction, and logic that when hand-rolled tends to fail only under conditions that are hard to reproduce. The GCS client is HTTP/JSON by default, not gRPC, so the specific cost that motivated the pipeline's choice does not apply.
@@ -100,7 +108,7 @@ This decision depends entirely on the absence of that distribution vector, so it
 
 ## Data Model
 
-**`user_files`** — migration `V17__create_user_files_table.sql` (latest on disk is `V16__create_deployment_jobs_queue.sql`)
+**`user_files`** — migration `V18__create_user_files_table.sql`. The original draft named this `V17`; `V17__rename_pocs_status_to_visibility_status.sql` landed first, so the number moved.
 
 | column | type | notes |
 |---|---|---|
@@ -125,16 +133,17 @@ Two surfaces, deliberately not merged: they differ in caller, in authorization, 
 
 **POC-facing** — the primary surface, authenticated with the POC-scoped token, with no user or POC parameter anywhere. Called from the POC's browser code via the bridge library's uploader, and from the POC's backend for reads.
 
-- **`POST /poc-files`** — `multipart/form-data`, single file. Rejects on quota, size, or disallowed content type. Returns `201` with the file's metadata.
+- **`POST /poc-files`** — `multipart/form-data`, single file. Rejects on quota (`409`), size (`413`),
+  or disallowed content type (`400`). Returns `201` with the file's metadata.
 - **`GET /poc-files`** — the non-deleted files belonging to the `(user, POC)` pair named by the token's claims.
 - **`GET /poc-files/{fileId}/content`** — streams the bytes, after confirming the file belongs to that pair.
 - **`DELETE /poc-files/{fileId}`** — soft delete, `204`.
 
 **Portal-facing**, authenticated with the user's own access token, trial-gated as normal. Not part of the upload flow; this exists so the portal can offer the user a view of everything they have stored and a way to remove it, which is worth having independently of any POC.
 
-- **`GET /pocs/{pocId}/files`** — the caller's non-deleted files for that POC.
-- **`GET /pocs/{pocId}/files/{fileId}/content`** — streams the bytes.
-- **`DELETE /pocs/{pocId}/files/{fileId}`** — soft delete, `204`.
+- **`GET /pocs/{id}/files`** — the caller's non-deleted files for that POC.
+- **`GET /pocs/{id}/files/{fileId}/content`** — streams the bytes.
+- **`DELETE /pocs/{id}/files/{fileId}`** — soft delete, `204`.
 
 The surfaces stay separate rather than merging behind one path with two authorization rules, for the reason given under Access control: the POC-facing endpoints must have no parameter naming a user or a POC, so cross-tenant access is a request the API cannot express rather than one it rejects.
 
@@ -146,15 +155,178 @@ The surfaces stay separate rather than merging behind one path with two authoriz
 - Cross-tenant access is structurally prevented rather than checked: the POC-facing endpoints have no parameter that names a user or a POC.
 - Purge covers GCS objects and database rows together. `poc-hosting-architecture.md` records why the database is not exempt despite holding far less data.
 - No malware scanning is performed; see the Malware decision for the reasoning and the conditions that would reverse it.
-- **Operational note.** Cloud Run's filesystem is memory-backed, so Spring's multipart spooling to a temporary file counts against container memory rather than disk. At 5 MB the sound configuration is to set the spool threshold above the file-size limit so uploads never touch the filesystem, and to size container memory for `5 MB × max concurrency` with headroom. `spring.servlet.multipart.max-file-size`, the spool threshold, container memory, and max concurrency should be set as one coherent decision rather than independently.
+- **Operational note.** Cloud Run's filesystem is memory-backed, so Spring's multipart spooling to a temporary file counts against container memory rather than disk. At 10 MB the sound configuration is to set the spool threshold above the file-size limit so uploads never touch the filesystem, and to size container memory for `10 MB × max concurrency` with headroom. `spring.servlet.multipart.max-file-size`, the spool threshold, container memory, and max concurrency should be set as one coherent decision rather than independently.
+
+## Implementation Plan
+
+Five phases, each independently reviewable and each leaving the build green. Per this repo's
+spec-first convention, the spec revision for a phase is committed before that phase's code.
+
+### The prerequisite this feature has to carry
+
+`poc-hosting-architecture.md` specifies `POST /pocs/{slug}/launch` and `GET /.well-known/jwks.json`,
+and neither exists: `JwtService` issues only user access tokens, with no `aud` and no `kid`, and
+`SecurityConfig` has no JWKS route. Because upload lives *only* on the POC-facing surface — see the
+Scope and ownership decision above — file management has no authenticated caller at all without
+them, and could not be exercised end to end. That work is therefore built here, as Phase 2, rather
+than waiting on a separate branch, and `poc-hosting-architecture.md` is revised in the same change.
+
+Issuing a second class of token also opens a gap that must close in the same phase rather than
+after it: nothing validates `aud` today, so a POC-scoped token would satisfy `anyRequest()
+.authenticated()` and reach portal endpoints such as `/users/me`. Audience separation is part of
+Phase 2, not a follow-up to it.
+
+### Phase 1 — Storage foundation (implemented)
+
+No HTTP surface; nothing user-visible.
+
+- `pom.xml` — `com.google.cloud:google-cloud-storage`, pinned through `libraries-bom` so it aligns
+  with the `google-auth-library-oauth2-http` already present for the deploy pipeline rather than
+  resolving against it. HTTP/JSON transport, no gRPC, per the dependency decision above.
+- `V18__create_user_files_table.sql` — the `user_files` table as specified under Data Model.
+- `file/entity/UserFile.java`, `file/repository/UserFileRepository.java` — the `poc` package's
+  conventions: identity PK, `deleted_at` soft delete, `poc_id` as a plain column not a JPA relation.
+- `file/config/FileStorageProperties.java` — bucket, per-file ceiling, per-pair file count, per-user
+  byte total, content-type allowlist.
+- `file/storage/FileStorage.java` with `GcsFileStorage` and `LocalFileStorage` implementations,
+  selected by property. This mirrors the `PipelineExecutor` local/cloud/skip precedent, and exists
+  for the same reason: the feature stays runnable by a developer with no GCP credentials.
+- `file/service/ContentTypeValidator.java` — magic-byte sniffing, since the declared header is not
+  trusted. Under `service` rather than `storage`: it validates a request, and storage never calls it.
+- `file/storage/ObjectPaths.java` — the object layout in one place, because upload, download and
+  purge all have to agree on it.
+
+### Phase 2 — POC-scoped token and JWKS (implemented)
+
+Prerequisite work owned by `poc-hosting-architecture.md`; see above for why it lands here.
+
+- `JwtService` — a `kid` header on every issued token, and `issuePocToken` minting the short-lived
+  `aud: poc:<slug>` token.
+- `GET /.well-known/jwks.json` — the existing `RSAPublicKey` bean exported public-key-only through
+  Nimbus, which is already on the classpath via the resource server. Added to `SecurityConfig`'s
+  `permitAll()` matchers, not merely marked `security: []` in OpenAPI — `poc-catalog.md` records
+  that exact mismatch causing a failure before.
+- `POST /pocs/{slug}/launch` — the single point where "may this user open this POC" is decided:
+  active trial, POC `ACTIVE`, not hidden, not soft-deleted.
+- Audience separation. Implemented as the half that is safe to ship first: the portal's decoder
+  *rejects* any token carrying a `poc:` audience, so a POC-scoped token is currently accepted
+  nowhere at all. Phase 3 adds the decoder that requires it, opening exactly one door. Checked at
+  decode time rather than as an authorization rule, so such a token fails to authenticate rather
+  than authenticating and then being denied.
+
+### Phase 3 — POC-facing `/poc-files` (implemented)
+
+- OpenAPI paths and a `file.yaml` schema component; the controller implements the generated
+  interface, as every controller in this repo does.
+- `POST` (multipart), `GET`, `GET /{fileId}/content`, `DELETE` — no user or POC parameter anywhere,
+  both read from token claims. Status codes settled beyond what the API Surface section originally
+  said: `413` for the per-file size ceiling, `409` for either quota (file count or total bytes),
+  `400` for a rejected or mismatched content type. `413`/`409` split rather than folding both into
+  `400` because they are different questions — one about the request just made, the other about the
+  caller's existing state — and a client distinguishing "this file is too big" from "you're out of
+  room" needs the codes to say so.
+- `FileService` — quota enforcement, content-type validation, object naming, soft delete.
+- Multipart configuration in `application.yaml`, with the spool threshold set above the file-size
+  limit so uploads never touch Cloud Run's memory-backed filesystem.
+- Error mapping through `ApiException`, matching the existing `poc` exception package.
+
+### Phase 4 — Portal-facing `/pocs/{id}/files` (implemented)
+
+Read and delete only, on the user's own access token, trial-gated as normal. Reuses the Phase 3
+`FileService` unchanged: every method there already scopes strictly by `(userId, pocId)`, so an id
+belonging to another user or a different POC is simply not found, which is exactly the ownership
+check this surface needs — no new logic, only a second controller reading the pair from
+`CurrentUser` and the path instead of the token's claims. The path parameter is `id`, matching
+every other `/pocs/{id}/...` route in this API, not the `pocId` the API Surface section below uses
+in prose; the two names the same thing.
+
+### Phase 5 — Trial-expiry purge (deferred)
+
+Deferred at the user's request 2026-09-03, to be picked up later — not a technical blocker, and
+nothing about Phases 1-4 assumed it would follow immediately. Flagged here rather than left
+implicit so it isn't mistaken for forgotten: see the Status note above for what this leaves
+unmet in the meantime.
+
+- `users.purged_at` (migration), `trial.purge-*` properties.
+- `@EnableScheduling` — the first scheduled work in this service. `AsyncConfig` enables `@Async` for
+  the deploy pipeline, but nothing here is scheduled today, and the `FOR UPDATE SKIP LOCKED` claim
+  pattern the design borrows lives in the `poc-deploy-pipeline` repo, not this one. It is written
+  here rather than reused.
+- `TrialPurgeService` — claims eligible users in bounded batches, deletes objects before rows,
+  skips users with a pending extension, records `purged_at`, and is safe to interrupt at any point.
+- Per-user deletion counts logged and a staleness signal exposed, because a purge job that stops
+  running raises no error on its own.
 
 ## Open Questions / Future Work
 
-- **Is 5 MB the right ceiling?** It comfortably fits text-based documents — a 100-page text PDF is typically 1–2 MB — but rejects most *scanned* ones, which commonly run 10–20 MB, along with image-heavy PowerPoint and Word files. Scanned contracts are precisely what a prospect would upload to a contract-review demo, so the failure mode is a prospect hitting a wall on their first realistic document during an evaluation. Roughly 10 MB would cover most scanned documents while still sitting at a third of the transport ceiling and preserving every simplification above.
-- **Which content types are on the allowlist?** Validation by magic bytes is decided; the list is not. PDF, DOCX, XLSX, PPTX, TXT, CSV, PNG and JPEG covers the document POCs described so far, but every addition widens what POC parsers must survive, so the set should be agreed rather than inferred.
+- ~~**Is 5 MB the right ceiling?**~~ Resolved 2026-09-03: raised to 10 MB before implementation, for the reason the question itself gave. See the quota decision above.
+- ~~**Which content types are on the allowlist?**~~ Resolved 2026-09-03: PDF, DOCX, XLSX, PPTX, TXT, CSV, PNG and JPEG, as proposed — the set that covers the document POCs described so far. It is a configuration property, but a narrowing one: it selects from the types `ContentTypeValidator` holds a content signature for, and naming one it does not fails startup. Anything else would mean skipping validation for that type, which quietly turns the allowlist back into a claim from the client — the thing it exists to replace. So removing a type is configuration; adding a genuinely new one is a signature, and therefore a release.
 - **Should users be warned before purge?** `transactional-email.md` and `email-templates.md` already provide the machinery, and "your trial data will be deleted in seven days" is both good practice and a conversion prompt. Purely additive to this design.
-- **Which bucket?** `poc-deployment-pipeline.md` mentions a shared GCS bucket already created in the project. Whether user files belong there under a prefix or in a separate bucket with its own lifecycle policy is undecided; a separate bucket is easier to reason about for retention and access, at the cost of one more resource.
+- ~~**Which bucket?**~~ Resolved 2026-09-03: a separate, dedicated bucket, named by the `files.bucket` property (`FILE_STORAGE_BUCKET`). Retention and access are the whole point of this bucket and are entirely unlike the build artifacts sharing the pipeline's, so keeping them apart costs one resource and buys a lifecycle policy that can be reasoned about on its own. The bucket-level IAM binding this needs is the one category already demonstrated to succeed in this project (see the transport decision).
 - **What happens to files when a POC is soft-deleted?** The `(user, POC)` scoping means those files become unreachable but are not purged, since purge is keyed on the user's trial rather than the POC's existence. Probably wants a sweep, but it is a genuinely separate lifecycle.
 - **GCS lifecycle rules as a backstop.** An age-based rule would not implement the trial-scoped purge policy, but it would bound the damage if the purge job silently stopped running — a cheap second line of defence.
-- **Resumable uploads.** The proxy design has none; a dropped upload restarts. Comfortably acceptable at 5 MB, and inherited from the signed-URL decision rather than independent of it.
+- **Resumable uploads.** The proxy design has none; a dropped upload restarts. Acceptable at 10 MB, and inherited from the signed-URL decision rather than independent of it.
 - **Per-POC quota overrides.** A flat limit across all POCs will eventually be wrong for one of them.
+
+## Changelog
+
+- 2026-09-03 — Phase 5 deferred at the user's request: Phases 1-4 (storage foundation, POC-scoped
+  tokens/JWKS, both file endpoint surfaces) are implemented and left in a working, independently
+  reviewable state; the purge sweep will be built as a separate, later piece of work rather than
+  continuing in the same sitting. Status revised to say so explicitly, since the feature is
+  incomplete without it — the trial-expiry purge guarantee is not met until Phase 5 exists.
+- 2026-09-03 — **Phase 4 implemented**: `/pocs/{id}/files` (list, download, delete), on the
+  portal's existing filter chain — no `SecurityConfig` change needed, since the path falls through
+  to the same `anyRequest().access(authenticated + trial)` rule every other portal route already
+  gets. `PortalFilesController` is a thin second controller over the unchanged Phase 3
+  `FileService`; `SecurityConfigTest` gained the matching pair of cases (a POC-scoped token
+  rejected here, a portal token accepted) to prove the new surface actually stayed on the portal
+  chain rather than assuming it from the routing table. 213 tests pass, 8 new.
+- 2026-09-03 — **Phase 3 implemented**: `/poc-files` (upload, list, download, delete), sitting
+  behind a second Spring Security filter chain (`SecurityConfig.pocFilesFilterChain`, `@Order(1)`,
+  matched to `/poc-files/**`) rather than a shared one with an authorization-time check. The two
+  chains are the actual isolation — a portal access token cannot authenticate against
+  `/poc-files/**` at all, and a POC-scoped token cannot authenticate against anything else — with
+  `RequirePocAudienceValidator` (the mirror of `PortalAudienceValidator` from Phase 2) as the
+  decoder-level rule that decides which chain accepts which token. `CurrentPoc`, alongside the
+  existing `CurrentUser`, reads `pocId` off the token so the controller never takes a POC parameter.
+  Delete removes the object immediately (freeing quota right away) and only then soft-deletes the
+  row, so the row's `deleted_at` is purge accounting, not a recycle bin — matching what Phase 1's
+  `UserFile` Javadoc already said before this phase existed to implement it. Multipart limits
+  (`MultipartUploadConfig`) are derived from `files.max-file-size` in code rather than set
+  independently in YAML, which is what guarantees the spool threshold stays above the file-size
+  ceiling for whatever that property is configured to, rather than two numbers that happen to
+  agree today. `SecurityConfigTest` gained the mirror-image cases Phase 2 didn't yet need: a portal
+  token rejected on `/poc-files`, and a POC token accepted there. `MultipartUploadConfigTest` exists because `@WebMvcTest`'s mock dispatcher never touches a real `MultipartConfigElement` — without it, the file whose entire purpose is the spool-threshold guarantee would be untested. 205 tests pass, 30 new.
+- 2026-09-03 — **Phase 2 implemented**: `kid` on every issued token, `GET /.well-known/jwks.json`,
+  `POST /pocs/{slug}/launch`, and audience separation. The POC token carries `sub`, `aud`,
+  `pocId`, display name, theme and `trialEndDate` — and deliberately no `roles`, so a POC launched
+  by an admin does not inherit admin authority, and no email. `pocId` is carried in addition to the
+  slug in the audience, which the design did not call for: file storage is keyed on the id
+  precisely because a slug can be renamed, so carrying it saves a lookup on every request a POC
+  makes. `SecurityConfigTest` is this repo's first test of its security wiring, and covers the case
+  that motivated the phase — a POC-scoped token getting 401 on `/users/me` while a user token
+  passes the filter. See `poc-hosting-architecture.md` for the launch endpoint's own details.
+- 2026-09-03 — **Phase 1 implemented**: `google-cloud-storage` (pinned through `libraries-bom`,
+  which also took over the version of the `google-auth-library-oauth2-http` the deploy pipeline
+  already used, so the two cannot drift), migration `V18`, `UserFile` + `UserFileRepository`,
+  `ObjectPaths`, the `FileStorage` interface with GCS and local implementations, and
+  `ContentTypeValidator`. Two things the design did not anticipate. First, `user_files.user_id` is
+  `VARCHAR(36) REFERENCES users(id)` rather than the specified bare `TEXT`, matching
+  `activity_sessions` — but deliberately *without* that table's `ON DELETE CASCADE`, since cascading
+  would let a deleted user take these rows with them while their objects stayed in the bucket, which
+  is precisely the orphan this design orders its purge steps to avoid. Second, the allowlist turned
+  out to narrow rather than widen; see the resolved open question above. Verified against the real
+  local Postgres: Flyway applied `V18` and revalidated all 18 migrations, and Hibernate's
+  `ddl-auto: validate` accepted the mapping. 139 tests pass, 23 of them new.
+- 2026-09-03 — Implementation started. Three decisions taken off the Open Questions list before
+  writing code: the per-file ceiling raised from 5 MB to 10 MB (5 MB rejects the scanned documents a
+  contract-review prospect would actually upload, and 10 MB keeps every simplification that made
+  5 MB attractive); the content-type allowlist fixed at the proposed set, as configuration rather
+  than a constant; and user files given their own bucket rather than a prefix in the pipeline's,
+  since retention and access are the entire point of this bucket and are unlike the build artifacts
+  it would otherwise share. Corrected the migration number to `V18` — the draft said `V17`, which
+  `V17__rename_pocs_status_to_visibility_status.sql` has since taken. Added the Implementation Plan,
+  which folds `poc-hosting-architecture.md`'s launch token and JWKS endpoint in as Phase 2, on the
+  grounds that this feature's only upload path is authenticated by a token that does not yet exist.
+- 2026-09-02 — Initial draft.

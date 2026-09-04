@@ -2,6 +2,8 @@ package com.sails.ai.selfserviceapi.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.user.entity.ThemeMode;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.Test;
 class JwtServiceTest {
 
     private JwtService jwtService;
+    private JwtKeySet keySet;
     private RSAPublicKey publicKey;
 
     @BeforeEach
@@ -29,9 +32,10 @@ class JwtServiceTest {
         publicKey = (RSAPublicKey) keyPair.getPublic();
 
         JwtProperties properties = new JwtProperties(
-                "self-service-api", "unused", "unused", Duration.ofMinutes(30), Duration.ofDays(7),
-                Duration.ofMinutes(10), "1");
-        jwtService = new JwtService((RSAPrivateKey) keyPair.getPrivate(), properties);
+                "self-service-api", "unused", "unused",
+                Duration.ofMinutes(30), Duration.ofDays(7), Duration.ofMinutes(15),"1");
+        keySet = new JwtKeySet(publicKey);
+        jwtService = new JwtService((RSAPrivateKey) keyPair.getPrivate(), properties, keySet);
     }
 
     @Test
@@ -56,45 +60,94 @@ class JwtServiceTest {
     }
 
     @Test
-    void accessTokenCarriesTheConfiguredKeyId() {
-        String token = jwtService.issueAccessToken(baseUser());
+    void stampsEveryAccessTokenWithTheKeyId() {
+        String kid = header(jwtService.issueAccessToken(baseUser()));
 
-        String kid = Jwts.parser().verifyWith(publicKey).build()
-                .parseSignedClaims(token).getHeader().getKeyId();
-
-        assertThat(kid).isEqualTo("1");
+        assertThat(kid).isEqualTo(keySet.keyId());
     }
 
     @Test
-    void pocTokenScopesAudienceToTheGivenSlug() {
-        Claims claims = parse(jwtService.issuePocToken(baseUser(), "contract-agent"));
+    void pocTokenCarriesTheKeyIdTheJwksEndpointPublishes() {
+        assertThat(header(jwtService.issuePocToken(baseUser(), poc()))).isEqualTo(keySet.keyId());
+    }
+
+    @Test
+    void pocTokenIsScopedToThatPocsAudience() {
+        Claims claims = parse(jwtService.issuePocToken(baseUser(), poc()));
 
         assertThat(claims.getAudience()).containsExactly("poc:contract-agent");
+        assertThat(claims.get("pocId", Long.class)).isEqualTo(4L);
+        assertThat(claims.getSubject()).isEqualTo("01JABC123XYZ");
+    }
+
+    /** A POC must not inherit the authority of whoever launched it. */
+    @Test
+    void pocTokenCarriesNoRoles() {
+        User admin = baseUser();
+        admin.setRoles(List.of("USER", "ADMIN"));
+
+        Claims claims = parse(jwtService.issuePocToken(admin, poc()));
+
+        assertThat(claims.get("roles")).isNull();
     }
 
     @Test
-    void pocTokenExpiresMuchSoonerThanAnAccessToken() {
-        User user = baseUser();
-        Instant beforeIssue = Instant.now();
-
-        Claims accessClaims = parse(jwtService.issueAccessToken(user));
-        Claims pocClaims = parse(jwtService.issuePocToken(user, "contract-agent"));
-
-        Instant accessExpiry = accessClaims.getExpiration().toInstant();
-        Instant pocExpiry = pocClaims.getExpiration().toInstant();
-        assertThat(pocExpiry).isBefore(accessExpiry);
-        assertThat(Duration.between(beforeIssue, pocExpiry)).isCloseTo(Duration.ofMinutes(10), Duration.ofSeconds(5));
+    void pocTokenCarriesNoEmail() {
+        assertThat(parse(jwtService.issuePocToken(baseUser(), poc())).get("email")).isNull();
     }
 
     @Test
-    void pocTokenCarriesTrialEndDateWhenPresent() {
+    void pocTokenCarriesDisplayNameAndTheme() {
         User user = baseUser();
-        Instant trialEnd = Instant.now().plus(14, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
+        user.setDisplayName("Janey");
+        user.setTheme(ThemeMode.DARK);
+
+        Claims claims = parse(jwtService.issuePocToken(user, poc()));
+
+        assertThat(claims.get("name", String.class)).isEqualTo("Janey");
+        assertThat(claims.get("theme", String.class)).isEqualTo("DARK");
+    }
+
+    @Test
+    void pocTokenFallsBackToTheUsersNameWhenNoDisplayNameIsSet() {
+        User user = baseUser();
+        user.setDisplayName(null);
+
+        assertThat(parse(jwtService.issuePocToken(user, poc())).get("name", String.class))
+                .isEqualTo("Jane Doe");
+    }
+
+    /** So the existing trial gate applies to a POC token too, rather than a second expiry rule. */
+    @Test
+    void pocTokenCarriesTrialEndDate() {
+        User user = baseUser();
+        Instant trialEnd = Instant.now().plus(3, ChronoUnit.DAYS).truncatedTo(ChronoUnit.SECONDS);
         user.setTrialEndDate(trialEnd);
 
-        Claims claims = parse(jwtService.issuePocToken(user, "contract-agent"));
+        assertThat(parse(jwtService.issuePocToken(user, poc())).get("trialEndDate", Long.class))
+                .isEqualTo(trialEnd.getEpochSecond());
+    }
 
-        assertThat(claims.get("trialEndDate", Long.class)).isEqualTo(trialEnd.getEpochSecond());
+    @Test
+    void pocTokenExpiresFarSoonerThanAnAccessToken() {
+        Claims pocClaims = parse(jwtService.issuePocToken(baseUser(), poc()));
+        Claims accessClaims = parse(jwtService.issueAccessToken(baseUser()));
+
+        assertThat(pocClaims.getExpiration()).isBefore(accessClaims.getExpiration());
+        assertThat(jwtService.pocTokenTtlSeconds()).isEqualTo(900L);
+    }
+
+    private String header(String token) {
+        return (String) Jwts.parser().verifyWith(publicKey).build()
+                .parseSignedClaims(token).getHeader().get("kid");
+    }
+
+    private Poc poc() {
+        Poc poc = new Poc();
+        poc.setId(4L);
+        poc.setSlug("contract-agent");
+        poc.setAppUrl("https://contract-agent.example.run.app");
+        return poc;
     }
 
     private Claims parse(String token) {
@@ -104,6 +157,8 @@ class JwtServiceTest {
     private User baseUser() {
         User user = new User();
         user.setId("01JABC123XYZ");
+        user.setFirstName("Jane");
+        user.setLastName("Doe");
         user.setEmail("jane.doe@example.com");
         user.setRoles(List.of("USER"));
         return user;

@@ -1,43 +1,49 @@
 package com.sails.ai.selfserviceapi.security;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.RSAKey;
-import com.sails.ai.selfserviceapi.generated.api.SystemApi;
-import java.security.interfaces.RSAPublicKey;
+import com.sails.ai.selfserviceapi.generated.api.WellKnownApi;
+import com.sails.ai.selfserviceapi.generated.model.Jwk;
+import com.sails.ai.selfserviceapi.generated.model.JwkSet;
 import java.time.Duration;
+import java.util.List;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Publishes the RSA public key as a JWK Set so a POC backend, in any stack, can verify tokens
- * this API issues (access tokens and POST /pocs/{slug}/launch tokens alike) without ever being
- * handed the private key. Built from the {@code RSAPublicKey} bean only, so the JWK Set carries
- * no private-key material regardless of what callers request.
+ * Publishes the public key so a POC backend, in whatever stack its team chose, can verify a
+ * POC-scoped token without this service handing out a shared secret.
  */
 @RestController
-public class JwksController implements SystemApi {
+public class JwksController implements WellKnownApi {
 
-    private final RSAPublicKey jwtPublicKey;
-    private final JwtProperties jwtProperties;
+    /**
+     * Long enough that POCs are not refetching this on every request, and harmless to a rotation:
+     * a JWKS client refetches when it meets a {@code kid} it does not know, so publishing the new
+     * key and then signing with it costs one extra fetch rather than a coordinated cutover.
+     */
+    private static final Duration CACHE_MAX_AGE = Duration.ofHours(1);
 
-    public JwksController(RSAPublicKey jwtPublicKey, JwtProperties jwtProperties) {
-        this.jwtPublicKey = jwtPublicKey;
-        this.jwtProperties = jwtProperties;
+    private final JwtKeySet jwtKeySet;
+
+    public JwksController(JwtKeySet jwtKeySet) {
+        this.jwtKeySet = jwtKeySet;
     }
 
     @Override
-    public ResponseEntity<Object> getJwks() {
-        RSAKey rsaKey = new RSAKey.Builder(jwtPublicKey)
-                .keyID(jwtProperties.keyId())
-                .algorithm(JWSAlgorithm.RS256)
-                .keyUse(KeyUse.SIGNATURE)
-                .build();
+    public ResponseEntity<JwkSet> getJwks() {
+        RSAKey key = jwtKeySet.publicJwk();
+
+        Jwk jwk = new Jwk(
+                key.getKeyType().getValue(),
+                key.getKeyID(),
+                key.getModulus().toString(),
+                key.getPublicExponent().toString())
+                .use(key.getKeyUse().identifier())
+                .alg(key.getAlgorithm().getName());
 
         return ResponseEntity.ok()
-                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePublic())
-                .body(new JWKSet(rsaKey).toJSONObject());
+                .cacheControl(CacheControl.maxAge(CACHE_MAX_AGE).cachePublic())
+                .body(new JwkSet(List.of(jwk)));
     }
 }

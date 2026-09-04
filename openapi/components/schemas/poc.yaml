@@ -163,62 +163,19 @@ PocResponse:
           example: "contract-agent"
 
 
-PocLaunchResponse:
-  type: object
-  description: >
-    Answer to POST /pocs/{slug}/launch. The portal hands token to the POC's iframe over
-    postMessage — never in the URL. user/theme are a convenience so the POC frontend doesn't
-    have to decode the JWT itself; the token's claims remain authoritative.
-  required:
-    - token
-    - expiresAt
-    - appUrl
-    - user
-    - theme
-  properties:
-    token:
-      type: string
-      description: Short-lived JWT scoped to this POC via its `aud` claim (`poc:<slug>`).
-      example: "eyJhbGciOiJSUzI1NiIsImtpZCI6IjEifQ..."
-
-    expiresAt:
-      type: string
-      format: date-time
-      description: When the token expires. The POC (via the bridge library) re-launches before this.
-      example: "2026-09-04T10:10:00Z"
-
-    appUrl:
-      type: string
-      maxLength: 500
-      description: URL of the deployed POC application to load in the iframe.
-      example: "https://contract-agent.example.com"
-
-    user:
-      type: object
-      required:
-        - id
-        - displayName
-      properties:
-        id:
-          type: string
-          example: "01JABC123XYZ"
-        displayName:
-          type: string
-          example: "Jane Doe"
-
-    theme:
-      $ref: './user.yaml#/ThemeMode'
-
-
 CreatePocRequest:
   type: object
   description: >
     Request to create a new POC. Creating a POC records metadata only — deploying is a separate,
-    explicit action (POST /pocs/{id}/deploy). slug and githubUrl are optional here, but both are
-    required before that POC can be deployed.
+    explicit action (POST /pocs/{id}/deploy) — but slug and githubUrl are required at creation
+    all the same. A POC missing either is inert: it cannot be deployed, so it never gets an appUrl,
+    so it can never be launched. Requiring them here turns that into a validation error on the form
+    that created the POC, rather than a 409 at deploy time or a POC that quietly never goes live.
   required:
     - name
     - description
+    - slug
+    - githubUrl
   properties:
     name:
       type: string
@@ -299,10 +256,17 @@ CreatePocRequest:
 
 UpdatePocRequest:
   type: object
-  description: Request to replace an existing POC's fields.
+  description: >
+    Request to replace an existing POC's fields. slug and githubUrl are required for the same
+    reason they are on create, and because this endpoint replaces rather than merges: an update
+    omitting githubUrl would otherwise null it out and silently make a working POC undeployable.
+    Sending slug for a POC that already has one is harmless — it is assigned once and then ignored,
+    since it names a live Cloud Run service.
   required:
     - name
     - description
+    - slug
+    - githubUrl
   properties:
     name:
       type: string
@@ -381,3 +345,44 @@ UpdatePocRequest:
       example:
         - "Click Launch to open the assistant in your session."
         - "Describe the process or task you need help with in plain language."
+
+
+PocLaunchResponse:
+  type: object
+  description: >
+    Everything the portal needs to open a POC in its iframe. The token is POC-scoped and
+    short-lived; the portal is the refresh authority and re-calls this endpoint when it nears
+    expiry, so the POC never holds a refresh token of any kind.
+  required:
+    - token
+    - expiresIn
+    - launchUrl
+    - pocId
+    - slug
+  properties:
+    token:
+      type: string
+      description: >
+        A POC-scoped JWT, audience "poc:<slug>". Carries the user's id, display name and theme,
+        and no roles. Delivered to the iframe over postMessage, never in a URL — a token in a URL
+        ends up in server logs, Referer headers and browser history.
+
+    expiresIn:
+      type: integer
+      format: int64
+      description: Token lifetime in seconds.
+      example: 900
+
+    launchUrl:
+      type: string
+      description: The POC's deployed application URL, to be framed.
+      example: "https://contract-agent-abc123-uc.a.run.app"
+
+    pocId:
+      type: integer
+      format: int64
+      example: 4
+
+    slug:
+      type: string
+      example: "contract-agent"

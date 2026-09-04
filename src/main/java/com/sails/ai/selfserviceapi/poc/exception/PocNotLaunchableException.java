@@ -3,10 +3,15 @@ package com.sails.ai.selfserviceapi.poc.exception;
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
-/** Thrown by POST /pocs/{slug}/launch when the POC has no appUrl yet — never deployed. */
+/**
+ * The POC exists and the user is entitled to it, but it has never been deployed — {@code appUrl}
+ * is null, so there is nothing to frame. A 409 rather than a 404: the POC is real and the caller
+ * did nothing wrong, which is a different thing for the portal to say than "no such POC".
+ */
 public class PocNotLaunchableException extends ApiException {
 
     public PocNotLaunchableException(String slug) {
-        super(HttpStatus.CONFLICT, "POC_NOT_LAUNCHABLE", "POC has no app URL yet: " + slug);
+        super(HttpStatus.CONFLICT, "POC_NOT_LAUNCHABLE",
+                "POC " + slug + " has no deployed application to launch yet.");
     }
 }

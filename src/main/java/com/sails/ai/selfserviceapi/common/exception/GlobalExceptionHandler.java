@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -30,5 +31,18 @@ public class GlobalExceptionHandler {
                 .timestamp(OffsetDateTime.now())
                 .path(request.getRequestURI());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /**
+     * Spring's own multipart limit (see MultipartUploadConfig) rejects an oversized upload before
+     * FileService's own check ever runs, at a layer with no ApiException to catch. Mapped here so
+     * the response still matches this API's ErrorResponse shape instead of Spring's default body.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleUploadTooLarge(MaxUploadSizeExceededException ex, HttpServletRequest request) {
+        ErrorResponse body = new ErrorResponse("FILE_TOO_LARGE", "Upload exceeds the maximum allowed size.")
+                .timestamp(OffsetDateTime.now())
+                .path(request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
     }
 }

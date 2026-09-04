@@ -83,7 +83,7 @@ All new endpoints live under `/pocs`, tagged `Poc` (generates a single `PocApi` 
 
 - **`GET /pocs`** — public, but response contents now depend on the caller. Anonymous and non-admin callers always get `status=ACTIVE AND deletedAt IS NULL` rows only. Authenticated admins additionally see `HIDDEN` rows, and — only when the new `includeDeleted=true` query param is passed — soft-deleted rows too (`includeDeleted` is ignored for non-admins). Returns `PocSummaryResponse[]` (`id`, `name`, `description`, `iconUrl`, `version`, `owner`, `category`, `technologies`, `demoType`, `status`, `details`, `guideSteps`, `deletedAt`) — `deletedAt` is always `null` in a non-admin response, since those rows are pre-filtered.
 - **`GET /pocs/{id}`** — authenticated. Returns `PocResponse` (adds `appUrl`, `githubUrl`, `containerImage`). `404` if not found, or if soft-deleted and the caller isn't an admin.
-- **`POST /pocs`** — **admin only**. `CreatePocRequest {name, description, iconUrl?, appUrl?, githubUrl?, version?, owner?, category?, technologies?, containerImage?, demoType?, status?}` → `201` `PocResponse`. `status` defaults to `"ACTIVE"` if omitted.
+- **`POST /pocs`** — **admin only**. `CreatePocRequest {name, description, slug, githubUrl, iconUrl?, appUrl?, version?, owner?, category?, technologies?, containerImage?, demoType?, status?}` → `201` `PocResponse`. `status` defaults to `"ACTIVE"` if omitted. `slug` and `githubUrl` are required — see the changelog entry for 2026-09-03.
 - **`PUT /pocs/{id}`** — **admin only**. `UpdatePocRequest` (same shape as create — full replace of the mutable fields, not a partial patch) → `200` `PocResponse`. `404` if not found.
 - **`DELETE /pocs/{id}`** — **admin only**. Soft delete: sets `deletedAt`, does not remove the row. `204`. `404` if not found (idempotent-on-404 is *not* assumed here, unlike `/auth/logout`).
 - **`POST /pocs/{id}/hide`** — **admin only** (new). Sets `status=HIDDEN`. `200` `PocResponse`. `404` if not found.
@@ -115,6 +115,23 @@ Three portal pages consume this API, split along the same public/authenticated l
 - `PocFormModal`'s category field is a native `<select>`, populated from `PocApi.getCategories()` (fetched once per modal open, in both create and edit mode). It's a plain HTML `<select>` bound via `formControlName="category"`, not a custom combobox, since the option count is small and no search/filter is needed. An existing POC whose stored `category` doesn't match any current row (e.g. legacy seed data) shows no option selected but keeps its original value in the form until the admin explicitly changes it — the dropdown doesn't clear or coerce the underlying field.
 
 ## Changelog
+
+- 2026-09-03 — **`slug` and `githubUrl` are required** on `CreatePocRequest` and `UpdatePocRequest`,
+  reversing the 2026-09-01 change that made them optional. That change was right about the
+  mechanics — creating a POC records metadata and does not deploy — but optional-at-creation turned
+  out to cost more than it saved. A POC without both is inert: it cannot deploy, so it never gets
+  an `appUrl`, so `POST /pocs/{slug}/launch` cannot launch it and `GET /pocs` does not surface it
+  as live. The failure arrives later, somewhere else, as a 409 at deploy time or a POC that quietly
+  never appears — rather than as a validation error on the form that created it. Requiring both on
+  update as well closes a second hole: `PUT /pocs/{id}` replaces fields, so an update omitting
+  `githubUrl` silently nulled it and made a working POC undeployable.
+
+  **Enforced in the API contract only; the columns stay nullable.** `pocs.slug` and
+  `pocs.github_url` cannot be made `NOT NULL` because the five POCs seeded by `V7` have neither,
+  and while a slug could be derived from a name, a repository URL cannot be invented. Adding the
+  constraint needs a decision about those rows — backfill with real values, or delete them — which
+  is not this change's to make. Until then `MissingPocSlugException` and `MissingGithubUrlException`
+  remain reachable for those rows and must stay.
 
 - 2026-09-01 — Added `poc_categories` (migration `V14`) and public `GET /pocs/categories`, and changed the admin add/edit form's category field from free text to a dropdown sourced from it. `pocs.category` itself is unchanged (still plain `VARCHAR`, no FK) — this only replaces the form's input widget.
 - 2026-09-01 — `version`/`container_image` removed from `pocs`, replaced by `active_version_id` (FK

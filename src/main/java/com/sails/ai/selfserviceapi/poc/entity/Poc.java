@@ -22,6 +22,9 @@ import org.hibernate.type.SqlTypes;
 @Setter
 public class Poc {
 
+    /** Visible on the dashboard. The other value, HIDDEN, withdraws a POC without deleting it. */
+    public static final String VISIBILITY_ACTIVE = "ACTIVE";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false, updatable = false)

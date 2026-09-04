@@ -29,6 +29,21 @@
 	<properties>
 		<java.version>21</java.version>
 	</properties>
+	<dependencyManagement>
+		<dependencies>
+			<!-- Aligns google-cloud-storage with google-auth-library-oauth2-http, which the deploy
+			     pipeline already uses, instead of letting the two resolve their shared transitive
+			     dependencies against each other. -->
+			<dependency>
+				<groupId>com.google.cloud</groupId>
+				<artifactId>libraries-bom</artifactId>
+				<version>26.50.0</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -128,7 +143,17 @@
 		<dependency>
 			<groupId>com.google.auth</groupId>
 			<artifactId>google-auth-library-oauth2-http</artifactId>
-			<version>1.48.0</version>
+		</dependency>
+
+		<!-- User file storage (docs/specs/file-management.md). A deliberate departure from the
+		     RestClient-only precedent the deploy pipeline set: Cloud Build was two JSON calls,
+		     whereas a GCS upload is session handling, chunked transfer and retry semantics —
+		     logic that when hand-rolled fails only under conditions that are hard to reproduce.
+		     The reason that precedent existed does not transfer either, since this client is
+		     HTTP/JSON by default rather than gRPC. -->
+		<dependency>
+			<groupId>com.google.cloud</groupId>
+			<artifactId>google-cloud-storage</artifactId>
 		</dependency>
 
 		<!-- test dependecies -->
