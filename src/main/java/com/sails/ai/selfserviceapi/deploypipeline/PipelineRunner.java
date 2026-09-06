@@ -3,7 +3,9 @@ package com.sails.ai.selfserviceapi.deploypipeline;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,8 +18,8 @@ import org.springframework.stereotype.Service;
  * the same process, so "the pipeline reports status" is just a direct method call.
  *
  * <p>Both entry points are {@code @Async}: PocDeploymentService has already committed a PENDING
- * deployment row and returned to the caller before either of these runs, which is what makes
- * deploy/redeploy/retry non-blocking.
+ * deployment row (and, for a build, already resolved and validated the manifest) and returned to
+ * the caller before either of these runs, which is what makes deploy/redeploy/retry non-blocking.
  */
 @Service
 public class PipelineRunner {
@@ -37,27 +39,32 @@ public class PipelineRunner {
         this.properties = properties;
     }
 
+    /**
+     * {@code commitSha}/{@code manifest} were already resolved (and, for the manifest, validated)
+     * by {@code PocDeploymentService.deployNewVersion} before this deployment row was created —
+     * both are null exactly when {@code pipeline.executor=skip}, which never touches GitHub.
+     */
     @Async
-    public void runBuildAndDeploy(UUID deploymentId, String pocSlug, String githubUrl, String versionLabel) {
+    public void runBuildAndDeploy(UUID deploymentId, String pocSlug, String githubUrl, String versionLabel,
+                                   String commitSha, PocManifest manifest) {
         if (properties.isSkip()) {
             skip(deploymentId, pocSlug, versionLabel);
             return;
         }
         try {
             GitHubRepoRef repo = gitHubService.parseRepoUrl(githubUrl);
-            String commitSha = gitHubService.getDefaultBranchHeadSha(repo);
 
             // Tagging before building, and cloning the tag rather than the branch, is what makes
             // this reproducible — the image can only ever contain the commit the tag points at.
             gitHubService.createTagIfAbsent(repo, versionLabel, commitSha);
 
-            pocDeploymentService.reportStatus(deploymentId, "BUILDING", null, null, null, null, null);
-            String image = executor.buildAndPushImage(repo, versionLabel, pocSlug);
+            pocDeploymentService.reportManifestStatus(deploymentId, "BUILDING", manifest, null, null, null);
+            Map<String, String> images = executor.buildAndPushImages(repo, versionLabel, pocSlug, manifest);
 
-            pocDeploymentService.reportStatus(deploymentId, "DEPLOYING", null, null, null, null, null);
-            String hostedUrl = executor.deploy(pocSlug, image);
+            pocDeploymentService.reportManifestStatus(deploymentId, "DEPLOYING", manifest, images, null, null);
+            String hostedUrl = executor.deploy(pocSlug, manifest, images);
 
-            pocDeploymentService.reportStatus(deploymentId, "SUCCEEDED", image, commitSha, hostedUrl, null, null);
+            pocDeploymentService.reportManifestStatus(deploymentId, "SUCCEEDED", manifest, images, commitSha, hostedUrl);
             log.info("Deployment {} succeeded — '{}' version {} is live at {}",
                     deploymentId, pocSlug, versionLabel, hostedUrl);
         } catch (Exception e) {
@@ -65,18 +72,19 @@ public class PipelineRunner {
         }
     }
 
-    /** Rollback: the image already exists, so there is nothing to clone, tag or build. */
+    /** Rollback: every image already exists, so there is nothing to clone, tag or build. */
     @Async
-    public void runRedeploy(UUID deploymentId, String pocSlug, String containerImage, String versionLabel) {
+    public void runRedeploy(UUID deploymentId, String pocSlug, String versionLabel,
+                             PocManifest manifest, Map<String, String> imagesByContainer) {
         if (properties.isSkip()) {
             skip(deploymentId, pocSlug, versionLabel);
             return;
         }
         try {
-            pocDeploymentService.reportStatus(deploymentId, "DEPLOYING", null, null, null, null, null);
-            String hostedUrl = executor.deploy(pocSlug, containerImage);
+            pocDeploymentService.reportManifestStatus(deploymentId, "DEPLOYING", manifest, imagesByContainer, null, null);
+            String hostedUrl = executor.deploy(pocSlug, manifest, imagesByContainer);
 
-            pocDeploymentService.reportStatus(deploymentId, "SUCCEEDED", containerImage, null, hostedUrl, null, null);
+            pocDeploymentService.reportManifestStatus(deploymentId, "SUCCEEDED", manifest, imagesByContainer, null, hostedUrl);
             log.info("Deployment {} succeeded — '{}' rolled back to version {} at {}",
                     deploymentId, pocSlug, versionLabel, hostedUrl);
         } catch (Exception e) {

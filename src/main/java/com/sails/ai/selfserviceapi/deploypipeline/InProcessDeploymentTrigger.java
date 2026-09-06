@@ -23,13 +23,13 @@ public class InProcessDeploymentTrigger implements DeploymentTrigger {
 
     @Override
     public void buildAndDeploy(BuildAndDeployRequest request) {
-        pipelineRunner.runBuildAndDeploy(
-                request.deploymentId(), request.pocSlug(), request.githubUrl(), request.versionLabel());
+        pipelineRunner.runBuildAndDeploy(request.deploymentId(), request.pocSlug(), request.githubUrl(),
+                request.versionLabel(), request.commitSha(), request.manifest());
     }
 
     @Override
     public void redeploy(RedeployRequest request) {
-        pipelineRunner.runRedeploy(
-                request.deploymentId(), request.pocSlug(), request.containerImage(), request.versionLabel());
+        pipelineRunner.runRedeploy(request.deploymentId(), request.pocSlug(), request.versionLabel(),
+                request.manifest(), request.imagesByContainer());
     }
 }

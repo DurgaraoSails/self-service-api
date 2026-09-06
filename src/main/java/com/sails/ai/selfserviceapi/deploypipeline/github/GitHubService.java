@@ -2,6 +2,9 @@ package com.sails.ai.selfserviceapi.deploypipeline.github;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -56,6 +59,32 @@ public class GitHubService {
 
     public String getDefaultBranchHeadSha(GitHubRepoRef repo) {
         return getBranchHeadSha(repo, getDefaultBranch(repo));
+    }
+
+    /**
+     * Reads one file's content at a specific commit — used to read a POC's optional poc.yaml at
+     * the exact commit being deployed, never at a moving branch head. Empty when the file doesn't
+     * exist at that commit, which is what lets {@code ManifestService} tell "no poc.yaml" apart
+     * from a real GitHub failure.
+     */
+    public Optional<String> getFileContent(GitHubRepoRef repo, String ref, String path) {
+        requireToken();
+        try {
+            ContentResponse response = gitHubRestClient.get()
+                    .uri("/repos/{owner}/{repo}/contents/{path}?ref={ref}", repo.owner(), repo.name(), path, ref)
+                    .retrieve()
+                    .body(ContentResponse.class);
+            if (response == null || response.content() == null) {
+                return Optional.empty();
+            }
+            byte[] decoded = Base64.getMimeDecoder().decode(response.content());
+            return Optional.of(new String(decoded, StandardCharsets.UTF_8));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                return Optional.empty();
+            }
+            throw wrap(e, "GET contents of " + path + " on " + repo + " at " + ref);
+        }
     }
 
     /**
@@ -141,5 +170,8 @@ public class GitHubService {
     }
 
     private record CreateRefRequest(String ref, String sha) {
+    }
+
+    private record ContentResponse(String content, String encoding) {
     }
 }

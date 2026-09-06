@@ -5,12 +5,19 @@ import com.sails.ai.selfserviceapi.deploypipeline.build.ProcessRunner;
 import com.sails.ai.selfserviceapi.deploypipeline.config.GcpProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
+import com.sails.ai.selfserviceapi.deploypipeline.run.CloudRunDeployCommandBuilder;
 import com.sails.ai.selfserviceapi.deploypipeline.run.CloudRunService;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -35,40 +42,55 @@ public class LocalPipelineExecutor implements PipelineExecutor {
     private final GcpProperties gcp;
     private final PipelineProperties properties;
     private final CloudRunService cloudRunService;
+    private final CloudRunDeployCommandBuilder deployCommandBuilder;
 
-    public LocalPipelineExecutor(ProcessRunner processRunner, GcpProperties gcp,
-                                  PipelineProperties properties, CloudRunService cloudRunService) {
+    public LocalPipelineExecutor(ProcessRunner processRunner, GcpProperties gcp, PipelineProperties properties,
+                                  CloudRunService cloudRunService, CloudRunDeployCommandBuilder deployCommandBuilder) {
         this.processRunner = processRunner;
         this.gcp = gcp;
         this.properties = properties;
         this.cloudRunService = cloudRunService;
+        this.deployCommandBuilder = deployCommandBuilder;
     }
 
+    /**
+     * Phase 1 note: this loops over every manifest container the same way {@code BuildService}
+     * does, but is untested against a real multi-container repo — full local multi-container
+     * support (matching Cloud Build's behavior exactly) is Phase 2. Kept correct rather than a
+     * stub since it costs nothing extra: the loop and the shared {@link CloudRunDeployCommandBuilder}
+     * already do the right thing for one container, which is all this executor needs to keep
+     * working today.
+     */
     @Override
-    public String buildAndPushImage(GitHubRepoRef repo, String versionLabel, String pocSlug) {
-        String image = gcp.imageUri(pocSlug, versionLabel);
+    public Map<String, String> buildAndPushImages(GitHubRepoRef repo, String versionLabel, String pocSlug, PocManifest manifest) {
         Path workspace = createWorkspace(pocSlug, versionLabel);
 
         try {
             clone(repo, versionLabel, workspace);
             File source = workspace.resolve("src").toFile();
-            run(source, "docker", "build", "-t", image, ".");
-            run(source, "docker", "push", image);
-            return image;
+            Map<String, String> images = new LinkedHashMap<>();
+            for (ManifestContainer container : manifest.containers()) {
+                String image = gcp.imageUri(pocSlug, versionLabel, container.name());
+                images.put(container.name(), image);
+                run(source, "docker", "build", "-f", container.dockerfile(), "-t", image, container.context());
+                run(source, "docker", "push", image);
+            }
+            return images;
         } finally {
             deleteRecursively(workspace);
         }
     }
 
     @Override
-    public String deploy(String pocSlug, String image) {
-        run(null, "gcloud", "run", "deploy", pocSlug,
-                "--image=" + image,
-                "--region=" + gcp.region(),
-                "--project=" + gcp.projectId(),
-                "--service-account=" + gcp.serviceAccountEmail("poc-runtime"),
-                properties.allowUnauthenticated() ? "--allow-unauthenticated" : "--no-allow-unauthenticated",
-                "--quiet");
+    public String deploy(String pocSlug, PocManifest manifest, Map<String, String> imagesByContainer) {
+        List<String> args = new ArrayList<>(List.of("run", "deploy", pocSlug));
+        args.addAll(deployCommandBuilder.buildContainerArgs(manifest, imagesByContainer));
+        args.add("--region=" + gcp.region());
+        args.add("--project=" + gcp.projectId());
+        args.add("--service-account=" + gcp.serviceAccountEmail("poc-runtime"));
+        args.add(properties.allowUnauthenticated() ? "--allow-unauthenticated" : "--no-allow-unauthenticated");
+        args.add("--quiet");
+        run(null, prepend("gcloud", args));
 
         if (properties.grantApiInvoker()) {
             run(null, "gcloud", "run", "services", "add-iam-policy-binding", pocSlug,
@@ -83,6 +105,15 @@ public class LocalPipelineExecutor implements PipelineExecutor {
         }
 
         return cloudRunService.getServiceUrl(pocSlug);
+    }
+
+    private String[] prepend(String head, List<String> tail) {
+        String[] command = new String[tail.size() + 1];
+        command[0] = head;
+        for (int i = 0; i < tail.size(); i++) {
+            command[i + 1] = tail.get(i);
+        }
+        return command;
     }
 
     private void clone(GitHubRepoRef repo, String tag, Path workspace) {

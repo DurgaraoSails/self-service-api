@@ -54,6 +54,52 @@ PocVersionResponse:
       type: string
       format: date-time
 
+    containers:
+      type: array
+      nullable: true
+      description: >
+        Every container this version's manifest declared, as actually built. Empty for a version
+        built before manifest support existed, or whose repo simply had no poc.yaml — in that case
+        `containerImage` above (the single, pre-manifest field) still carries its image.
+      items:
+        $ref: '#/PocVersionContainerResponse'
+
+
+PocVersionContainerResponse:
+  type: object
+  description: One container a version actually built, as declared by the manifest it was built with.
+  required:
+    - name
+    - role
+  properties:
+    name:
+      type: string
+      example: "api"
+
+    role:
+      $ref: '#/ManifestContainerRole'
+
+    containerImage:
+      type: string
+      maxLength: 500
+      nullable: true
+      example: "registry/company/contract-agent/api:1.2.4"
+
+    port:
+      type: integer
+      nullable: true
+      description: Set for a sidecar; null for the ingress container, which binds Cloud Run's own $PORT.
+      example: 9000
+
+
+ManifestContainerRole:
+  type: string
+  enum: [INGRESS, SIDECAR]
+  description: >
+    Exactly one container in a manifest is INGRESS (receives Cloud Run's $PORT and the service's
+    public entry point); any others are SIDECAR (reachable only from the ingress container).
+  example: INGRESS
+
 
 PocDeploymentResponse:
   type: object
@@ -119,6 +165,51 @@ PocDeploymentResponse:
       type: string
       format: date-time
       nullable: true
+
+    containers:
+      type: array
+      nullable: true
+      description: >
+        A static snapshot of every container this deployment's manifest declares, and each one's
+        build/deploy state — not live per-container progress (a single Cloud Build job reports one
+        terminal status for the whole build and one for the whole deploy, so every container's
+        state moves together at each checkpoint). Absent for a deployment that never resolved a
+        manifest (pipeline.executor=skip) or that failed before doing so.
+      items:
+        $ref: '#/PocDeploymentContainerStatus'
+
+
+PocDeploymentContainerStatus:
+  type: object
+  description: One container's build/deploy state as of this deployment's last reported transition.
+  required:
+    - name
+    - role
+    - state
+  properties:
+    name:
+      type: string
+      example: "api"
+
+    role:
+      $ref: '#/ManifestContainerRole'
+
+    state:
+      type: string
+      enum: [PENDING, BUILT, DEPLOYED]
+      description: PENDING until the build step returns, BUILT until the deploy step returns, DEPLOYED once the service is live.
+      example: BUILT
+
+    containerImage:
+      type: string
+      maxLength: 500
+      nullable: true
+      example: "registry/company/contract-agent/api:1.2.4"
+
+    port:
+      type: integer
+      nullable: true
+      example: 9000
 
 
 DeploymentKind:
@@ -245,3 +336,38 @@ ReportUpstreamCommitsRequest:
       type: array
       items:
         $ref: '#/UpstreamCommit'
+
+
+PocManifestPreviewResponse:
+  type: object
+  description: >
+    What a new build would deploy right now, resolved the same way an actual build would (reads
+    and validates the POC's current poc.yaml, or the single-container default if it has none) but
+    without creating a deployment — lets the admin see this, or a validation error, before
+    triggering a real build.
+  required:
+    - containers
+  properties:
+    containers:
+      type: array
+      items:
+        $ref: '#/PocManifestPreviewContainer'
+
+
+PocManifestPreviewContainer:
+  type: object
+  required:
+    - name
+    - role
+  properties:
+    name:
+      type: string
+      example: "api"
+
+    role:
+      $ref: '#/ManifestContainerRole'
+
+    port:
+      type: integer
+      nullable: true
+      example: 9000

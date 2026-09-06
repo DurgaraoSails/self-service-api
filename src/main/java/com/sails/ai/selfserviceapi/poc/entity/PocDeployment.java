@@ -41,6 +41,14 @@ public class PocDeployment {
     @Column(name = "error_message", length = 2000)
     private String errorMessage;
 
+    /**
+     * Static per-container progress for this attempt (name/role/image/port/state), serialized as
+     * JSON. Attempt-scoped, unlike poc_version_containers (the durable per-version record) — hence
+     * a column here rather than another table. Null until the manifest is resolved.
+     */
+    @Column(name = "container_progress")
+    private String containerProgress;
+
     @Column(name = "initiated_by", length = 36, updatable = false)
     private String initiatedBy;
 

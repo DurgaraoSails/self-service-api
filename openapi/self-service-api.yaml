@@ -811,6 +811,45 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/{id}/manifest-preview:
+    get:
+      summary: Preview what a new build would deploy right now (admin only)
+      description: >
+        Resolves and validates the POC's current poc.yaml (or the single-container default, for a
+        repo with none) exactly as POST /pocs/{id}/deploy would, but creates nothing — lets the
+        admin see the containers a build would deploy, or a validation error, before triggering one.
+      operationId: getManifestPreview
+      tags:
+        - Deployment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Manifest preview
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc-deployment.yaml#/PocManifestPreviewResponse'
+        '400':
+          description: The POC's poc.yaml is invalid — every violation found is included in the error message.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/{id}/versions:
     get:
       summary: List every version ever built for a POC, newest first (admin only)
