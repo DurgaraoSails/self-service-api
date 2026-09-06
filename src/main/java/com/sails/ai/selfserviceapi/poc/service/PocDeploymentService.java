@@ -187,25 +187,34 @@ public class PocDeploymentService {
     }
 
     /**
-     * Re-runs a FAILED deployment: same version, same kind, no new version number allocated
-     * (unlike deployNewVersion — a retry is a second attempt at the same release, not a new one).
-     * A BUILD_AND_DEPLOY retry re-resolves the manifest (the repo may have fixed a bad poc.yaml
+     * Re-runs a FAILED deployment IN PLACE — same row, same id, same version and kind, no new
+     * version number and no new deployment record. A retry is another attempt at the same
+     * release, not a new build; creating a fresh row each time would make an admin's history look
+     * like N separate builds when it's really one build retried N times, and would make "was this
+     * retried?" impossible to answer from the list alone.
+     *
+     * <p>Only the most recent deployment for a POC may be retried — an older FAILED attempt that a
+     * newer deployment has since superseded is history, not something to resurrect (see
+     * {@link #requireIsLatestDeployment}).
+     *
+     * <p>A BUILD_AND_DEPLOY retry re-resolves the manifest (the repo may have fixed a bad poc.yaml
      * since the original attempt failed); a REDEPLOY retry, like any redeploy, never touches
      * GitHub.
      */
     @Transactional
     public PocDeployment retryDeployment(UUID deploymentId, String initiatedByUserId) {
-        PocDeployment original = getDeploymentById(deploymentId);
-        if (!FAILED.equals(original.getStatus())) {
-            throw new DeploymentNotRetryableException(deploymentId, original.getStatus());
+        PocDeployment deployment = getDeploymentById(deploymentId);
+        if (!FAILED.equals(deployment.getStatus())) {
+            throw new DeploymentNotRetryableException(deploymentId, deployment.getStatus());
         }
-        requireNoActiveDeployment(original.getPocId());
+        requireIsLatestDeployment(deployment);
+        requireNoActiveDeployment(deployment.getPocId());
 
-        Poc poc = getPoc(original.getPocId());
-        PocVersion version = pocVersionRepository.findById(original.getPocVersionId())
-                .orElseThrow(() -> new PocVersionNotFoundException(original.getPocVersionId()));
+        Poc poc = getPoc(deployment.getPocId());
+        PocVersion version = pocVersionRepository.findById(deployment.getPocVersionId())
+                .orElseThrow(() -> new PocVersionNotFoundException(deployment.getPocVersionId()));
 
-        if (BUILD_AND_DEPLOY.equals(original.getKind())) {
+        if (BUILD_AND_DEPLOY.equals(deployment.getKind())) {
             String commitSha = null;
             PocManifest manifest = null;
             if (!pipelineProperties.isSkip()) {
@@ -218,18 +227,43 @@ public class PocDeploymentService {
                     pocVersionRepository.save(version);
                 }
             }
-            PocDeployment retry = createDeployment(poc.getId(), version.getId(), original.getKind(), initiatedByUserId);
+            resetForRetry(deployment, initiatedByUserId);
             deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(
-                    retry.getId(), poc.getId(), poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest));
-            return retry;
+                    deployment.getId(), poc.getId(), poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest));
+            return deployment;
         }
 
         PocManifest manifest = manifestService.resolveStored(version.getManifestYaml());
         Map<String, String> imagesByContainer = resolveImagesByContainer(version.getId(), version.getContainerImage());
-        PocDeployment retry = createDeployment(poc.getId(), version.getId(), original.getKind(), initiatedByUserId);
+        resetForRetry(deployment, initiatedByUserId);
         deploymentTrigger.redeploy(new RedeployRequest(
-                retry.getId(), poc.getId(), poc.getSlug(), version.getVersionLabel(), manifest, imagesByContainer));
-        return retry;
+                deployment.getId(), poc.getId(), poc.getSlug(), version.getVersionLabel(), manifest, imagesByContainer));
+        return deployment;
+    }
+
+    /**
+     * A newer deployment (any status — SUCCEEDED, another FAILED attempt, even one still running)
+     * means this one is no longer "the current attempt," so retrying it would let an admin restart
+     * work that's already been superseded. Only the single most recent deployment for the POC is
+     * ever retryable.
+     */
+    private void requireIsLatestDeployment(PocDeployment deployment) {
+        PocDeployment latest = pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(deployment.getPocId())
+                .orElseThrow(() -> new PocDeploymentNotFoundException(deployment.getId()));
+        if (!latest.getId().equals(deployment.getId())) {
+            throw DeploymentNotRetryableException.supersededByANewerDeployment(deployment.getId());
+        }
+    }
+
+    /** Puts a FAILED deployment back to PENDING for another attempt — reused by retryDeployment for both kinds. */
+    private void resetForRetry(PocDeployment deployment, String initiatedByUserId) {
+        deployment.setStatus(PENDING);
+        deployment.setErrorMessage(null);
+        deployment.setCompletedAt(null);
+        deployment.setContainerProgress(null);
+        deployment.setInitiatedBy(initiatedByUserId);
+        deployment.setStartedAt(Instant.now());
+        pocDeploymentRepository.save(deployment);
     }
 
     /**

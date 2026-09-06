@@ -514,24 +514,41 @@ class PocDeploymentServiceTest {
     }
 
     @Test
-    void retryDeploymentReusesTheSameVersionAndKindWithoutAllocatingANewNumber() {
+    void retryDeploymentReusesTheSameRowRatherThanCreatingANewOne() {
         PocDeployment failed = pendingDeployment("BUILD_AND_DEPLOY");
         failed.setStatus("FAILED");
+        failed.setErrorMessage("Build failed: npm install exited with code 1");
+        failed.setCompletedAt(Instant.now());
         when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(1L)).thenReturn(Optional.of(failed));
         when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
         PocVersion version = versionOf(1, 0, 1);
         version.setId(1L);
         when(pocVersionRepository.findById(1L)).thenReturn(Optional.of(version));
 
-        PocDeployment retry = service.retryDeployment(failed.getId(), "admin-1");
+        PocDeployment retry = service.retryDeployment(failed.getId(), "admin-2");
 
-        assertThat(retry.getId()).isNotEqualTo(failed.getId());
+        // Same row: id, kind and version are unchanged — a retry is another attempt at the same
+        // build, not a new one, so the admin's history doesn't grow every time Retry is clicked.
+        assertThat(retry.getId()).isEqualTo(failed.getId());
         assertThat(retry.getKind()).isEqualTo("BUILD_AND_DEPLOY");
         assertThat(retry.getPocVersionId()).isEqualTo(1L);
         verify(pocVersionRepository, never()).save(any());
 
+        // Exactly one save — the reset of the existing row — never a second, freshly-created one.
+        ArgumentCaptor<PocDeployment> savedCaptor = ArgumentCaptor.forClass(PocDeployment.class);
+        verify(pocDeploymentRepository).save(savedCaptor.capture());
+        assertThat(savedCaptor.getValue().getId()).isEqualTo(failed.getId());
+
+        // The mutable, attempt-scoped fields reset for the new attempt.
+        assertThat(retry.getStatus()).isEqualTo("PENDING");
+        assertThat(retry.getErrorMessage()).isNull();
+        assertThat(retry.getCompletedAt()).isNull();
+        assertThat(retry.getInitiatedBy()).isEqualTo("admin-2");
+
         ArgumentCaptor<BuildAndDeployRequest> requestCaptor = ArgumentCaptor.forClass(BuildAndDeployRequest.class);
         verify(deploymentTrigger).buildAndDeploy(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().deploymentId()).isEqualTo(failed.getId());
         assertThat(requestCaptor.getValue().versionLabel()).isEqualTo("1.0.1");
     }
 
@@ -540,6 +557,7 @@ class PocDeploymentServiceTest {
         PocDeployment failed = pendingDeployment("REDEPLOY");
         failed.setStatus("FAILED");
         when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(1L)).thenReturn(Optional.of(failed));
         when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
         PocVersion version = versionOf(1, 0, 1);
         version.setId(1L);
@@ -569,10 +587,30 @@ class PocDeploymentServiceTest {
     }
 
     @Test
+    void retryDeploymentRefusesAFailedDeploymentThatANewerDeploymentHasSuperseded() {
+        PocDeployment oldFailed = pendingDeployment("BUILD_AND_DEPLOY");
+        oldFailed.setStatus("FAILED");
+        PocDeployment newerSucceeded = pendingDeployment("BUILD_AND_DEPLOY");
+        newerSucceeded.setStatus("SUCCEEDED");
+        when(pocDeploymentRepository.findById(oldFailed.getId())).thenReturn(Optional.of(oldFailed));
+        // The most recent deployment for this POC is a different row — oldFailed is history now.
+        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(1L)).thenReturn(Optional.of(newerSucceeded));
+
+        assertThatThrownBy(() -> service.retryDeployment(oldFailed.getId(), "admin-1"))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getCode())
+                .isEqualTo("DEPLOYMENT_NOT_RETRYABLE");
+
+        verify(deploymentTrigger, never()).buildAndDeploy(any());
+        verify(deploymentTrigger, never()).redeploy(any());
+    }
+
+    @Test
     void retryDeploymentRefusesAPocThatAlreadyHasAnotherDeploymentInProgress() {
         PocDeployment failed = pendingDeployment("BUILD_AND_DEPLOY");
         failed.setStatus("FAILED");
         when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(1L)).thenReturn(Optional.of(failed));
         when(pocDeploymentRepository.existsByPocIdAndStatusIn(1L, List.of("PENDING", "BUILDING", "DEPLOYING")))
                 .thenReturn(true);
 
