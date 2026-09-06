@@ -16,12 +16,25 @@ class CloudRunDeployCommandBuilderTest {
 
     @Test
     void aSingleDefaultContainerProducesTheSamePlainFormAsBeforeManifestSupport() {
+        // Deliberately NOT --container=app: a real regression (gcloud rejected --container= with
+        // exit code 2 — a usage error) proved this must stay the exact plain form every
+        // pre-manifest, single-container POC already deployed with.
         ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
         PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
 
         List<String> args = builder.buildContainerArgs(manifest, Map.of("app", "registry/proj/poc-images/slug/app:1.0.1"));
 
-        assertThat(args).containsExactly("--container=app", "--image=registry/proj/poc-images/slug/app:1.0.1");
+        assertThat(args).containsExactly("--image=registry/proj/poc-images/slug/app:1.0.1");
+    }
+
+    @Test
+    void aSingleContainerWithResourcesAppliesThemDirectlyWithoutContainerScoping() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        PocManifest manifest = new PocManifest(List.of(app), new Resources("2", "1Gi"));
+
+        List<String> args = builder.buildContainerArgs(manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).containsExactly("--image=img/app:1", "--cpu=2", "--memory=1Gi");
     }
 
     @Test

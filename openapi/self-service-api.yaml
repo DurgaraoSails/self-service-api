@@ -1186,9 +1186,11 @@ paths:
     post:
       summary: Re-run a FAILED deployment (admin only)
       description: >
-        Retries the same version and kind — no new version number is allocated, unlike
-        POST /pocs/{id}/deploy. 409 if the deployment isn't FAILED (nothing to retry) or if the
-        POC already has another deployment in progress.
+        Resets and reuses this same deployment record — same id, same version, same kind — rather
+        than creating a new one, so retrying a build doesn't inflate the POC's deployment history.
+        409 if the deployment isn't FAILED (nothing to retry), if it's no longer the most recent
+        deployment for its POC (a newer one has superseded it — only the latest is retryable), or
+        if the POC already has another deployment in progress.
       operationId: retryDeployment
       tags:
         - Deployment
