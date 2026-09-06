@@ -72,7 +72,7 @@ public class LocalPipelineExecutor implements PipelineExecutor {
             for (ManifestContainer container : manifest.containers()) {
                 String image = gcp.imageUri(pocSlug, versionLabel, container.name());
                 images.put(container.name(), image);
-                run(source, "docker", "build", "-f", container.dockerfile(), "-t", image, container.context());
+                run(source, "docker", "build", "-f", container.dockerfilePath(), "-t", image, container.context());
                 run(source, "docker", "push", image);
             }
             return images;

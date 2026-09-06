@@ -40,7 +40,7 @@ class CloudRunDeployCommandBuilderTest {
     @Test
     void producesOneContainerBlockPerManifestContainerInOrder() {
         ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
-        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "worker/Dockerfile", "worker", 9000, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", "worker", 9000, Map.of());
         PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
         Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
 

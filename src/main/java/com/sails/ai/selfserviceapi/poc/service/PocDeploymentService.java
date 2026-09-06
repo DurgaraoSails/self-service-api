@@ -34,6 +34,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +48,8 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Service
 public class PocDeploymentService {
+
+    private static final Logger log = LoggerFactory.getLogger(PocDeploymentService.class);
 
     /** Every container this phase builds comes from the primary repo — matches ManifestService's default. */
     private static final String DEFAULT_CONTAINER_NAME = "app";
@@ -134,6 +138,7 @@ public class PocDeploymentService {
         }
         PocDeployment deployment = createDeployment(pocId, version.getId(), BUILD_AND_DEPLOY, initiatedByUserId);
 
+        logInitiated("New deployment", poc, version);
         deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(
                 deployment.getId(), pocId, poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest));
         return deployment;
@@ -160,6 +165,7 @@ public class PocDeploymentService {
 
         PocDeployment deployment = createDeployment(pocId, versionId, REDEPLOY, initiatedByUserId);
 
+        logInitiated("Redeployment", poc, version);
         deploymentTrigger.redeploy(new RedeployRequest(
                 deployment.getId(), pocId, poc.getSlug(), version.getVersionLabel(), manifest, imagesByContainer));
         return deployment;
@@ -228,6 +234,7 @@ public class PocDeploymentService {
                 }
             }
             resetForRetry(deployment, initiatedByUserId);
+            logInitiated("New deployment", poc, version);
             deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(
                     deployment.getId(), poc.getId(), poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest));
             return deployment;
@@ -236,9 +243,16 @@ public class PocDeploymentService {
         PocManifest manifest = manifestService.resolveStored(version.getManifestYaml());
         Map<String, String> imagesByContainer = resolveImagesByContainer(version.getId(), version.getContainerImage());
         resetForRetry(deployment, initiatedByUserId);
+        logInitiated("Redeployment", poc, version);
         deploymentTrigger.redeploy(new RedeployRequest(
                 deployment.getId(), poc.getId(), poc.getSlug(), version.getVersionLabel(), manifest, imagesByContainer));
         return deployment;
+    }
+
+    /** Logged right before handing off to the trigger — the point a deployment attempt actually begins. */
+    private void logInitiated(String label, Poc poc, PocVersion version) {
+        log.info("{} (version {}) initiated for poc: {} with poc-id: {}",
+                label, version.getVersionLabel(), poc.getSlug(), poc.getId());
     }
 
     /**

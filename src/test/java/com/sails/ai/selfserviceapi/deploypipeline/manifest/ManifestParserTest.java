@@ -38,7 +38,6 @@ class ManifestParserTest {
                       LOG_LEVEL: info
                   - name: worker
                     role: sidecar
-                    dockerfile: worker/Dockerfile
                     context: worker
                     port: 9000
                     env:
@@ -52,8 +51,12 @@ class ManifestParserTest {
         ManifestContainer worker = manifest.containers().get(1);
         assertThat(worker.name()).isEqualTo("worker");
         assertThat(worker.role()).isEqualTo(ContainerRole.SIDECAR);
-        assertThat(worker.dockerfile()).isEqualTo("worker/Dockerfile");
+        // dockerfile defaults to "Dockerfile", resolved against this container's own context —
+        // NOT "worker/Dockerfile": that would double up the "worker/" prefix, since dockerfile is
+        // relative to context, matching Docker Compose's build.dockerfile/build.context.
+        assertThat(worker.dockerfile()).isEqualTo("Dockerfile");
         assertThat(worker.context()).isEqualTo("worker");
+        assertThat(worker.dockerfilePath()).isEqualTo("worker/Dockerfile");
         assertThat(worker.port()).isEqualTo(9000);
         assertThat(worker.env()).containsEntry("QUEUE_NAME", "jobs");
 

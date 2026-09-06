@@ -68,10 +68,14 @@ public class BuildService {
         return images;
     }
 
-    /** Each container may declare its own Dockerfile/build context, relative to the repo root cloned into "src". */
+    /**
+     * Each container may declare its own Dockerfile/build context. The repo is cloned into "src",
+     * and {@link ManifestContainer#dockerfilePath()} — not the raw {@code dockerfile} field —
+     * resolves the Dockerfile against its own context, not independently against the repo root.
+     */
     private BuildStep buildStep(ManifestContainer container, String image) {
         return new BuildStep("gcr.io/cloud-builders/docker", null,
-                List.of("build", "-f", "src/" + container.dockerfile(), "-t", image, "src/" + container.context()), null);
+                List.of("build", "-f", "src/" + container.dockerfilePath(), "-t", image, "src/" + container.context()), null);
     }
 
     /**
