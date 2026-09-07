@@ -4,3 +4,9 @@ spring:
 
 JWT_PRIVATE_KEY_PATH: file:./secrets/jwt/private-key.pem
 JWT_PUBLIC_KEY_PATH: file:./secrets/jwt/public-key.pem
+
+MAIL_FROM_NAME: Sails Self Service
+MAIL_FROM_ADDRESS: no.reply.sails.poc@gmail.com
+
+PIPELINE_EXECUTOR: skip
+BUILD_SERVICE_ACCOUNT: self-service-builder
