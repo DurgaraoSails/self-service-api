@@ -49,16 +49,22 @@ public class CloudRunDeployCommandBuilder {
         return args;
     }
 
-    /** A single container's flags are "in scope" from its own --container= until the next one. */
+    /**
+     * A single container's flags are "in scope" from its own --container= until the next one.
+     *
+     * <p>{@code --port=} is emitted for the ingress container only, and only from its own
+     * declared port — never a sidecar's. Cloud Run's rule for a multi-container service is "only
+     * one container can have the port exposed"; a sidecar's {@code port} in the manifest exists so
+     * the platform can inject {@code SVC_<NAME>_URL} for other containers to reach it over
+     * localhost, not to be handed to Cloud Run as this container's public port.
+     */
     private List<String> buildMultiContainerArgs(List<ManifestContainer> containers, Resources resources, Map<String, String> imagesByContainer) {
         List<String> args = new ArrayList<>();
         for (ManifestContainer container : containers) {
             args.add("--container=" + container.name());
             args.add("--image=" + requireImage(container, imagesByContainer));
-            if (container.port() != null) {
-                args.add("--port=" + container.port());
-            }
             if (container.role() == ContainerRole.INGRESS) {
+                args.add("--port=" + container.port());
                 addResourceArgs(resources, args);
             }
             if (!container.env().isEmpty()) {

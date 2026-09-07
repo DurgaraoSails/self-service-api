@@ -175,8 +175,11 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 				<configuration>
-					<!-- Some Windows locales report a timezone name Postgres's tzdata rejects at connect time; forces UTC instead. -->
-					<jvmArguments>-Duser.timezone=UTC</jvmArguments>
+					<!-- Some Windows locales report a timezone name Postgres's tzdata rejects at connect time; forces UTC instead.
+					     The sun-misc-unsafe-memory-access=allow flag silences JDK 24+'s startup warning about
+					     sun.misc.Unsafe, which Guava's AbstractFuture (pulled in by the GCS/auth clients)
+					     still uses internally — nothing in our own code touches Unsafe. -->
+					<jvmArguments>-Duser.timezone=UTC --sun-misc-unsafe-memory-access=allow</jvmArguments>
 				</configuration>
 			</plugin>
 			<plugin>

@@ -39,7 +39,7 @@ class CloudRunDeployCommandBuilderTest {
 
     @Test
     void producesOneContainerBlockPerManifestContainerInOrder() {
-        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
         ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "worker/Dockerfile", "worker", 9000, Map.of());
         PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
         Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
@@ -47,13 +47,30 @@ class CloudRunDeployCommandBuilderTest {
         List<String> args = builder.buildContainerArgs(manifest, images);
 
         assertThat(args).containsExactly(
-                "--container=api", "--image=img/api:1",
-                "--container=worker", "--image=img/worker:1", "--port=9000");
+                "--container=api", "--image=img/api:1", "--port=8080",
+                "--container=worker", "--image=img/worker:1");
+    }
+
+    /**
+     * Cloud Run's own rule: "only one container can have the port exposed." A sidecar's declared
+     * port exists for the platform's SVC_<NAME>_URL injection — it must never reach gcloud as
+     * this container's --port, or Cloud Run would see two ports declared for one service.
+     */
+    @Test
+    void neverEmitsPortForASidecarEvenThoughItDeclaresOne() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+        Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
+
+        List<String> args = builder.buildContainerArgs(manifest, images);
+
+        assertThat(args).doesNotContain("--port=9000");
     }
 
     @Test
     void resourcesApplyOnlyToTheIngressContainer() {
-        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
         ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
         PocManifest manifest = new PocManifest(List.of(api, worker), new Resources("2", "1Gi"));
         Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
@@ -61,8 +78,8 @@ class CloudRunDeployCommandBuilderTest {
         List<String> args = builder.buildContainerArgs(manifest, images);
 
         assertThat(args).containsExactly(
-                "--container=api", "--image=img/api:1", "--cpu=2", "--memory=1Gi",
-                "--container=worker", "--image=img/worker:1", "--port=9000");
+                "--container=api", "--image=img/api:1", "--port=8080", "--cpu=2", "--memory=1Gi",
+                "--container=worker", "--image=img/worker:1");
     }
 
     @Test

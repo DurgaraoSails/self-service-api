@@ -47,20 +47,25 @@ public record PipelineProperties(
 
         /**
          * Grants self-service-api's own service account {@code run.invoker} on the service just
-         * deployed — self-service-api is what proxies end-user traffic to a POC (there is no
-         * separate gateway service in this design), so this is the identity that must hold the
-         * grant. Requires {@code run.services.setIamPolicy}, which {@code roles/editor}
-         * deliberately excludes — switch off for a local run without that binding. The deploy is
-         * still genuinely verified; only the access grant is skipped, and self-service-api cannot
-         * reach it yet.
+         * deployed. Not needed for the default public POC ({@link #allowUnauthenticated}) — a
+         * user's browser reaches it directly, self-service-api never sits in that path. This is
+         * for the opt-out case: a POC deployed with {@code allowUnauthenticated=false}, where
+         * self-service-api still needs to reach it itself. Requires
+         * {@code run.services.setIamPolicy}, which {@code roles/editor} deliberately excludes —
+         * switch off for a local run without that binding; the deploy is still genuinely
+         * verified, only the access grant is skipped.
          */
         boolean grantApiInvoker,
 
         /**
-         * Opens the deployed service to the public internet. Also needs
-         * {@code run.services.setIamPolicy}. Off by default: the design is that only
-         * self-service-api's proxy reaches a POC. To test a deployed POC yourself without this,
-         * use an identity token — {@code gcloud run services proxy <slug> --region <region>}, or
+         * Default security model: {@code true}, meaning POCs are public. The portal iframes a
+         * POC's raw Cloud Run URL directly from the user's browser — there is no proxy in front of
+         * it — so an IAM-locked service simply cannot be reached at all, portal-launched or not.
+         * Identity is instead carried by the short-lived POC-scoped JWT minted at launch, which
+         * the POC itself verifies against this API's JWKS. Set {@code false} to lock down one
+         * specific sensitive POC; also needs {@code run.services.setIamPolicy}. A locked-down POC
+         * can still be reached with an identity token for manual testing —
+         * {@code gcloud run services proxy <slug> --region <region>}, or
          * {@code curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" <url>} —
          * which works under a project Editor/Owner role without any IAM grant.
          */

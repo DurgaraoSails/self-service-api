@@ -14,6 +14,10 @@ class ManifestValidatorTest {
         return new ManifestContainer(name, ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
     }
 
+    private static ManifestContainer ingress(String name, int port) {
+        return new ManifestContainer(name, ContainerRole.INGRESS, "Dockerfile", ".", port, Map.of());
+    }
+
     private static ManifestContainer sidecar(String name, int port) {
         return new ManifestContainer(name, ContainerRole.SIDECAR, "Dockerfile", ".", port, Map.of());
     }
@@ -27,7 +31,7 @@ class ManifestValidatorTest {
 
     @Test
     void aValidIngressPlusSidecarManifestHasNoViolations() {
-        PocManifest manifest = new PocManifest(List.of(ingress("api"), sidecar("worker", 9000)), new Resources(null, null));
+        PocManifest manifest = new PocManifest(List.of(ingress("api", 8080), sidecar("worker", 9000)), new Resources(null, null));
 
         assertThat(validator.validate(manifest)).isEmpty();
     }
@@ -46,18 +50,34 @@ class ManifestValidatorTest {
         assertThat(validator.validate(manifest)).anySatisfy(v -> assertThat(v).contains("ingress"));
     }
 
+    /**
+     * A sole ingress container deploys through the plain --image= form, which Cloud Run defaults
+     * to port 8080 for regardless — a declared port there is inert, not wrong.
+     */
     @Test
-    void rejectsAnIngressContainerThatDeclaresAPort() {
-        ManifestContainer badIngress = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
-        PocManifest manifest = new PocManifest(List.of(badIngress), new Resources(null, null));
+    void ignoresAPortDeclaredOnASoleIngressContainer() {
+        ManifestContainer ingressWithPort = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        PocManifest manifest = new PocManifest(List.of(ingressWithPort), new Resources(null, null));
 
-        assertThat(validator.validate(manifest)).anySatisfy(v -> assertThat(v).contains("must not declare a port"));
+        assertThat(validator.validate(manifest)).isEmpty();
+    }
+
+    /**
+     * Cloud Run has no default port for a multi-container service's ingress — see
+     * https://cloud.google.com/run/docs/configuring/services/containers ("there is no default
+     * port for the ingress container"). Once a sidecar exists, the ingress must declare one.
+     */
+    @Test
+    void rejectsAnIngressContainerWithNoPortWhenSidecarsExist() {
+        PocManifest manifest = new PocManifest(List.of(ingress("api"), sidecar("worker", 9000)), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).anySatisfy(v -> assertThat(v).contains("must declare a port"));
     }
 
     @Test
     void rejectsASidecarWithNoPort() {
         ManifestContainer badSidecar = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", null, Map.of());
-        PocManifest manifest = new PocManifest(List.of(ingress("api"), badSidecar), new Resources(null, null));
+        PocManifest manifest = new PocManifest(List.of(ingress("api", 8080), badSidecar), new Resources(null, null));
 
         assertThat(validator.validate(manifest)).anySatisfy(v -> assertThat(v).contains("must declare a port"));
     }
@@ -109,7 +129,9 @@ class ManifestValidatorTest {
 
         List<String> violations = validator.validate(manifest);
 
-        // Multiple-ingress, bad name, port-on-ingress, and reserved-env-var — all four caught together.
-        assertThat(violations).hasSizeGreaterThanOrEqualTo(4);
+        // Multiple-ingress, bad name, and reserved-env-var — all three caught together. (Neither
+        // container's port is a violation here: no sidecar exists, so a declared port is merely
+        // inert rather than wrong, and a missing one isn't required.)
+        assertThat(violations).hasSizeGreaterThanOrEqualTo(3);
     }
 }

@@ -196,10 +196,12 @@ public class BuildService {
     }
 
     /**
-     * Without this self-service-api can never reach what was just deployed —
-     * --no-allow-unauthenticated locks the service to nobody until something is granted. The
-     * grantee is self-service-api's own service account: it proxies end-user traffic to a POC
-     * (see the deploy pipeline docs), there is no separate gateway service in this design.
+     * Only relevant when this POC opted out of the default public model
+     * (pipeline.allow-unauthenticated=false) — without this, self-service-api itself couldn't
+     * reach what was just deployed either, since --no-allow-unauthenticated locks the service to
+     * nobody until something is granted. End users never go through self-service-api to reach a
+     * POC either way: the portal iframes a POC's Cloud Run URL directly from the browser, with no
+     * proxy in between.
      */
     private BuildStep grantApiInvokerStep(String slug) {
         return new BuildStep("gcr.io/google.com/cloudsdktool/cloud-sdk", "gcloud",
