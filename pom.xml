@@ -176,10 +176,13 @@
 				<artifactId>spring-boot-maven-plugin</artifactId>
 				<configuration>
 					<!-- Some Windows locales report a timezone name Postgres's tzdata rejects at connect time; forces UTC instead.
-					     The sun-misc-unsafe-memory-access=allow flag silences JDK 24+'s startup warning about
-					     sun.misc.Unsafe, which Guava's AbstractFuture (pulled in by the GCS/auth clients)
-					     still uses internally — nothing in our own code touches Unsafe. -->
-					<jvmArguments>-Duser.timezone=UTC --sun-misc-unsafe-memory-access=allow</jvmArguments>
+					     Do not add the sun-misc-unsafe-memory-access option here unconditionally: it silences
+					     JDK 24+'s sun.misc.Unsafe warning, but it does not exist before JDK 23 and this project
+					     targets java.version 21, where an unrecognized VM option stops the JVM starting at all.
+					     If that warning is worth silencing, gate it behind a profile activated by jdk [23,).
+					     (XML comments cannot contain a double hyphen, which is why the option is named in
+					     prose here rather than written out as a flag.) -->
+					<jvmArguments>-Duser.timezone=UTC</jvmArguments>
 				</configuration>
 			</plugin>
 			<plugin>
