@@ -179,10 +179,15 @@ pipeline:
   # cloud-build only.
   build-timeout: ${PIPELINE_BUILD_TIMEOUT:20m}
   build-poll-interval: ${PIPELINE_BUILD_POLL_INTERVAL:10s}
+  # This self-service-api deployment's own externally-reachable URL — injected as PLATFORM_API_URL
+  # into every deployed POC container so its backend can verify launch JWTs against this API's
+  # JWKS endpoint. Cloud Run has no way to tell a service its own URL, so this must be set by hand
+  # once it's known. Only correct as the localhost default when self-service-api itself runs locally.
+  platform-api-url: ${PLATFORM_API_URL:http://localhost:8080}
 
 manifest:
   # Env vars a container's poc.yaml entry may never set — the platform owns these directly.
-  reserved-env-names: ${MANIFEST_RESERVED_ENV_NAMES:PORT,POC_SLUG}
+  reserved-env-names: ${MANIFEST_RESERVED_ENV_NAMES:PORT,POC_SLUG,PLATFORM_API_URL}
   # Env var name prefixes a container's poc.yaml entry may never set — reserved for
   # platform-injected values (e.g. SVC_<NAME>_URL for reaching a sidecar by name).
   reserved-env-prefixes: ${MANIFEST_RESERVED_ENV_PREFIXES:SAILS_,SVC_}

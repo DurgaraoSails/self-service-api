@@ -56,7 +56,24 @@ public class ManifestValidator {
             validateEnv(container, violations);
         }
 
+        validateScaling(manifest.scaling(), violations);
+
         return violations;
+    }
+
+    /** Both flow straight into --min-instances/--max-instances — validated here rather than as a gcloud usage error partway through a deploy. */
+    private void validateScaling(Scaling scaling, List<String> violations) {
+        Integer min = scaling.min();
+        Integer max = scaling.max();
+        if (min != null && min < 0) {
+            violations.add("scaling.min must be zero or greater, got " + min);
+        }
+        if (max != null && max < 1) {
+            violations.add("scaling.max must be at least 1, got " + max);
+        }
+        if (min != null && max != null && min > max) {
+            violations.add("scaling.min (" + min + ") must not exceed scaling.max (" + max + ")");
+        }
     }
 
     private void validateName(ManifestContainer container, Set<String> seenNames, List<String> violations) {

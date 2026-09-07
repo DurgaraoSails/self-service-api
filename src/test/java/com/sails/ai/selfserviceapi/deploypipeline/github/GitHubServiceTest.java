@@ -39,7 +39,7 @@ class GitHubServiceTest {
         server = MockRestServiceServer.bindTo(builder).build();
         PipelineProperties properties = new PipelineProperties(
                 "local", "", "", "ghp_test", false, false, "", Duration.ofMinutes(20),
-                Duration.ofMinutes(20), Duration.ofSeconds(10));
+                Duration.ofMinutes(20), Duration.ofSeconds(10), "");
         gitHubService = new GitHubService(builder.build(), properties);
     }
 
@@ -112,7 +112,7 @@ class GitHubServiceTest {
                 .build();
         PipelineProperties noToken = new PipelineProperties(
                 "local", "", "", "", false, false, "", Duration.ofMinutes(20),
-                Duration.ofMinutes(20), Duration.ofSeconds(10));
+                Duration.ofMinutes(20), Duration.ofSeconds(10), "");
 
         assertThatThrownBy(() -> new GitHubService(client, noToken).getDefaultBranch(REPO))
                 .isInstanceOf(GitHubApiException.class)

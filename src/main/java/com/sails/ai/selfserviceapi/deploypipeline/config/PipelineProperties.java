@@ -81,7 +81,18 @@ public record PipelineProperties(
         Duration buildTimeout,
 
         /** cloud-build only. Gap between Cloud Build status checks. */
-        Duration buildPollInterval
+        Duration buildPollInterval,
+
+        /**
+         * This deployment of self-service-api's own externally-reachable URL — injected as
+         * {@code PLATFORM_API_URL} into every container a manifest declares, so a POC's backend
+         * can reach this API's JWKS endpoint to verify the POC-scoped JWT it was launched with.
+         * Cloud Run gives a service no way to learn its own URL from inside itself, so this must
+         * be set explicitly once the URL is known (chicken-and-egg only on the very first deploy).
+         * Defaults to the local dev server's own address, which is only ever correct when a POC
+         * built with {@code pipeline.executor=local} also runs against a local self-service-api.
+         */
+        String platformApiUrl
 ) {
 
     public boolean isCloudBuild() {
@@ -102,5 +113,9 @@ public record PipelineProperties(
 
     public boolean usesCustomBuildServiceAccount() {
         return buildServiceAccount != null && !buildServiceAccount.isBlank();
+    }
+
+    public String platformApiUrl() {
+        return platformApiUrl == null || platformApiUrl.isBlank() ? "http://localhost:8080" : platformApiUrl;
     }
 }

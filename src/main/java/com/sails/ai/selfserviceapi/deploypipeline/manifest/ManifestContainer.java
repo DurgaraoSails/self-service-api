@@ -24,6 +24,19 @@ public record ManifestContainer(
         String dockerfile,
         String context,
         Integer port,
-        Map<String, String> env
+        Map<String, String> env,
+
+        /**
+         * An HTTP path (e.g. {@code /healthz}) this container answers on its declared port.
+         * {@code null} means the manifest declared none — not yet wired to a Cloud Run startup/
+         * liveness probe, so it has no effect on the deploy today; kept so it survives parsing
+         * instead of being silently dropped, for when that wiring is added.
+         */
+        String health
 ) {
+
+    /** Pre-{@link #health} call sites: defaults it to {@code null} (no probe declared). */
+    public ManifestContainer(String name, ContainerRole role, String dockerfile, String context, Integer port, Map<String, String> env) {
+        this(name, role, dockerfile, context, port, env, null);
+    }
 }

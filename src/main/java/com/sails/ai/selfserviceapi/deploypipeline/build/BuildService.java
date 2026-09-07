@@ -7,6 +7,7 @@ import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.Scaling;
 import com.sails.ai.selfserviceapi.deploypipeline.run.CloudRunDeployCommandBuilder;
 import java.time.Duration;
 import java.time.Instant;
@@ -191,8 +192,19 @@ public class BuildService {
         args.add("--region=" + gcp.region());
         args.add("--service-account=" + gcp.serviceAccountEmail("poc-runtime"));
         args.add(properties.allowUnauthenticated() ? "--allow-unauthenticated" : "--no-allow-unauthenticated");
-        args.addAll(deployCommandBuilder.buildContainerArgs(manifest, imagesByContainer));
+        addScalingArgs(manifest.scaling(), args);
+        args.addAll(deployCommandBuilder.buildContainerArgs(slug, manifest, imagesByContainer));
         return new BuildStep("gcr.io/google.com/cloudsdktool/cloud-sdk", "gcloud", args, null);
+    }
+
+    /** Service-level, like region/service-account above — never scoped under a --container=. Absent unless the manifest declared one. */
+    private void addScalingArgs(Scaling scaling, List<String> args) {
+        if (scaling.min() != null) {
+            args.add("--min-instances=" + scaling.min());
+        }
+        if (scaling.max() != null) {
+            args.add("--max-instances=" + scaling.max());
+        }
     }
 
     /**

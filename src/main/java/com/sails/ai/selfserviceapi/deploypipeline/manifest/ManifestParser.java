@@ -51,7 +51,9 @@ public class ManifestParser {
         }
 
         Resources resources = parseResources((Map<String, Object>) root.get("resources"));
-        return new PocManifest(containers, resources);
+        Scaling scaling = parseScaling((Map<String, Object>) root.get("scaling"));
+        PlatformConfig platform = parsePlatform((Map<String, Object>) root.get("platform"));
+        return new PocManifest(containers, resources, scaling, platform);
     }
 
     private ManifestContainer parseContainer(Map<String, Object> map) {
@@ -61,7 +63,8 @@ public class ManifestParser {
         String context = optionalString(map, "context", DEFAULT_CONTEXT);
         Integer port = optionalInt(map, "port");
         Map<String, String> env = parseEnv(map.get("env"), name);
-        return new ManifestContainer(name, role, dockerfile, context, port, env);
+        String health = optionalString(map, "health", null);
+        return new ManifestContainer(name, role, dockerfile, context, port, env, health);
     }
 
     private ContainerRole parseRole(String raw, String containerName) {
@@ -91,6 +94,31 @@ public class ManifestParser {
             return new Resources(null, null);
         }
         return new Resources(optionalString(map, "cpu", null), optionalString(map, "memory", null));
+    }
+
+    private Scaling parseScaling(Map<String, Object> map) {
+        if (map == null) {
+            return Scaling.none();
+        }
+        return new Scaling(optionalInt(map, "min"), optionalInt(map, "max"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private PlatformConfig parsePlatform(Map<String, Object> map) {
+        if (map == null) {
+            return PlatformConfig.none();
+        }
+        boolean database = optionalBoolean((Map<String, Object>) map.get("database"));
+        boolean files = optionalBoolean((Map<String, Object>) map.get("files"));
+        return new PlatformConfig(database, files);
+    }
+
+    private boolean optionalBoolean(Map<String, Object> map) {
+        if (map == null) {
+            return false;
+        }
+        Object value = map.get("enabled");
+        return value instanceof Boolean b && b;
     }
 
     private String requireString(Map<String, Object> map, String key) {

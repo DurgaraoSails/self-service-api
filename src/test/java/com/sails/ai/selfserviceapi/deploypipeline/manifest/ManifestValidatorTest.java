@@ -122,6 +122,34 @@ class ManifestValidatorTest {
     }
 
     @Test
+    void acceptsAManifestWithValidScaling() {
+        PocManifest manifest = new PocManifest(List.of(ingress("app")), new Resources(null, null), new Scaling(1, 5), PlatformConfig.none());
+
+        assertThat(validator.validate(manifest)).isEmpty();
+    }
+
+    @Test
+    void rejectsANegativeScalingMin() {
+        PocManifest manifest = new PocManifest(List.of(ingress("app")), new Resources(null, null), new Scaling(-1, 5), PlatformConfig.none());
+
+        assertThat(validator.validate(manifest)).anySatisfy(v -> assertThat(v).contains("scaling.min"));
+    }
+
+    @Test
+    void rejectsAScalingMaxOfZero() {
+        PocManifest manifest = new PocManifest(List.of(ingress("app")), new Resources(null, null), new Scaling(0, 0), PlatformConfig.none());
+
+        assertThat(validator.validate(manifest)).anySatisfy(v -> assertThat(v).contains("scaling.max"));
+    }
+
+    @Test
+    void rejectsAScalingMinGreaterThanMax() {
+        PocManifest manifest = new PocManifest(List.of(ingress("app")), new Resources(null, null), new Scaling(5, 1), PlatformConfig.none());
+
+        assertThat(validator.validate(manifest)).anySatisfy(v -> assertThat(v).contains("must not exceed"));
+    }
+
+    @Test
     void reportsEveryViolationInOnePassRatherThanFailingFast() {
         ManifestContainer badIngress = new ManifestContainer("Bad Name", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of("PORT", "x"));
         ManifestContainer alsoIngress = new ManifestContainer("also-bad", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());

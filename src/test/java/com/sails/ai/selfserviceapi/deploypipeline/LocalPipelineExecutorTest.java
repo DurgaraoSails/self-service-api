@@ -14,6 +14,8 @@ import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.Resources;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.Scaling;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PlatformConfig;
 import com.sails.ai.selfserviceapi.deploypipeline.run.CloudRunDeployCommandBuilder;
 import com.sails.ai.selfserviceapi.deploypipeline.run.CloudRunService;
 import java.time.Duration;
@@ -35,10 +37,11 @@ class LocalPipelineExecutorTest {
     private final CloudRunService cloudRunService = mock(CloudRunService.class);
     private final GcpProperties gcp = new GcpProperties("proj", "us-central1", "prod");
     private final PipelineProperties properties = new PipelineProperties(
-            "local", null, null, null, false, true, null, Duration.ofMinutes(10), Duration.ofMinutes(10), Duration.ofSeconds(5));
+            "local", null, null, null, false, true, null, Duration.ofMinutes(10), Duration.ofMinutes(10), Duration.ofSeconds(5),
+            "https://self-service-api.example.com");
 
     private final LocalPipelineExecutor executor = new LocalPipelineExecutor(
-            processRunner, gcp, properties, cloudRunService, new CloudRunDeployCommandBuilder());
+            processRunner, gcp, properties, cloudRunService, new CloudRunDeployCommandBuilder(properties));
 
     @Test
     void putsEveryServiceLevelFlagBeforeTheFirstContainerFlag() {
@@ -59,5 +62,21 @@ class LocalPipelineExecutorTest {
         assertThat(beforeFirstContainer).contains(
                 "--region=us-central1", "--service-account=poc-runtime-prod@proj.iam.gserviceaccount.com",
                 "--allow-unauthenticated");
+    }
+
+    @Test
+    void putsMinAndMaxInstancesBeforeTheFirstContainerFlagWhenTheManifestDeclaresScaling() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null), new Scaling(1, 5), PlatformConfig.none());
+        when(cloudRunService.getServiceUrl("my-poc")).thenReturn("https://my-poc-abc.run.app");
+
+        executor.deploy("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        ArgumentCaptor<String[]> commandCaptor = ArgumentCaptor.forClass(String[].class);
+        verify(processRunner).run(isNull(), any(Duration.class), commandCaptor.capture());
+        List<String> args = List.of(commandCaptor.getValue());
+
+        assertThat(args).contains("--min-instances=1", "--max-instances=5");
+        assertThat(args.indexOf("--min-instances=1")).isLessThan(args.indexOf("--image=img/app:1"));
     }
 }

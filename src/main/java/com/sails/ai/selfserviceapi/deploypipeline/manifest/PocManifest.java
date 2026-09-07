@@ -8,7 +8,12 @@ import java.util.List;
  * time: either parsed from its own poc.yaml, or {@link ManifestService}'s synthesized single
  * "app" ingress container default for a repo with none.
  */
-public record PocManifest(List<ManifestContainer> containers, Resources resources) {
+public record PocManifest(List<ManifestContainer> containers, Resources resources, Scaling scaling, PlatformConfig platform) {
+
+    /** Pre-{@link #scaling}/{@link #platform} call sites: defaults both to "none declared". */
+    public PocManifest(List<ManifestContainer> containers, Resources resources) {
+        this(containers, resources, Scaling.none(), PlatformConfig.none());
+    }
 
     public ManifestContainer ingress() {
         return containers.stream()
