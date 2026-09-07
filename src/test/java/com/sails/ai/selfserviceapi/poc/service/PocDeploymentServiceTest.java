@@ -101,7 +101,7 @@ class PocDeploymentServiceTest {
 
     private static PocManifest twoContainerManifest() {
         ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
-        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", "worker", 9000, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "worker/Dockerfile", "worker", 9000, Map.of());
         return new PocManifest(List.of(api, worker), new Resources(null, null));
     }
 

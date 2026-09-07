@@ -7,12 +7,12 @@ import java.util.Map;
  * resolved (defaulted by {@link ManifestParser}, never left null) so nothing downstream needs to
  * repeat the "Dockerfile"/"." default.
  *
- * <p>{@code dockerfile} is relative to {@code context}, matching Docker Compose's own
- * {@code build.dockerfile}/{@code build.context} convention — a container whose context is
- * {@code worker} and whose Dockerfile is at {@code worker/Dockerfile} writes {@code context:
- * worker} and just {@code dockerfile: Dockerfile} (the default), not {@code worker/Dockerfile}.
- * Use {@link #dockerfilePath()} rather than the raw {@code dockerfile} field wherever a path
- * relative to the repo root is actually needed (i.e. everywhere a build step runs).
+ * <p>Both {@code dockerfile} and {@code context} are independent paths relative to the repo
+ * root — NOT {@code dockerfile} relative to {@code context}. A container whose Dockerfile lives at
+ * {@code apps/frontend/Dockerfile} writes exactly that as {@code dockerfile}, alongside whatever
+ * {@code context} it needs (typically the same directory), matching the platform's established
+ * {@code poc.yaml} contract (see {@code poc-platform-sdk}'s schema) that real POC repos are
+ * already written against.
  *
  * <p>Deliberately has no {@code repo} field — every container this phase builds comes from the
  * primary repo. Adding an optional repo reference later, for a future cross-repository phase, is
@@ -26,9 +26,4 @@ public record ManifestContainer(
         Integer port,
         Map<String, String> env
 ) {
-
-    /** {@code dockerfile} resolved against {@code context}, so callers never re-derive this joining themselves. */
-    public String dockerfilePath() {
-        return ".".equals(context) ? dockerfile : context + "/" + dockerfile;
-    }
 }
