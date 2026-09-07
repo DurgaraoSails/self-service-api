@@ -177,13 +177,21 @@ public class BuildService {
         return new AvailableSecrets(List.of(new SecretManagerSecret(
                 gcp.secretVersionName(properties.githubTokenSecretId()), "GITHUB_TOKEN")));
     }
-
+    
+    /**
+     * gcloud requires every non-container-level flag (--region, --service-account,
+     * --allow-unauthenticated) to precede the first --container= flag: once a --container= flag
+     * appears, anything after it is parsed as scoped to that container, and gcloud rejects a
+     * flag it doesn't recognize as container-level with a usage error (exit code 2). A
+     * single-container manifest never emits --container= at all, so this ordering is harmless
+     * there too.
+     */
     private BuildStep deployStep(String slug, PocManifest manifest, Map<String, String> imagesByContainer) {
         List<String> args = new ArrayList<>(List.of("run", "deploy", slug));
-        args.addAll(deployCommandBuilder.buildContainerArgs(manifest, imagesByContainer));
         args.add("--region=" + gcp.region());
         args.add("--service-account=" + gcp.serviceAccountEmail("poc-runtime"));
         args.add(properties.allowUnauthenticated() ? "--allow-unauthenticated" : "--no-allow-unauthenticated");
+        args.addAll(deployCommandBuilder.buildContainerArgs(manifest, imagesByContainer));
         return new BuildStep("gcr.io/google.com/cloudsdktool/cloud-sdk", "gcloud", args, null);
     }
 
