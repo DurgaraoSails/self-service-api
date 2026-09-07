@@ -33,8 +33,8 @@ class JwtServiceTest {
 
         JwtProperties properties = new JwtProperties(
                 "self-service-api", "unused", "unused",
-                Duration.ofMinutes(30), Duration.ofDays(7), Duration.ofMinutes(15),"1");
-        keySet = new JwtKeySet(publicKey);
+                Duration.ofMinutes(30), Duration.ofDays(7), Duration.ofMinutes(15), "1", List.of());
+        keySet = new JwtKeySet(publicKey, List.of());
         jwtService = new JwtService((RSAPrivateKey) keyPair.getPrivate(), properties, keySet);
     }
 

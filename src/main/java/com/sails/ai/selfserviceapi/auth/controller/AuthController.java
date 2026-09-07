@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.auth.controller;
 
+import com.sails.ai.selfserviceapi.auth.config.DevTokenIssuanceProperties;
 import com.sails.ai.selfserviceapi.auth.service.AuthService;
 import com.sails.ai.selfserviceapi.auth.service.LoginResult;
 import com.sails.ai.selfserviceapi.auth.service.OtpService;
@@ -19,7 +20,6 @@ import com.sails.ai.selfserviceapi.generated.model.TokenResponse;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.service.UserResponseMapper;
 import com.sails.ai.selfserviceapi.user.service.UserService;
-import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,15 +32,16 @@ public class AuthController implements AuthApi {
     private final AuthService authService;
     private final UserService userService;
     private final RegistrationVerificationService registrationVerificationService;
-    private final Environment environment;
+    private final DevTokenIssuanceProperties devTokenIssuanceProperties;
 
     public AuthController(OtpService otpService, AuthService authService, UserService userService,
-                           RegistrationVerificationService registrationVerificationService, Environment environment) {
+                           RegistrationVerificationService registrationVerificationService,
+                           DevTokenIssuanceProperties devTokenIssuanceProperties) {
         this.otpService = otpService;
         this.authService = authService;
         this.userService = userService;
         this.registrationVerificationService = registrationVerificationService;
-        this.environment = environment;
+        this.devTokenIssuanceProperties = devTokenIssuanceProperties;
     }
 
     @Override
@@ -94,11 +95,12 @@ public class AuthController implements AuthApi {
 
     @Override
     public ResponseEntity<TokenResponse> issueTokens(IssueTokenRequest issueTokenRequest) {
-        // Interim, pre-OTP login: mints real tokens for any already-registered, ACTIVE
-        // email with no code verification. Disabled under the "prod" profile so it can
-        // never act as a production auth bypass. Now that /auth/otp/verify issues real
-        // tokens, this is mainly useful for quick manual testing.
-        if (environment.matchesProfiles("prod")) {
+        // Interim, pre-OTP login: mints real tokens for any already-registered, ACTIVE email with
+        // no code verification. Gated on a positive, off-by-default flag (see
+        // DevTokenIssuanceProperties) rather than "not prod" — a missing/misnamed profile then
+        // leaves this 404, not live. Now that /auth/otp/verify issues real tokens, this is mainly
+        // useful for quick manual testing.
+        if (!devTokenIssuanceProperties.enabled()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 

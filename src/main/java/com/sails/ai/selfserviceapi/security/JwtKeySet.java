@@ -5,19 +5,22 @@ import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.RSAKey;
 import java.security.interfaces.RSAPublicKey;
+import java.util.List;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Component;
 
 /**
- * The signing key's public half, in JWK form, plus the key id that identifies it.
+ * The signing key's public half, in JWK form, plus the key id that identifies it — and, for a
+ * gradual key rotation, any number of additional keys published for verification only.
  *
- * <p>One object owns both because the {@code kid} in an issued token's header and the {@code kid}
- * published at {@code /.well-known/jwks.json} have to be the same string — a verifier selects its
- * key by matching them, so if they ever disagreed every POC would fail to verify every token, and
- * nothing else would look wrong.
+ * <p>One object owns the signing key's JWK and kid together because the {@code kid} in an issued
+ * token's header and the {@code kid} published at {@code /.well-known/jwks.json} have to be the
+ * same string — a verifier selects its key by matching them, so if they ever disagreed every POC
+ * would fail to verify every token, and nothing else would look wrong.
  *
- * <p>The id is the key's RFC 7638 thumbprint rather than a configured name. A thumbprint is derived
- * from the key material itself, so a new key gets a new id automatically: there is no step in a
- * rotation where someone must remember to change it, and no way to publish two different keys
+ * <p>Every key's id is its RFC 7638 thumbprint rather than a configured name. A thumbprint is
+ * derived from the key material itself, so a new key gets a new id automatically: there is no step
+ * in a rotation where someone must remember to change it, and no way to publish two different keys
  * under one id.
  *
  * <p>Nimbus is already on the classpath — Spring Security's resource server depends on it — so
@@ -27,16 +30,25 @@ import org.springframework.stereotype.Component;
 public class JwtKeySet {
 
     private final RSAKey publicJwk;
+    private final List<RSAKey> allPublicJwks;
 
-    public JwtKeySet(RSAPublicKey jwtPublicKey) {
+    public JwtKeySet(RSAPublicKey jwtPublicKey, List<RSAPublicKey> additionalJwtPublicKeys) {
+        this.publicJwk = toJwk(jwtPublicKey);
+        this.allPublicJwks = Stream.concat(
+                        Stream.of(this.publicJwk),
+                        additionalJwtPublicKeys.stream().map(JwtKeySet::toJwk))
+                .toList();
+    }
+
+    private static RSAKey toJwk(RSAPublicKey key) {
         try {
-            this.publicJwk = new RSAKey.Builder(jwtPublicKey)
+            return new RSAKey.Builder(key)
                     .keyUse(KeyUse.SIGNATURE)
                     .algorithm(JWSAlgorithm.RS256)
                     .keyIDFromThumbprint()
                     .build();
         } catch (JOSEException e) {
-            throw new IllegalStateException("Failed to derive a key id from the JWT public key", e);
+            throw new IllegalStateException("Failed to derive a key id from a JWT public key", e);
         }
     }
 
@@ -48,5 +60,14 @@ public class JwtKeySet {
     /** Public material only — {@code RSAKey.Builder(RSAPublicKey)} cannot carry a private half. */
     public RSAKey publicJwk() {
         return publicJwk;
+    }
+
+    /**
+     * Everything JWKS should publish: the current signing key plus any keys kept around purely so
+     * tokens signed by a previous or not-yet-active key still verify during a rotation's grace
+     * window (see {@link JwtProperties#additionalPublicKeyPaths()}).
+     */
+    public List<RSAKey> allPublicJwks() {
+        return allPublicJwks;
     }
 }

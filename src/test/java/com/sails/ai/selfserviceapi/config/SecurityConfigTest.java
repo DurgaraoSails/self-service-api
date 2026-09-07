@@ -189,13 +189,13 @@ class SecurityConfigTest {
 
         @Bean
         JwtKeySet jwtKeySet(RSAPublicKey jwtPublicKey) {
-            return new JwtKeySet(jwtPublicKey);
+            return new JwtKeySet(jwtPublicKey, List.of());
         }
 
         @Bean
         JwtProperties jwtProperties() {
             return new JwtProperties("self-service-api", "unused", "unused",
-                    Duration.ofMinutes(30), Duration.ofDays(7), Duration.ofMinutes(15), "1");
+                    Duration.ofMinutes(30), Duration.ofDays(7), Duration.ofMinutes(15), "1", List.of());
         }
 
         @Bean
