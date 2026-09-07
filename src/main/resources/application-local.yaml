@@ -1,0 +1,6 @@
+spring:
+  config:
+    import: optional:file:./secrets/application-local-secrets.yaml
+
+JWT_PRIVATE_KEY_PATH: file:./secrets/jwt/private-key.pem
+JWT_PUBLIC_KEY_PATH: file:./secrets/jwt/public-key.pem

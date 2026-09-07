@@ -1,9 +1,4 @@
 spring:
-  # Local-dev-only SMTP secrets (gitignored, generated locally — see secrets/README.md).
-  # Absent in prod/CI, so real deploys still rely purely on SMTP_USERNAME/SMTP_PASSWORD env vars.
-  config:
-    import: optional:file:./secrets/smtp.properties
-
   application:
     name: self-service-api
 
@@ -58,8 +53,8 @@ registration-verification:
 
 jwt:
   issuer: ${JWT_ISSUER:self-service-api}
-  private-key-path: ${JWT_PRIVATE_KEY_PATH:file:./secrets/jwt/private-key.pem}
-  public-key-path: ${JWT_PUBLIC_KEY_PATH:file:./secrets/jwt/public-key.pem}
+  private-key-path: ${JWT_PRIVATE_KEY_PATH}
+  public-key-path: ${JWT_PUBLIC_KEY_PATH}
   access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:30m}
   refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:7d}
 

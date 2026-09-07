@@ -12,4 +12,6 @@ files:
   # TODO: confirm the bucket name with ops before deploy. It does not exist yet — user files get
   # their own bucket rather than sharing the deploy pipeline's (docs/specs/file-management.md).
   # Startup fails with storage=gcs and no bucket, deliberately.
-  bucket: ${FILE_STORAGE_BUCKET:}
+  bucket: ${FILE_STORAGE_BUCKET:sails-agenthub-poc-files}
+
+PLATFORM_API_URL: https://self-service-api-471182745065
