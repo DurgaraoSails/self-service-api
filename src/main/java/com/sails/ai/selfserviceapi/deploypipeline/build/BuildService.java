@@ -177,7 +177,7 @@ public class BuildService {
         return new AvailableSecrets(List.of(new SecretManagerSecret(
                 gcp.secretVersionName(properties.githubTokenSecretId()), "GITHUB_TOKEN")));
     }
-
+    
     /**
      * gcloud requires every non-container-level flag (--region, --service-account,
      * --allow-unauthenticated) to precede the first --container= flag: once a --container= flag
