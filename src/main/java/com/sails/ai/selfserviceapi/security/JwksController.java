@@ -32,18 +32,24 @@ public class JwksController implements WellKnownApi {
 
     @Override
     public ResponseEntity<JwkSet> getJwks() {
-        RSAKey key = jwtKeySet.publicJwk();
+        // The current signing key plus, during a rotation's grace window, any keys kept around
+        // purely so a not-yet-active or just-retired key's tokens still verify (see
+        // JwtProperties#additionalPublicKeyPaths). Every entry here is a real published key
+        // regardless of why it's here — a verifier just matches on kid.
+        List<Jwk> jwks = jwtKeySet.allPublicJwks().stream().map(JwksController::toJwk).toList();
 
-        Jwk jwk = new Jwk(
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.maxAge(CACHE_MAX_AGE).cachePublic())
+                .body(new JwkSet(jwks));
+    }
+
+    private static Jwk toJwk(RSAKey key) {
+        return new Jwk(
                 key.getKeyType().getValue(),
                 key.getKeyID(),
                 key.getModulus().toString(),
                 key.getPublicExponent().toString())
                 .use(key.getKeyUse().identifier())
                 .alg(key.getAlgorithm().getName());
-
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.maxAge(CACHE_MAX_AGE).cachePublic())
-                .body(new JwkSet(List.of(jwk)));
     }
 }

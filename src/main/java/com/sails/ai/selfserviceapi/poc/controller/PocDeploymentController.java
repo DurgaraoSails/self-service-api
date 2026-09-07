@@ -1,7 +1,12 @@
 package com.sails.ai.selfserviceapi.poc.controller;
 
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.generated.api.DeploymentApi;
+import com.sails.ai.selfserviceapi.generated.model.ManifestContainerRole;
 import com.sails.ai.selfserviceapi.generated.model.PocDeploymentResponse;
+import com.sails.ai.selfserviceapi.generated.model.PocManifestPreviewContainer;
+import com.sails.ai.selfserviceapi.generated.model.PocManifestPreviewResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSourceRepositoryResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocVersionResponse;
@@ -11,6 +16,8 @@ import com.sails.ai.selfserviceapi.generated.model.UpstreamCommit;
 import com.sails.ai.selfserviceapi.poc.config.DeploymentWebhookProperties;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.entity.PocDeployment;
+import com.sails.ai.selfserviceapi.poc.entity.PocVersion;
+import com.sails.ai.selfserviceapi.poc.entity.PocVersionContainer;
 import com.sails.ai.selfserviceapi.poc.exception.InvalidWebhookSecretException;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
@@ -36,12 +43,14 @@ public class PocDeploymentController implements DeploymentApi {
     private final PocDeploymentService pocDeploymentService;
     private final PocService pocService;
     private final DeploymentWebhookProperties webhookProperties;
+    private final PocDeploymentResponseMapper mapper;
 
     public PocDeploymentController(PocDeploymentService pocDeploymentService, PocService pocService,
-                                    DeploymentWebhookProperties webhookProperties) {
+                                    DeploymentWebhookProperties webhookProperties, PocDeploymentResponseMapper mapper) {
         this.pocDeploymentService = pocDeploymentService;
         this.pocService = pocService;
         this.webhookProperties = webhookProperties;
+        this.mapper = mapper;
     }
 
     @Override
@@ -49,17 +58,22 @@ public class PocDeploymentController implements DeploymentApi {
     public ResponseEntity<PocDeploymentResponse> deployNewVersion(Long id) {
         PocDeployment deployment = pocDeploymentService.deployNewVersion(id, CurrentUser.id());
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(PocDeploymentResponseMapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
+                .body(mapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<PocVersionResponse>> getPocVersions(Long id) {
         Poc poc = pocService.getById(id);
-        List<PocVersionResponse> versions = pocDeploymentService.listVersions(id).stream()
-                .map(version -> PocDeploymentResponseMapper.toVersionResponse(version, version.getId().equals(poc.getActiveVersionId())))
+        List<PocVersion> versions = pocDeploymentService.listVersions(id);
+        Map<Long, List<PocVersionContainer>> containersByVersionId = pocDeploymentService.containersByVersionId(
+                versions.stream().map(PocVersion::getId).toList());
+
+        List<PocVersionResponse> responses = versions.stream()
+                .map(version -> mapper.toVersionResponse(version, version.getId().equals(poc.getActiveVersionId()),
+                        containersByVersionId.get(version.getId())))
                 .toList();
-        return ResponseEntity.ok(versions);
+        return ResponseEntity.ok(responses);
     }
 
     @Override
@@ -67,14 +81,14 @@ public class PocDeploymentController implements DeploymentApi {
     public ResponseEntity<PocDeploymentResponse> redeployPocVersion(Long id, Long versionId) {
         PocDeployment deployment = pocDeploymentService.redeployVersion(id, versionId, CurrentUser.id());
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(PocDeploymentResponseMapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
+                .body(mapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<PocDeploymentResponse>> getPocDeployments(Long id) {
         List<PocDeploymentResponse> deployments = pocDeploymentService.listDeployments(id).stream()
-                .map(deployment -> PocDeploymentResponseMapper.toDeploymentResponse(deployment, versionLabelOf(deployment)))
+                .map(deployment -> mapper.toDeploymentResponse(deployment, versionLabelOf(deployment)))
                 .toList();
         return ResponseEntity.ok(deployments);
     }
@@ -83,7 +97,7 @@ public class PocDeploymentController implements DeploymentApi {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocDeploymentResponse> getPocDeploymentById(UUID deploymentId) {
         PocDeployment deployment = pocDeploymentService.getDeploymentById(deploymentId);
-        return ResponseEntity.ok(PocDeploymentResponseMapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
+        return ResponseEntity.ok(mapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
     }
 
     @Override
@@ -91,7 +105,22 @@ public class PocDeploymentController implements DeploymentApi {
     public ResponseEntity<PocDeploymentResponse> retryDeployment(UUID deploymentId) {
         PocDeployment retry = pocDeploymentService.retryDeployment(deploymentId, CurrentUser.id());
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(PocDeploymentResponseMapper.toDeploymentResponse(retry, versionLabelOf(retry)));
+                .body(mapper.toDeploymentResponse(retry, versionLabelOf(retry)));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PocManifestPreviewResponse> getManifestPreview(Long id) {
+        PocManifest manifest = pocDeploymentService.previewManifest(id);
+        List<PocManifestPreviewContainer> containers = manifest.containers().stream()
+                .map(this::toPreviewContainer)
+                .toList();
+        return ResponseEntity.ok(new PocManifestPreviewResponse(containers));
+    }
+
+    private PocManifestPreviewContainer toPreviewContainer(ManifestContainer container) {
+        return new PocManifestPreviewContainer(container.name(), ManifestContainerRole.fromValue(container.role().name()))
+                .port(container.port());
     }
 
     @Override
@@ -112,7 +141,7 @@ public class PocDeploymentController implements DeploymentApi {
                 reportDeploymentStatusRequest.getLogsUrl(),
                 reportDeploymentStatusRequest.getErrorMessage()
         );
-        return ResponseEntity.ok(PocDeploymentResponseMapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
+        return ResponseEntity.ok(mapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
     }
 
     @Override

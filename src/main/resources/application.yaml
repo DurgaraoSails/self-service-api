@@ -162,6 +162,16 @@ pipeline:
   build-timeout: ${PIPELINE_BUILD_TIMEOUT:20m}
   build-poll-interval: ${PIPELINE_BUILD_POLL_INTERVAL:10s}
 
+manifest:
+  # Env vars a container's poc.yaml entry may never set — the platform owns these directly.
+  reserved-env-names: ${MANIFEST_RESERVED_ENV_NAMES:PORT,POC_SLUG}
+  # Env var name prefixes a container's poc.yaml entry may never set — reserved for
+  # platform-injected values (e.g. SVC_<NAME>_URL for reaching a sidecar by name).
+  reserved-env-prefixes: ${MANIFEST_RESERVED_ENV_PREFIXES:SAILS_,SVC_}
+  # Cloud Run's own per-service container limit, checked here rather than surfacing later as a
+  # gcloud error partway through a deploy.
+  max-containers: ${MANIFEST_MAX_CONTAINERS:8}
+
 app:
   mail:
     from-address: ${MAIL_FROM_ADDRESS}

@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.util.List;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,19 +26,39 @@ public class JwtKeyConfig {
 
     @Bean
     public RSAPrivateKey jwtPrivateKey() {
-        try (InputStream in = resourceLoader.getResource(jwtProperties.privateKeyPath()).getInputStream()) {
-            return RsaKeyConverters.pkcs8().convert(in);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to load JWT private key from " + jwtProperties.privateKeyPath(), e);
-        }
+        return loadPrivateKey(jwtProperties.privateKeyPath());
     }
 
     @Bean
     public RSAPublicKey jwtPublicKey() {
-        try (InputStream in = resourceLoader.getResource(jwtProperties.publicKeyPath()).getInputStream()) {
+        return loadPublicKey(jwtProperties.publicKeyPath());
+    }
+
+    /**
+     * Verification-only keys published in JWKS alongside {@link #jwtPublicKey()} — see
+     * {@link JwtProperties#additionalPublicKeyPaths()} for how these are used during a rotation.
+     * Empty by default, in which case JWKS behaves exactly as it did before rotation support.
+     */
+    @Bean
+    public List<RSAPublicKey> additionalJwtPublicKeys() {
+        return jwtProperties.additionalPublicKeyPaths().stream()
+                .map(this::loadPublicKey)
+                .toList();
+    }
+
+    private RSAPrivateKey loadPrivateKey(String path) {
+        try (InputStream in = resourceLoader.getResource(path).getInputStream()) {
+            return RsaKeyConverters.pkcs8().convert(in);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to load JWT private key from " + path, e);
+        }
+    }
+
+    private RSAPublicKey loadPublicKey(String path) {
+        try (InputStream in = resourceLoader.getResource(path).getInputStream()) {
             return RsaKeyConverters.x509().convert(in);
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to load JWT public key from " + jwtProperties.publicKeyPath(), e);
+            throw new UncheckedIOException("Failed to load JWT public key from " + path, e);
         }
     }
 }

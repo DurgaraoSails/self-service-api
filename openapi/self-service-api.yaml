@@ -811,6 +811,45 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/{id}/manifest-preview:
+    get:
+      summary: Preview what a new build would deploy right now (admin only)
+      description: >
+        Resolves and validates the POC's current poc.yaml (or the single-container default, for a
+        repo with none) exactly as POST /pocs/{id}/deploy would, but creates nothing — lets the
+        admin see the containers a build would deploy, or a validation error, before triggering one.
+      operationId: getManifestPreview
+      tags:
+        - Deployment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Manifest preview
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc-deployment.yaml#/PocManifestPreviewResponse'
+        '400':
+          description: The POC's poc.yaml is invalid — every violation found is included in the error message.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/{id}/versions:
     get:
       summary: List every version ever built for a POC, newest first (admin only)
@@ -1147,9 +1186,11 @@ paths:
     post:
       summary: Re-run a FAILED deployment (admin only)
       description: >
-        Retries the same version and kind — no new version number is allocated, unlike
-        POST /pocs/{id}/deploy. 409 if the deployment isn't FAILED (nothing to retry) or if the
-        POC already has another deployment in progress.
+        Resets and reuses this same deployment record — same id, same version, same kind — rather
+        than creating a new one, so retrying a build doesn't inflate the POC's deployment history.
+        409 if the deployment isn't FAILED (nothing to retry), if it's no longer the most recent
+        deployment for its POC (a newer one has superseded it — only the latest is retryable), or
+        if the POC already has another deployment in progress.
       operationId: retryDeployment
       tags:
         - Deployment

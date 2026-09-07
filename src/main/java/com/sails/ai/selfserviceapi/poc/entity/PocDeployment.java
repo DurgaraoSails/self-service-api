@@ -41,10 +41,24 @@ public class PocDeployment {
     @Column(name = "error_message", length = 2000)
     private String errorMessage;
 
-    @Column(name = "initiated_by", length = 36, updatable = false)
+    /**
+     * Static per-container progress for this attempt (name/role/image/port/state), serialized as
+     * JSON. Attempt-scoped, unlike poc_version_containers (the durable per-version record) — hence
+     * a column here rather than another table. Null until the manifest is resolved.
+     */
+    @Column(name = "container_progress")
+    private String containerProgress;
+
+    /**
+     * Updatable, not fixed at creation: a retry reuses this same row rather than creating a new
+     * one (see {@code PocDeploymentService.retryDeployment}), so this reflects who triggered the
+     * most recent attempt, not just the original one.
+     */
+    @Column(name = "initiated_by", length = 36)
     private String initiatedBy;
 
-    @Column(name = "started_at", nullable = false, updatable = false)
+    /** Updatable for the same reason as {@link #initiatedBy} — a retry resets this to when the current attempt actually started. */
+    @Column(name = "started_at", nullable = false)
     private Instant startedAt;
 
     @Column(name = "completed_at")

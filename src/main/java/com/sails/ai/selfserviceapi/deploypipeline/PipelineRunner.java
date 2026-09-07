@@ -3,7 +3,9 @@ package com.sails.ai.selfserviceapi.deploypipeline;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,8 +18,12 @@ import org.springframework.stereotype.Service;
  * the same process, so "the pipeline reports status" is just a direct method call.
  *
  * <p>Both entry points are {@code @Async}: PocDeploymentService has already committed a PENDING
- * deployment row and returned to the caller before either of these runs, which is what makes
- * deploy/redeploy/retry non-blocking.
+ * deployment row (and, for a build, already resolved and validated the manifest) and returned to
+ * the caller before either of these runs, which is what makes deploy/redeploy/retry non-blocking.
+ *
+ * <p>Every stage below logs at INFO, always naming the POC by slug and id — this is the one place
+ * that sees a deployment's entire lifecycle in one process, so it's the natural place to make that
+ * lifecycle visible in the application log without needing to correlate across services.
  */
 @Service
 public class PipelineRunner {
@@ -37,57 +43,71 @@ public class PipelineRunner {
         this.properties = properties;
     }
 
+    /**
+     * {@code commitSha}/{@code manifest} were already resolved (and, for the manifest, validated)
+     * by {@code PocDeploymentService.deployNewVersion} before this deployment row was created —
+     * both are null exactly when {@code pipeline.executor=skip}, which never touches GitHub.
+     */
     @Async
-    public void runBuildAndDeploy(UUID deploymentId, String pocSlug, String githubUrl, String versionLabel) {
+    public void runBuildAndDeploy(UUID deploymentId, Long pocId, String pocSlug, String githubUrl, String versionLabel,
+                                   String commitSha, PocManifest manifest) {
         if (properties.isSkip()) {
-            skip(deploymentId, pocSlug, versionLabel);
+            skip(deploymentId, pocId, pocSlug, versionLabel);
             return;
         }
         try {
             GitHubRepoRef repo = gitHubService.parseRepoUrl(githubUrl);
-            String commitSha = gitHubService.getDefaultBranchHeadSha(repo);
 
             // Tagging before building, and cloning the tag rather than the branch, is what makes
             // this reproducible — the image can only ever contain the commit the tag points at.
             gitHubService.createTagIfAbsent(repo, versionLabel, commitSha);
+            logStage("Tag " + versionLabel + " creation completed", pocId, pocSlug);
 
-            pocDeploymentService.reportStatus(deploymentId, "BUILDING", null, null, null, null, null);
-            String image = executor.buildAndPushImage(repo, versionLabel, pocSlug);
+            pocDeploymentService.reportManifestStatus(deploymentId, "BUILDING", manifest, null, null, null);
+            Map<String, String> images = executor.buildAndPushImages(repo, versionLabel, pocSlug, manifest);
+            logStage("Image build completed", pocId, pocSlug);
+            logStage("Image pushed to artifact registry with tag " + versionLabel, pocId, pocSlug);
 
-            pocDeploymentService.reportStatus(deploymentId, "DEPLOYING", null, null, null, null, null);
-            String hostedUrl = executor.deploy(pocSlug, image);
+            pocDeploymentService.reportManifestStatus(deploymentId, "DEPLOYING", manifest, images, null, null);
+            logStage("Deployment started", pocId, pocSlug);
+            String hostedUrl = executor.deploy(pocSlug, manifest, images);
 
-            pocDeploymentService.reportStatus(deploymentId, "SUCCEEDED", image, commitSha, hostedUrl, null, null);
-            log.info("Deployment {} succeeded — '{}' version {} is live at {}",
-                    deploymentId, pocSlug, versionLabel, hostedUrl);
+            pocDeploymentService.reportManifestStatus(deploymentId, "SUCCEEDED", manifest, images, commitSha, hostedUrl);
+            log.info("Deployment succeeded for poc: {} with poc-id: {} — version {} is live at {}",
+                    pocSlug, pocId, versionLabel, hostedUrl);
         } catch (Exception e) {
-            fail(deploymentId, pocSlug, versionLabel, e);
+            fail(deploymentId, pocId, pocSlug, versionLabel, e);
         }
     }
 
-    /** Rollback: the image already exists, so there is nothing to clone, tag or build. */
+    /**
+     * Rollback: every image already exists, so there is nothing to clone, tag or build — stages 2
+     * through 4 (tag, build, push) never apply here, only the deploy itself does.
+     */
     @Async
-    public void runRedeploy(UUID deploymentId, String pocSlug, String containerImage, String versionLabel) {
+    public void runRedeploy(UUID deploymentId, Long pocId, String pocSlug, String versionLabel,
+                             PocManifest manifest, Map<String, String> imagesByContainer) {
         if (properties.isSkip()) {
-            skip(deploymentId, pocSlug, versionLabel);
+            skip(deploymentId, pocId, pocSlug, versionLabel);
             return;
         }
         try {
-            pocDeploymentService.reportStatus(deploymentId, "DEPLOYING", null, null, null, null, null);
-            String hostedUrl = executor.deploy(pocSlug, containerImage);
+            pocDeploymentService.reportManifestStatus(deploymentId, "DEPLOYING", manifest, imagesByContainer, null, null);
+            logStage("Deployment started", pocId, pocSlug);
+            String hostedUrl = executor.deploy(pocSlug, manifest, imagesByContainer);
 
-            pocDeploymentService.reportStatus(deploymentId, "SUCCEEDED", containerImage, null, hostedUrl, null, null);
-            log.info("Deployment {} succeeded — '{}' rolled back to version {} at {}",
-                    deploymentId, pocSlug, versionLabel, hostedUrl);
+            pocDeploymentService.reportManifestStatus(deploymentId, "SUCCEEDED", manifest, imagesByContainer, null, hostedUrl);
+            log.info("Deployment succeeded for poc: {} with poc-id: {} — rolled back to version {} at {}",
+                    pocSlug, pocId, versionLabel, hostedUrl);
         } catch (Exception e) {
-            fail(deploymentId, pocSlug, versionLabel, e);
+            fail(deploymentId, pocId, pocSlug, versionLabel, e);
         }
     }
 
     /** No GitHub tag, no build, no deploy — pipeline.executor=skip means none of it runs at all. */
-    private void skip(UUID deploymentId, String pocSlug, String versionLabel) {
-        log.info("Deployment {} skipped — pipeline.executor=skip, poc '{}' version {} was not built or deployed",
-                deploymentId, pocSlug, versionLabel);
+    private void skip(UUID deploymentId, Long pocId, String pocSlug, String versionLabel) {
+        log.info("Deployment skipped for poc: {} with poc-id: {} — pipeline.executor=skip, version {} was not built or deployed",
+                pocSlug, pocId, versionLabel);
         try {
             pocDeploymentService.reportStatus(deploymentId, "SKIPPED", null, null, null, null, null);
         } catch (Exception reportFailure) {
@@ -95,8 +115,14 @@ public class PipelineRunner {
         }
     }
 
-    private void fail(UUID deploymentId, String pocSlug, String versionLabel, Exception e) {
-        log.error("Deployment {} failed — poc '{}' version {}", deploymentId, pocSlug, versionLabel, e);
+    /**
+     * Reports through the plain {@code reportStatus} contract, not {@code reportManifestStatus} —
+     * this is the webhook-facing contract, used here because FAILED needs no manifest/container
+     * data at all: {@code reportStatus} clears {@code containerProgress} outright on FAILED (see
+     * its own javadoc for why), rather than trying to attribute the failure to one container.
+     */
+    private void fail(UUID deploymentId, Long pocId, String pocSlug, String versionLabel, Exception e) {
+        log.error("Deployment failed for poc: {} with poc-id: {} — version {}", pocSlug, pocId, versionLabel, e);
         try {
             pocDeploymentService.reportStatus(deploymentId, "FAILED", null, null, null, null, truncate(e.getMessage()));
         } catch (Exception reportFailure) {
@@ -104,6 +130,10 @@ public class PipelineRunner {
             // admin is left with a deployment stuck mid-flight and only the log above to explain it.
             log.error("Could not record deployment {} as FAILED — it will look stuck", deploymentId, reportFailure);
         }
+    }
+
+    private void logStage(String stage, Long pocId, String pocSlug) {
+        log.info("{} for poc: {} with poc-id: {}", stage, pocSlug, pocId);
     }
 
     private String truncate(String message) {

@@ -31,9 +31,9 @@ public class LoggingDeploymentTrigger implements DeploymentTrigger {
     @Override
     public void redeploy(RedeployRequest request) {
         log.info("""
-                        [STUB] redeploy: deploymentId={} pocId={} containerImage={} versionLabel={}
+                        [STUB] redeploy: deploymentId={} pocId={} imagesByContainer={} versionLabel={}
                         No real pipeline wired yet. Simulate progress via POST .../status as above \
-                        (typically just DEPLOYING then SUCCEEDED, since the image already exists).""",
-                request.deploymentId(), request.pocId(), request.containerImage(), request.versionLabel());
+                        (typically just DEPLOYING then SUCCEEDED, since the images already exist).""",
+                request.deploymentId(), request.pocId(), request.imagesByContainer(), request.versionLabel());
     }
 }
