@@ -221,10 +221,34 @@ blocking `waitForSession()` for `provideAppInitializer`, token in memory only, p
 wildcard, or path-carrying value. `pocBridgeInterceptor` — token attachment and
 `401 → refresh → retry once`. `startDevHarness` — the standalone dev harness.
 
+**Structure.** Three entry points: `@sails/poc-bridge` (the contract alone), `/host`, and `/poc`.
+Exporting both halves from one barrel measurably put the POC-side client into the portal's
+production bundle — its `providedIn: 'root'` registration survives tree-shaking — and offered
+`PocBridge` and `PocFrameHost` from one import path, making the wrong choice a runtime
+`NullInjectorError` rather than a compile error. The split maps onto ng-packagr's
+primary/secondary entry-point layout, so it is also the shape publishing needs.
+
+**Diagnostics, and where this document's "ignore silently" rule was too blunt.** Silence is right
+on the wire and miserable to debug: strict checks plus no logging meant a broken handshake produced
+no error, no request, and a POC that never came alive. The library now draws the line at origin —
+traffic from an origin we are not talking to is dropped in total silence, as specified, while a
+message from the origin we *are* talking to that then fails the source, shape or version check is
+reported to an optional `onIgnored` handler. The portal logs it under `isDevMode()`; the POC side
+defaults to a dev-mode warning and production silence. `onIgnored` also fires on handshake timeout,
+separating "heard nothing at all" (usually `PORTAL_ORIGIN` not matching the portal's real origin,
+which the browser discards silently) from "heard the portal but dropped everything" — the
+diagnostic a POC author actually needs.
+
 **Settled during implementation.** `portal:session`'s `expiresAt` is an **ISO-8601 string**, not
 epoch milliseconds: it is what the portal already sent, and it matches the date convention the rest
 of this API uses. `user` and `theme` are read from the token's own claims rather than from portal
 state, so they cannot disagree with what the POC's backend will independently verify.
+
+**Guarded.** `SUPPORTED_VERSIONS` is a literal list, never derived from `PROTOCOL_VERSION` —
+deriving it means a version bump silently drops every older version in the same edit, and since
+every POC announces its version in `poc:ready`, the whole fleet would lose sessions at once. Tests
+assert the previous version survives a bump, which is the one change that can break every deployed
+POC simultaneously.
 
 **Not built.** Publishing to GitHub Packages — the library is consumed from source via a tsconfig
 path mapping, so POC repos still hand-roll their half; this is the single largest gap, since the
@@ -255,3 +279,9 @@ updating onto the contract (or onto the package, once published).
   provider validation and the dev harness are new — nothing implemented them before, which is why
   POC repos hand-rolled their own. `expiresAt` settled as an ISO-8601 string. See Implementation
   Status above for what is still outstanding, publishing chief among it.
+- 2026-09-07 — Hardened against the library's own silent failure modes. `SUPPORTED_VERSIONS` is no
+  longer derived from `PROTOCOL_VERSION` (a bump would have dropped every older version at once).
+  Split into three entry points, which removed the POC-side client from the portal's production
+  bundle. Added the `onIgnored` diagnostics described in Implementation Status — the one place this
+  document's "ignore silently, without logging" rule needed qualifying, since it applies to a
+  shared message bus rather than to messages from the origin we are actually talking to.
