@@ -37,8 +37,8 @@ keeps working exactly as before — `ManifestService` synthesizes the same singl
 ## Architecture Decisions
 
 **One Cloud Run service, not one per container.** Cloud Run's own multi-container support
-(`--container=<name>` repeated, `--depends-on=`, per-container `--startup-probe=`) deploys an
-ingress plus its sidecars as a single service with one URL, matching how `poc.yaml` describes them
+(`--container=<name>` repeated) deploys an ingress plus its sidecars as a single service with one
+URL, matching how `poc.yaml` describes them
 ("the whole service") and avoiding a second layer of inter-service networking/IAM this platform
 doesn't otherwise have. See `CloudRunDeployCommandBuilder`.
 
@@ -46,19 +46,64 @@ doesn't otherwise have. See `CloudRunDeployCommandBuilder`.
 `ManifestValidator` rejects a manifest with zero or multiple ingress containers before any build
 starts; a database constraint (`uq_pvc_one_ingress_per_version`, partial unique index on
 `role = 'INGRESS'`) enforces the same invariant on what actually got persisted, regardless of what
-wrote the row. The ingress container must not declare a port (it binds `$PORT`); a sidecar must
-declare one (it's only reachable at an address the ingress names).
+wrote the row.
+
+**Which container declares a port, and why it changed.** Cloud Run identifies a multi-container
+service's ingress container as *the one with the exposed port*, and gives it no default: "for a
+service containing sidecars, there is no default port for the ingress container. You must
+explicitly configure the container port for the ingress container and only one container can have
+the port exposed."
+
+This spec originally said the opposite — that the ingress must *not* declare a port because it
+binds `$PORT` — and the implementation matched, emitting `--port` for exactly the containers that
+declared one, i.e. only sidecars. The result was that Cloud Run treated the *sidecar* as the
+ingress container: external traffic reached the wrong process, and the real ingress never received
+a request or a `$PORT`. The current rules:
+
+- An ingress container **must** declare a port when the manifest has sidecars, and it is emitted as
+  that container's `--port`. A lone ingress (no sidecars) deploys through the plain `--image=` form,
+  which Cloud Run defaults to 8080, so a port there is neither required nor forbidden.
+- A sidecar **must** declare a port — but it is never passed to gcloud as that container's `--port`.
+  It exists so the platform can inject `SVC_<NAME>_URL` for the other containers, and `PORT` for the
+  sidecar itself.
+- Every sidecar is explicitly given `--port=default` (gcloud's documented "unset" value). A deploy
+  is a merge into the existing service, not a replacement, so a service first deployed under the
+  old, inverted behaviour would otherwise keep its sidecar's port forever and Cloud Run would
+  reject every subsequent revision with "should contain exactly one container with an exposed port"
+  once the ingress correctly got one too. Clearing it every time makes the deploy self-healing.
+- Rollback re-parses a stored manifest, which never passes through `ManifestValidator` — a version
+  built before this rule has no ingress port at all. `CloudRunDeployCommandBuilder.ingressPort`
+  falls back to 8080 rather than emitting `--port=null`, since a stored manifest is immutable
+  history and nothing an admin could edit would fix it.
+
+This is a breaking change to the manifest contract: a multi-container `poc.yaml` written against
+the original rule now fails validation until its ingress declares a port. `poc-platform-sdk`'s
+`poc.schema.json` needs the same correction.
 
 **`Resources` (cpu/memory) applies to the ingress container only.** Cloud Run bills the *sum* of
 every container's own resource limits, and `poc.yaml` has one `resources:` block for what it calls
 "the whole service." Sidecars get Cloud Run's own built-in default instead of a value invented here,
 which avoids landing on a fractional CPU value Cloud Run doesn't accept.
 
-**Sidecar env vars use two SAILS-owned conventions the manifest can't override.** `RESERVED_ENV_NAMES`
-(`PORT`, `DATABASE_URL`, `POC_SLUG`, etc.) and the `SAILS_`/`SVC_` prefixes are rejected outright by
-`ManifestValidator` if a container's `env:` sets them — `SVC_<NAME>_URL` (e.g. `SVC_API_URL`) is
-synthesized for every sidecar and injected into every *other* container's env, which is what lets
-an ingress container reach a sidecar by name instead of hardcoding `localhost:<port>` per-repo.
+**Platform-owned env vars the manifest can't override.** `manifest.reserved-env-names` (`PORT`,
+`POC_SLUG`, `PLATFORM_API_URL`) and the `SAILS_`/`SVC_` prefixes are rejected outright by
+`ManifestValidator` if a container's `env:` sets them, because the platform injects them itself in
+`CloudRunDeployCommandBuilder.platformEnv`:
+
+- `PLATFORM_API_URL` and `POC_SLUG`, into every container. The first is how a POC's backend reaches
+  this API's JWKS to verify a launch token; the second is the slug it builds its expected `poc:<slug>`
+  audience from — which must come from its own configuration, never from the token being validated.
+- `SVC_<NAME>_URL` (e.g. `SVC_WORKER_URL=http://localhost:9000`) per sidecar, into every *other*
+  container, so an ingress reaches a sidecar by name instead of hardcoding a port per-repo.
+- `PORT`, into each sidecar, set to that sidecar's own declared port. Cloud Run injects `PORT` into
+  the ingress container only, and every sidecar's port is deliberately cleared (above) — so this is
+  the sole way a sidecar can learn the port the platform is simultaneously advertising for it, and
+  it cannot supply the value itself because the name is reserved. Both are written in one place so
+  they cannot drift; `CloudRunDeployCommandBuilderTest` pins that they agree.
+
+An earlier revision of this document described `SVC_<NAME>_URL` injection as already shipped when no
+code did it, and listed a `DATABASE_URL` reservation that has never existed. Both are corrected
+above.
 
 **`poc_versions.manifest_yaml` stores the exact manifest a version was built with; redeploy never
 re-reads `poc.yaml` from GitHub.** A repo's `poc.yaml` can change between a version's original build
@@ -82,14 +127,17 @@ Build API steps) — a manifest means the same thing regardless of executor. The
 construction* is intentionally not shared beyond that: a local `docker build` argv and a Cloud
 Build step's `args` are different mechanisms, and forcing them through one abstraction would cost
 more than the ~10 lines of overlap it would save. `CloudRunDeployCommandBuilder`, in contrast, *is*
-shared between both executors' `deploy()` — the `--container`/`--depends-on`/`--startup-probe` flag
-logic is one non-trivial piece of knowledge that must not drift between the two paths.
+shared between both executors' `deploy()` — the `--container`/`--port`/`--set-env-vars` flag logic
+is one non-trivial piece of knowledge that must not drift between the two paths. (`--min-instances`
+/`--max-instances` are the exception: service-level, so each executor emits them before its own
+first `--container=`, at the cost of a duplicated `addScalingArgs`.)
 
-**Cross-repository containers are modeled but rejected, not omitted.** `ManifestContainer.repo`
-exists so `ManifestValidator` can reject it with a clear, specific message ("cross-repository
-containers aren't supported yet") instead of the field not existing and a repo author having no way
-to express the intent at all. This phase always builds every container from the primary repo;
-supporting a second repo later is additive to `ManifestService`, not a rework of this record.
+**Cross-repository containers are not modeled at all.** Every container builds from the primary
+repo. A `repo:` key in a manifest is silently ignored, like any other unrecognised key —
+`ManifestContainer` has no such field and `ManifestValidator` has no rule for it, so an author who
+writes one gets a build from the wrong source with no explanation. (An earlier revision of this
+document described the field as existing and being rejected with a clear message; it never has.
+Adding it purely so it can be rejected is still the right call, and is listed under Future Work.)
 
 **`platform.database`/`platform.files` parse but do nothing yet.** A manifest declaring
 `platform: {database: {enabled: true}}` validates cleanly and is stored, but nothing in the pipeline
@@ -152,8 +200,8 @@ Changelog.
 - `Cloud Run's own per-service container limit (8)` is enforced in `ManifestValidator` before a
   build attempt, not discovered as a `gcloud` error partway through a deploy.
 - Cross-repository containers are explicitly rejected rather than silently ignored — a manifest
-  author gets a clear reason a `repo:` field didn't do what they expected, not a build that quietly
-  used the wrong source.
+  author would get a clear reason a `repo:` field didn't do what they expected, rather than a build
+  that quietly used the wrong source — not implemented, see Future Work.
 - No new secret-handling surface: the GitHub token, Cloud Build service-account, and Cloud Run
   `--service-account=` behavior are unchanged by this feature — every container in a manifest
   deploys under the same `poc-runtime` identity and the same `--allow-unauthenticated`/invoker-grant
@@ -166,8 +214,9 @@ Changelog.
   repo today has to reverse-engineer the schema from `ManifestContainer`/`ManifestParser` or this
   spec. Worth a short reference doc or a `poc.yaml.example` once a real multi-container POC exists
   to validate it against.
-- **Cross-repository containers** (`ManifestContainer.repo`) are modeled but rejected — every
-  container still builds from the primary repo. Supporting a second repo means `ManifestService`
+- **Cross-repository containers** are unmodelled — every container still builds from the primary
+  repo, and a `repo:` key is silently ignored rather than rejected. Adding the field purely so
+  `ManifestValidator` can reject it with a specific message is the cheap first step. Supporting a second repo means `ManifestService`
   resolving more than one `GitHubRepoRef`/commit and each executor cloning more than once.
 - **`platform.database`/`platform.files`** parse and validate but drive no behavior yet — deferred
   to whichever phase actually provisions a per-POC database or wires file storage per POC.
@@ -183,6 +232,21 @@ Changelog.
   isolation but not a real Cloud Run service coming up with a working sidecar.
 
 ## Changelog
+
+- 2026-09-07 — Corrected two things this document asserted that were never true, both found when
+  the first real multi-container POC deployed successfully and could not be opened. The
+  ingress/sidecar port rule was stated backwards (see "Which container declares a port"): Cloud Run
+  identifies the ingress container as the one with the exposed port, so emitting `--port` for the
+  containers that declared one made the *sidecar* the ingress and sent every external request to
+  the wrong process. And `SVC_<NAME>_URL` injection was described as shipped when no code performed
+  it; it exists now, alongside `PLATFORM_API_URL`, `POC_SLUG`, and a sidecar's own `PORT`. The
+  `DATABASE_URL` reservation listed here has never existed and has been dropped rather than added.
+  Requiring an ingress port is a breaking manifest change — `poc-platform-sdk`'s `poc.schema.json`
+  still needs the same correction. Two further claims were corrected in the same pass: this
+  document said `--depends-on=` and per-container `--startup-probe=` flags were emitted (neither
+  is), and that `ManifestContainer.repo` existed so a cross-repository container could be rejected
+  with a clear message (the field has never existed, so a `repo:` key is silently ignored). Both
+  are now described as the gaps they are rather than as shipped behaviour.
 
 - 2026-09-06 — Reviewed the feature end-to-end (manifest parsing → build → deploy → persistence) to
   confirm it's complete for deploying a multi-container POC from one repo via `poc.yaml`. Found and
