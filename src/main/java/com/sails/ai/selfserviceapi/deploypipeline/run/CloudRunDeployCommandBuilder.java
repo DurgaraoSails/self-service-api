@@ -22,6 +22,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class CloudRunDeployCommandBuilder {
 
+    /** Cloud Run's own default container port, used only for the stored-manifest case in {@link #ingressPort}. */
+    private static final int DEFAULT_INGRESS_PORT = 8080;
+
     private final PipelineProperties properties;
 
     public CloudRunDeployCommandBuilder(PipelineProperties properties) {
@@ -71,7 +74,7 @@ public class CloudRunDeployCommandBuilder {
             args.add("--container=" + container.name());
             args.add("--image=" + requireImage(container, imagesByContainer));
             if (container.role() == ContainerRole.INGRESS) {
-                args.add("--port=" + container.port());
+                args.add("--port=" + ingressPort(container));
                 addResourceArgs(resources, args);
             }
             args.add(envArg(platformEnv(pocSlug, container, containers)));
@@ -98,6 +101,20 @@ public class CloudRunDeployCommandBuilder {
             env.put(varName, "http://localhost:" + other.port());
         }
         return env;
+    }
+
+    /**
+     * {@link com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidator} requires an
+     * ingress port whenever a manifest has sidecars, so a freshly built version always declares
+     * one. A redeploy or rollback does not go through that validation — it re-parses the manifest
+     * text stored with the version being rolled back to ({@code ManifestService.resolveStored}),
+     * which for any version built before that rule existed has no ingress port at all. Falling
+     * back to Cloud Run's own default keeps those versions rollable instead of sending gcloud the
+     * literal string "--port=null"; failing here instead would strand them permanently, since a
+     * stored manifest is immutable history and there is nothing an admin could edit to fix it.
+     */
+    private int ingressPort(ManifestContainer ingress) {
+        return ingress.port() == null ? DEFAULT_INGRESS_PORT : ingress.port();
     }
 
     private String requireImage(ManifestContainer container, Map<String, String> imagesByContainer) {

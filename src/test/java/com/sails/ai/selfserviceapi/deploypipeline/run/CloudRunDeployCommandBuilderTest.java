@@ -79,6 +79,24 @@ class CloudRunDeployCommandBuilderTest {
         assertThat(args).doesNotContain("--port=9000");
     }
 
+    /**
+     * A rollback re-parses the manifest stored with the target version, which never goes through
+     * ManifestValidator — so a version built before the "ingress must declare a port" rule has
+     * none. Falls back to Cloud Run's default rather than emitting the literal "--port=null".
+     */
+    @Test
+    void fallsBackToCloudRunsDefaultPortWhenAStoredManifestsIngressDeclaresNone() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+        Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
+
+        assertThat(args).contains("--port=8080");
+        assertThat(args).doesNotContain("--port=null");
+    }
+
     @Test
     void resourcesApplyOnlyToTheIngressContainer() {
         ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
