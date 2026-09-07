@@ -39,6 +39,13 @@ spring:
           starttls:
             enable: ${SMTP_STARTTLS:false}
 
+auth:
+  dev-token-issuance:
+    # POST /auth/tokens — off everywhere by default, including local dev. Set true only in a
+    # personal, never-committed config (e.g. application-local.yaml) when you need it for manual
+    # testing; never set it in any deployable base config.
+    enabled: ${AUTH_DEV_TOKEN_ISSUANCE_ENABLED:false}
+
 otp:
   hash-secret: ${OTP_HASH_SECRET:local-dev-otp-secret-change-me}
   expiry-minutes: 10
@@ -64,6 +71,10 @@ jwt:
   # Identifies which signing key issued a token (JWT `kid` header / JWKS `kid`). Bump this
   # alongside rotating the RSA key pair so old and new tokens verify against the right entry.
   key-id: ${JWT_KEY_ID:1}
+  # Extra public keys published in JWKS for verification only — see JwtProperties for the
+  # rotation procedure this enables. Empty by default (today's single-key behavior). Set via
+  # JWT_ADDITIONAL_PUBLIC_KEY_PATHS as a comma-separated list, e.g. "file:./secrets/jwt/next-public-key.pem".
+  additional-public-key-paths: ${JWT_ADDITIONAL_PUBLIC_KEY_PATHS:}
 
 trial:
   length-days: ${TRIAL_LENGTH_DAYS:14}
@@ -146,14 +157,21 @@ pipeline:
   # worse — an inline token is stored permanently on the Build resource).
   github-token-secret-id: ${BUILD_GITHUB_TOKEN_SECRET:}
 
-  # Grants self-service-api's own service account run.invoker on the deployed POC — it's the
-  # identity that proxies end-user traffic (no separate gateway service in this design). Needs
-  # run.services.setIamPolicy, which roles/editor excludes. Off by default so a deploy under
-  # Editor doesn't fail on this step; the deploy itself still fully succeeds.
+  # Grants self-service-api's own service account run.invoker on the deployed POC. Not needed for
+  # the default public POC (see allow-unauthenticated below) — a user's browser reaches it
+  # directly, self-service-api never proxies that traffic. This exists for the opt-out case: a
+  # specific POC deployed with allow-unauthenticated=false, where self-service-api still needs to
+  # reach it itself (e.g. a health check). Needs run.services.setIamPolicy, which roles/editor
+  # excludes — off by default so a deploy under Editor doesn't fail on this step.
   grant-api-invoker: ${BUILD_GRANT_API_INVOKER:false}
-  # Also needs setIamPolicy. Off by default — test a deployed POC with an identity token instead:
-  # `gcloud run services proxy <slug> --region <region>`, which works under Editor with no grant.
-  allow-unauthenticated: ${BUILD_ALLOW_UNAUTHENTICATED:false}
+  # Default security model: POCs are public. The portal iframes a POC's raw Cloud Run URL directly
+  # from the user's browser — there is no proxy in front of it — so an IAM-locked service simply
+  # cannot be reached by anyone, portal-launched or not. Identity (who the user is) is instead
+  # carried by the short-lived POC-scoped JWT minted at launch, verified by the POC itself against
+  # this API's JWKS. Set to false to lock down one specific sensitive POC; that POC then needs
+  # grant-api-invoker (or an identity token — `gcloud run services proxy <slug> --region <region>`)
+  # for anyone, including self-service-api, to reach it at all.
+  allow-unauthenticated: ${BUILD_ALLOW_UNAUTHENTICATED:true}
 
   # local only. Blank uses the system temp directory.
   workspace-dir: ${PIPELINE_WORKSPACE_DIR:}
@@ -161,10 +179,15 @@ pipeline:
   # cloud-build only.
   build-timeout: ${PIPELINE_BUILD_TIMEOUT:20m}
   build-poll-interval: ${PIPELINE_BUILD_POLL_INTERVAL:10s}
+  # This self-service-api deployment's own externally-reachable URL — injected as PLATFORM_API_URL
+  # into every deployed POC container so its backend can verify launch JWTs against this API's
+  # JWKS endpoint. Cloud Run has no way to tell a service its own URL, so this must be set by hand
+  # once it's known. Only correct as the localhost default when self-service-api itself runs locally.
+  platform-api-url: ${PLATFORM_API_URL:http://localhost:8080}
 
 manifest:
   # Env vars a container's poc.yaml entry may never set — the platform owns these directly.
-  reserved-env-names: ${MANIFEST_RESERVED_ENV_NAMES:PORT,POC_SLUG}
+  reserved-env-names: ${MANIFEST_RESERVED_ENV_NAMES:PORT,POC_SLUG,PLATFORM_API_URL}
   # Env var name prefixes a container's poc.yaml entry may never set — reserved for
   # platform-injected values (e.g. SVC_<NAME>_URL for reaching a sidecar by name).
   reserved-env-prefixes: ${MANIFEST_RESERVED_ENV_PREFIXES:SAILS_,SVC_}
@@ -192,7 +215,6 @@ management:
         enabled: true
 
 server:
-  address: 0.0.0.0
   port: ${PORT:8080}
 
 brevo:

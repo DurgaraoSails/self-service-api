@@ -43,14 +43,37 @@ public class ManifestValidator {
             violations.add("exactly one container must have role 'ingress' — found " + ingressCount);
         }
 
+        // Cloud Run gives a single-container service a default port (8080) automatically, but a
+        // service with sidecars gets no default for its ingress container at all — the ingress
+        // must declare one explicitly, or Cloud Run has nothing to route external traffic to. See
+        // https://cloud.google.com/run/docs/configuring/services/containers.
+        boolean hasSidecars = containers.stream().anyMatch(c -> c.role() == ContainerRole.SIDECAR);
+
         Set<String> seenNames = new HashSet<>();
         for (ManifestContainer container : containers) {
             validateName(container, seenNames, violations);
-            validatePort(container, violations);
+            validatePort(container, hasSidecars, violations);
             validateEnv(container, violations);
         }
 
+        validateScaling(manifest.scaling(), violations);
+
         return violations;
+    }
+
+    /** Both flow straight into --min-instances/--max-instances — validated here rather than as a gcloud usage error partway through a deploy. */
+    private void validateScaling(Scaling scaling, List<String> violations) {
+        Integer min = scaling.min();
+        Integer max = scaling.max();
+        if (min != null && min < 0) {
+            violations.add("scaling.min must be zero or greater, got " + min);
+        }
+        if (max != null && max < 1) {
+            violations.add("scaling.max must be at least 1, got " + max);
+        }
+        if (min != null && max != null && min > max) {
+            violations.add("scaling.min (" + min + ") must not exceed scaling.max (" + max + ")");
+        }
     }
 
     private void validateName(ManifestContainer container, Set<String> seenNames, List<String> violations) {
@@ -63,12 +86,24 @@ public class ManifestValidator {
         }
     }
 
-    private void validatePort(ManifestContainer container, List<String> violations) {
-        if (container.role() == ContainerRole.INGRESS && container.port() != null) {
-            violations.add("ingress container '" + container.name()
-                    + "' must not declare a port — it receives Cloud Run's own $PORT");
+    /**
+     * A lone ingress container (no sidecars) deploys through the plain, single-image
+     * {@code --image=} form, which Cloud Run defaults to port 8080 for — any {@code port} it
+     * declares would be meaningless, so it's neither required nor forbidden. Once a sidecar
+     * exists, the deploy switches to the multi-container {@code --container=} form, where Cloud
+     * Run's own rule is "only one container can have the port exposed" and gives the ingress
+     * container no default — so the ingress must declare one there, unconditionally.
+     */
+    private void validatePort(ManifestContainer container, boolean hasSidecars, List<String> violations) {
+        if (container.role() == ContainerRole.INGRESS) {
+            if (hasSidecars && container.port() == null) {
+                violations.add("ingress container '" + container.name()
+                        + "' must declare a port when the manifest has sidecars — Cloud Run has no"
+                        + " default port for a multi-container service's ingress container");
+            }
+            return;
         }
-        if (container.role() == ContainerRole.SIDECAR && container.port() == null) {
+        if (container.port() == null) {
             violations.add("sidecar container '" + container.name()
                     + "' must declare a port — it's only reachable at an address the ingress names");
         }

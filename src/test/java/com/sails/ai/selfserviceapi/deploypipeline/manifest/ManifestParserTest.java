@@ -127,4 +127,39 @@ class ManifestParserTest {
 
         assertThat(manifest.containers().get(0).env()).isEqualTo(Map.of());
     }
+
+    @Test
+    void aManifestWithNoHealthScalingOrPlatformBlockGetsDefaultsRatherThanNulls() {
+        PocManifest manifest = parser.parse("""
+                containers:
+                  - name: app
+                    role: ingress
+                """);
+
+        assertThat(manifest.containers().get(0).health()).isNull();
+        assertThat(manifest.scaling()).isEqualTo(Scaling.none());
+        assertThat(manifest.platform()).isEqualTo(PlatformConfig.none());
+    }
+
+    @Test
+    void parsesHealthScalingAndPlatformInsteadOfSilentlyDroppingThem() {
+        PocManifest manifest = parser.parse("""
+                containers:
+                  - name: app
+                    role: ingress
+                    health: /healthz
+                scaling:
+                  min: 1
+                  max: 5
+                platform:
+                  database:
+                    enabled: false
+                  files:
+                    enabled: true
+                """);
+
+        assertThat(manifest.containers().get(0).health()).isEqualTo("/healthz");
+        assertThat(manifest.scaling()).isEqualTo(new Scaling(1, 5));
+        assertThat(manifest.platform()).isEqualTo(new PlatformConfig(false, true));
+    }
 }

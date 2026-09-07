@@ -7,6 +7,7 @@ import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.Scaling;
 import com.sails.ai.selfserviceapi.deploypipeline.run.CloudRunDeployCommandBuilder;
 import com.sails.ai.selfserviceapi.deploypipeline.run.CloudRunService;
 import java.io.File;
@@ -81,15 +82,25 @@ public class LocalPipelineExecutor implements PipelineExecutor {
         }
     }
 
+    /**
+     * gcloud requires every non-container-level flag (--region, --project, --service-account,
+     * --allow-unauthenticated) to precede the first --container= flag: once a --container= flag
+     * appears, anything after it is parsed as scoped to that container, and gcloud rejects a flag
+     * it doesn't recognize as container-level with a usage error (exit code 2) — see
+     * BuildService.deployStep, which the Cloud Build executor follows for the same reason. A
+     * single-container manifest never emits --container= at all, so this ordering is harmless
+     * there too.
+     */
     @Override
     public String deploy(String pocSlug, PocManifest manifest, Map<String, String> imagesByContainer) {
         List<String> args = new ArrayList<>(List.of("run", "deploy", pocSlug));
-        args.addAll(deployCommandBuilder.buildContainerArgs(manifest, imagesByContainer));
         args.add("--region=" + gcp.region());
         args.add("--project=" + gcp.projectId());
         args.add("--service-account=" + gcp.serviceAccountEmail("poc-runtime"));
         args.add(properties.allowUnauthenticated() ? "--allow-unauthenticated" : "--no-allow-unauthenticated");
         args.add("--quiet");
+        addScalingArgs(manifest.scaling(), args);
+        args.addAll(deployCommandBuilder.buildContainerArgs(pocSlug, manifest, imagesByContainer));
         run(null, prepend("gcloud", args));
 
         if (properties.grantApiInvoker()) {
@@ -105,6 +116,16 @@ public class LocalPipelineExecutor implements PipelineExecutor {
         }
 
         return cloudRunService.getServiceUrl(pocSlug);
+    }
+
+    /** Service-level, like region/service-account above — never scoped under a --container=. Absent unless the manifest declared one. */
+    private void addScalingArgs(Scaling scaling, List<String> args) {
+        if (scaling.min() != null) {
+            args.add("--min-instances=" + scaling.min());
+        }
+        if (scaling.max() != null) {
+            args.add("--max-instances=" + scaling.max());
+        }
     }
 
     private String[] prepend(String head, List<String> tail) {

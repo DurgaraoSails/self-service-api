@@ -24,7 +24,7 @@ public record ManifestProperties(
 
     public ManifestProperties {
         if (reservedEnvNames == null) {
-            reservedEnvNames = List.of("PORT", "POC_SLUG");
+            reservedEnvNames = List.of("PORT", "POC_SLUG", "PLATFORM_API_URL");
         }
         if (reservedEnvPrefixes == null) {
             reservedEnvPrefixes = List.of("SAILS_", "SVC_");
