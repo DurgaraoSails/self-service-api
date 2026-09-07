@@ -179,15 +179,33 @@ pipeline:
   # cloud-build only.
   build-timeout: ${PIPELINE_BUILD_TIMEOUT:20m}
   build-poll-interval: ${PIPELINE_BUILD_POLL_INTERVAL:10s}
+
+# What a deployed POC may rely on about the container it runs in. Separate from pipeline: above,
+# which describes how the deploy is carried out rather than what it produces. Every value here is
+# injected into every container and reserved from poc.yaml (see manifest.reserved-env-names).
+poc-runtime:
+  # The port the ingress container binds and receives external traffic on. Cloud Run gives a
+  # multi-container service no default ingress port, and only one container may expose one, so the
+  # platform owns this. A manifest that declares its own ingress port still wins.
+  ingress-port: ${POC_RUNTIME_INGRESS_PORT:8080}
   # This self-service-api deployment's own externally-reachable URL — injected as PLATFORM_API_URL
   # into every deployed POC container so its backend can verify launch JWTs against this API's
   # JWKS endpoint. Cloud Run has no way to tell a service its own URL, so this must be set by hand
-  # once it's known. Only correct as the localhost default when self-service-api itself runs locally.
-  platform-api-url: ${PLATFORM_API_URL:http://localhost:8080}
+  # once it's known. The localhost default is only ever correct when the POC also runs locally:
+  # inside a deployed multi-container instance it resolves to a sibling container, so the POC
+  # fetches "JWKS" and gets another container's response instead of a connection error.
+  # PLATFORM_API_URL is still honoured as the older name, so an environment configured before this
+  # property moved namespaces keeps working.
+  platform-api-url: ${POC_RUNTIME_PLATFORM_API_URL:${PLATFORM_API_URL:http://localhost:8080}}
+  # The one origin allowed to frame a deployed POC — injected as PORTAL_ORIGIN, used both as the
+  # postMessage targetOrigin a POC replies to and in its own Content-Security-Policy:
+  # frame-ancestors, so the script-level origin check and the browser-enforced one cannot disagree.
+  # Defaults to the portal URL this API already configures for outbound email links.
+  portal-origin: ${POC_RUNTIME_PORTAL_ORIGIN:${app.frontend.url}}
 
 manifest:
   # Env vars a container's poc.yaml entry may never set — the platform owns these directly.
-  reserved-env-names: ${MANIFEST_RESERVED_ENV_NAMES:PORT,POC_SLUG,PLATFORM_API_URL}
+  reserved-env-names: ${MANIFEST_RESERVED_ENV_NAMES:PORT,POC_SLUG,PLATFORM_API_URL,PORTAL_ORIGIN}
   # Env var name prefixes a container's poc.yaml entry may never set — reserved for
   # platform-injected values (e.g. SVC_<NAME>_URL for reaching a sidecar by name).
   reserved-env-prefixes: ${MANIFEST_RESERVED_ENV_PREFIXES:SAILS_,SVC_}
@@ -215,6 +233,8 @@ management:
         enabled: true
 
 server:
+  # Bind all interfaces, not just loopback — a container's port is unreachable otherwise.
+  address: 0.0.0.0
   port: ${PORT:8080}
 
 brevo:
