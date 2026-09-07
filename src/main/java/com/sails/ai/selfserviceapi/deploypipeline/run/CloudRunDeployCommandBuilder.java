@@ -108,11 +108,24 @@ public class CloudRunDeployCommandBuilder {
      * sidecar shares its ingress's network namespace, so it's reachable at plain localhost:&lt;port&gt;,
      * exactly the address {@link com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidator}
      * already requires every sidecar to declare a port for.
+     *
+     * <p>A sidecar additionally gets PORT, set to that same declared port. Cloud Run injects PORT
+     * into the ingress container only, and {@link #buildMultiContainerArgs} deliberately clears
+     * every sidecar's port ({@link #UNSET_PORT}) so exactly one container exposes one — which
+     * leaves a sidecar with no way at all to learn the port the platform is simultaneously
+     * advertising to everyone else as SVC_&lt;NAME&gt;_URL. It cannot supply the value itself either:
+     * PORT is in {@code manifest.reserved-env-names}, so a manifest setting it is rejected. Without
+     * this the sidecar binds whatever its image happens to default to, and every call through
+     * SVC_&lt;NAME&gt;_URL fails with nothing pointing back at the manifest. This is the one place the
+     * two values are written, so they cannot drift.
      */
     private Map<String, String> platformEnv(String pocSlug, ManifestContainer container, List<ManifestContainer> allContainers) {
         Map<String, String> env = new LinkedHashMap<>(container.env());
         env.put("PLATFORM_API_URL", properties.platformApiUrl());
         env.put("POC_SLUG", pocSlug);
+        if (container.role() == ContainerRole.SIDECAR && container.port() != null) {
+            env.put("PORT", String.valueOf(container.port()));
+        }
         for (ManifestContainer other : allContainers) {
             if (other == container || other.role() != ContainerRole.SIDECAR || other.port() == null) {
                 continue;

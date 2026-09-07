@@ -59,7 +59,7 @@ class CloudRunDeployCommandBuilderTest {
                 "--container=api", "--image=img/api:1", "--port=8080",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;SVC_WORKER_URL=http://localhost:9000",
                 "--container=worker", "--image=img/worker:1", "--port=default",
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc");
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORT=9000");
     }
 
     /**
@@ -110,7 +110,7 @@ class CloudRunDeployCommandBuilderTest {
                 "--container=api", "--image=img/api:1", "--port=8080", "--cpu=2", "--memory=1Gi",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;SVC_WORKER_URL=http://localhost:9000",
                 "--container=worker", "--image=img/worker:1", "--port=default",
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc");
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORT=9000");
     }
 
     @Test
@@ -135,7 +135,8 @@ class CloudRunDeployCommandBuilderTest {
         List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
 
         assertThat(blockFor("worker", args)).contains(
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;SVC_CACHE_URL=http://localhost:9001");
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORT=9000"
+                        + ";SVC_CACHE_URL=http://localhost:9001");
     }
 
     /**
@@ -156,6 +157,70 @@ class CloudRunDeployCommandBuilderTest {
 
         assertThat(blockFor("worker", args)).contains("--port=default");
         assertThat(blockFor("api", args)).contains("--port=8080");
+    }
+
+    /**
+     * Cloud Run injects PORT into the ingress container only, and every sidecar's port is
+     * deliberately cleared so exactly one container exposes one — so without this injection a
+     * sidecar has no way to learn the port the platform is simultaneously telling every other
+     * container to reach it on. It cannot set PORT itself either: the name is reserved.
+     */
+    @Test
+    void givesASidecarThePortItWasDeclaredWith() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+        Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
+
+        assertThat(envOf("worker", args)).containsEntry("PORT", "9000");
+    }
+
+    /**
+     * The port a sidecar binds and the port everyone else is told to call it on are the same
+     * number in the manifest, and are written in one place here so they cannot drift. If these
+     * ever disagree, every call through SVC_&lt;NAME&gt;_URL fails with nothing pointing at the cause.
+     */
+    @Test
+    void aSidecarsOwnPortMatchesTheAddressAdvertisedToEveryOtherContainer() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        ManifestContainer worker = new ManifestContainer("chat-worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+        Map<String, String> images = Map.of("api", "img/api:1", "chat-worker", "img/worker:1");
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
+
+        String advertised = envOf("api", args).get("SVC_CHAT_WORKER_URL");
+        String bound = envOf("chat-worker", args).get("PORT");
+        assertThat(advertised).isEqualTo("http://localhost:" + bound);
+    }
+
+    /** The ingress binds Cloud Run's own $PORT, so the platform must not set one for it. */
+    @Test
+    void doesNotSetPortForTheIngressContainerWhichCloudRunInjectsItself() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+        Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
+
+        assertThat(envOf("api", args)).doesNotContainKey("PORT");
+    }
+
+    /** Parses one container's --set-env-vars back into a map, so assertions read by name. */
+    private static Map<String, String> envOf(String containerName, List<String> args) {
+        String flag = blockFor(containerName, args).stream()
+                .filter(arg -> arg.startsWith("--set-env-vars="))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no --set-env-vars for container '" + containerName + "'"));
+        Map<String, String> env = new java.util.LinkedHashMap<>();
+        for (String pair : flag.substring("--set-env-vars=^;^".length()).split(";")) {
+            int eq = pair.indexOf('=');
+            env.put(pair.substring(0, eq), pair.substring(eq + 1));
+        }
+        return env;
     }
 
     /** One container's flags run from its own --container= up to the next one's. */
