@@ -215,6 +215,8 @@ management:
         enabled: true
 
 server:
+  # Bind all interfaces, not just loopback — a container's port is unreachable otherwise.
+  address: 0.0.0.0
   port: ${PORT:8080}
 
 brevo:
