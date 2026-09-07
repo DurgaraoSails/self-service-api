@@ -60,9 +60,13 @@ declared one, i.e. only sidecars. The result was that Cloud Run treated the *sid
 ingress container: external traffic reached the wrong process, and the real ingress never received
 a request or a `$PORT`. The current rules:
 
-- An ingress container **must** declare a port when the manifest has sidecars, and it is emitted as
-  that container's `--port`. A lone ingress (no sidecars) deploys through the plain `--image=` form,
-  which Cloud Run defaults to 8080, so a port there is neither required nor forbidden.
+- An ingress container **may** declare a port, and it is emitted as that container's `--port`. It is
+  not required: the ingress port is platform-owned (`poc-runtime.ingress-port`, default 8080) and
+  supplied when the manifest names none, so a manifest that declares no ingress port is complete
+  and one that declares its own still wins. Requiring it would reject every multi-container repo
+  already written against `poc-platform-sdk`'s published schema, for a value the platform can
+  always supply. A lone ingress (no sidecars) deploys through the plain `--image=` form, which
+  Cloud Run defaults to 8080 for on its own.
 - A sidecar **must** declare a port — but it is never passed to gcloud as that container's `--port`.
   It exists so the platform can inject `SVC_<NAME>_URL` for the other containers, and `PORT` for the
   sidecar itself.
@@ -72,13 +76,15 @@ a request or a `$PORT`. The current rules:
   reject every subsequent revision with "should contain exactly one container with an exposed port"
   once the ingress correctly got one too. Clearing it every time makes the deploy self-healing.
 - Rollback re-parses a stored manifest, which never passes through `ManifestValidator` — a version
-  built before this rule has no ingress port at all. `CloudRunDeployCommandBuilder.ingressPort`
-  falls back to 8080 rather than emitting `--port=null`, since a stored manifest is immutable
-  history and nothing an admin could edit would fix it.
+  built before any of this has no ingress port at all. The same platform default covers it, rather
+  than emitting `--port=null`, since a stored manifest is immutable history and nothing an admin
+  could edit would fix it.
 
-This is a breaking change to the manifest contract: a multi-container `poc.yaml` written against
-the original rule now fails validation until its ingress declares a port. `poc-platform-sdk`'s
-`poc.schema.json` needs the same correction.
+This is deliberately *not* a breaking change to the manifest contract. An earlier revision of this
+spec did require an ingress port once sidecars existed, which would have failed validation on every
+multi-container `poc.yaml` already written against `poc-platform-sdk`'s schema; making the platform
+own the value instead keeps those repos deploying unchanged while still giving Cloud Run the
+explicit port it needs.
 
 **`Resources` (cpu/memory) applies to the ingress container only.** Cloud Run bills the *sum* of
 every container's own resource limits, and `poc.yaml` has one `resources:` block for what it calls
@@ -100,6 +106,20 @@ which avoids landing on a fractional CPU value Cloud Run doesn't accept.
   the sole way a sidecar can learn the port the platform is simultaneously advertising for it, and
   it cannot supply the value itself because the name is reserved. Both are written in one place so
   they cannot drift; `CloudRunDeployCommandBuilderTest` pins that they agree.
+
+- `PORTAL_ORIGIN`, into every container: the one origin allowed to frame this POC. It is both the
+  `postMessage` targetOrigin a POC replies to and the value it puts in its own
+  `Content-Security-Policy: frame-ancestors`, so the JavaScript origin check and the
+  browser-enforced embedding restriction cannot disagree. Platform-supplied precisely so a POC never
+  derives it from `document.referrer` or `location.ancestorOrigins`, both of which an embedder
+  controls. Configured as `poc-runtime.portal-origin`, defaulting to `app.frontend.url`.
+
+A container's `health:` path becomes a per-container `--startup-probe=httpGet.path=…,httpGet.port=…`
+against the port that container actually listens on, and the ingress gets `--depends-on=` naming
+exactly those sidecars that declared one — Cloud Run rejects a dependency on a container with no
+startup probe, so tying it to `health:` keeps a probe-less manifest deployable rather than turning
+an optional key into a required one. Without the ordering, the ingress can proxy to a sidecar that
+isn't listening yet, which is a 502 on every cold start.
 
 An earlier revision of this document described `SVC_<NAME>_URL` injection as already shipped when no
 code did it, and listed a `DATABASE_URL` reservation that has never existed. Both are corrected
@@ -195,7 +215,7 @@ Changelog.
   `poc.yaml` fails fast with every violation listed, not as a confusing failure partway through a
   build attempt.
 - `ManifestValidator` rejects any container `env:` entry that collides with a reserved name
-  (`PORT`, `DATABASE_URL`, `POC_SLUG`, …) or the `SAILS_`/`SVC_` prefixes, so a POC repo cannot
+  (`PORT`, `POC_SLUG`, `PLATFORM_API_URL`, `PORTAL_ORIGIN`) or the `SAILS_`/`SVC_` prefixes, so a POC repo cannot
   clobber a value the platform injects (e.g. another sidecar's `SVC_*_URL`) via its own manifest.
 - `Cloud Run's own per-service container limit (8)` is enforced in `ManifestValidator` before a
   build attempt, not discovered as a `gcloud` error partway through a deploy.
@@ -241,12 +261,25 @@ Changelog.
   the wrong process. And `SVC_<NAME>_URL` injection was described as shipped when no code performed
   it; it exists now, alongside `PLATFORM_API_URL`, `POC_SLUG`, and a sidecar's own `PORT`. The
   `DATABASE_URL` reservation listed here has never existed and has been dropped rather than added.
-  Requiring an ingress port is a breaking manifest change — `poc-platform-sdk`'s `poc.schema.json`
-  still needs the same correction. Two further claims were corrected in the same pass: this
-  document said `--depends-on=` and per-container `--startup-probe=` flags were emitted (neither
-  is), and that `ManifestContainer.repo` existed so a cross-repository container could be rejected
-  with a clear message (the field has never existed, so a `repo:` key is silently ignored). Both
-  are now described as the gaps they are rather than as shipped behaviour.
+  Two further claims were corrected in the same pass: this document said `--depends-on=` and
+  per-container `--startup-probe=` flags were emitted, and that `ManifestContainer.repo` existed so
+  a cross-repository container could be rejected with a clear message. Neither was true at the time
+  and both were restated as gaps.
+
+- 2026-09-07 — Closed those gaps against `poc-runtime-contract.md`, which specifies what a deployed
+  POC must look like from a browser and from inside the instance. `health:` now becomes a
+  per-container `--startup-probe=`, the ingress gets `--depends-on=` for every probed sidecar, a
+  container's `repo:` is parsed and rejected by name instead of vanishing, and any other
+  unrecognised key is logged as `unsupported manifest keys, ignored: …` rather than dropped in
+  silence. `PORTAL_ORIGIN` is injected alongside `PLATFORM_API_URL`/`POC_SLUG` and reserved with
+  them. The three runtime values a POC may rely on moved to their own `poc-runtime.*` namespace
+  (`ingress-port`, `platform-api-url`, `portal-origin`) — `PLATFORM_API_URL` is still honoured as
+  the older env var name, so an environment configured before the move keeps working. The ingress
+  port requirement was relaxed from *must* to *may* in the same pass, making the platform own the
+  value rather than breaking every manifest already written against the published schema. Service-
+  level flags now come from `CloudRunDeployCommandBuilder.buildServiceArgs`, so both executors
+  build one service description from one place instead of each keeping a private copy of the
+  scaling flags — which had already drifted.
 
 - 2026-09-06 — Reviewed the feature end-to-end (manifest parsing → build → deploy → persistence) to
   confirm it's complete for deploying a multi-container POC from one repo via `poc.yaml`. Found and

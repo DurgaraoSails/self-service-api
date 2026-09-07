@@ -27,16 +27,31 @@ public record ManifestContainer(
         Map<String, String> env,
 
         /**
-         * An HTTP path (e.g. {@code /healthz}) this container answers on its declared port.
-         * {@code null} means the manifest declared none — not yet wired to a Cloud Run startup/
-         * liveness probe, so it has no effect on the deploy today; kept so it survives parsing
-         * instead of being silently dropped, for when that wiring is added.
+         * An HTTP path (e.g. {@code /healthz}) this container answers on its declared port,
+         * deployed as a Cloud Run startup probe against that port. {@code null} means the manifest
+         * declared none, which stays valid — but only a sidecar that declares one can be depended
+         * on by the ingress, since Cloud Run rejects a dependency on a container with no startup
+         * probe (see {@code CloudRunDeployCommandBuilder}).
          */
-        String health
+        String health,
+
+        /**
+         * A container built from a different repository than the POC's own. Parsed only so
+         * {@link ManifestValidator} can reject it by name: every container this phase builds comes
+         * from the primary repo, and a key that simply vanished would leave an author guessing why
+         * their intent was ignored. Rejected, never silently dropped.
+         */
+        String repo
 ) {
+
+    /** Pre-{@link #repo} call sites: defaults it to {@code null} (no cross-repo container declared). */
+    public ManifestContainer(String name, ContainerRole role, String dockerfile, String context, Integer port,
+                              Map<String, String> env, String health) {
+        this(name, role, dockerfile, context, port, env, health, null);
+    }
 
     /** Pre-{@link #health} call sites: defaults it to {@code null} (no probe declared). */
     public ManifestContainer(String name, ContainerRole role, String dockerfile, String context, Integer port, Map<String, String> env) {
-        this(name, role, dockerfile, context, port, env, null);
+        this(name, role, dockerfile, context, port, env, null, null);
     }
 }

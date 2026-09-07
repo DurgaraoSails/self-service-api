@@ -1,51 +1,77 @@
 package com.sails.ai.selfserviceapi.deploypipeline.run;
 
-import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
+import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.Resources;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.Scaling;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Builds the repeated {@code --container=} block of arguments {@code gcloud run deploy} needs to
- * deploy a manifest's containers as one Cloud Run service. Shared between both executors' deploy
- * step (today: {@code BuildService}'s Cloud Build step; later, Phase 2: the local executor's
- * subprocess argv) — this flag shape is genuine cross-executor platform knowledge that must not
- * drift between the two, unlike the build steps themselves, which are deliberately not shared.
+ * Builds the arguments {@code gcloud run deploy} needs to turn a manifest into one Cloud Run
+ * service. Shared by both executors ({@code BuildService}'s Cloud Build step and
+ * {@code LocalPipelineExecutor}'s subprocess argv) — this flag shape is genuine cross-executor
+ * platform knowledge that must not drift between the two, unlike the build steps themselves, which
+ * are deliberately not shared.
+ *
+ * <p>Split in two on purpose. gcloud parses every flag after the first {@code --container=} as
+ * scoped to that container and rejects anything it doesn't recognise as container-level with a
+ * usage error (exit code 2) — a regression this repo has already shipped once. Callers therefore
+ * emit their own credentials/region flags, then {@link #buildServiceArgs}, then
+ * {@link #buildContainerArgs}, so the ordering constraint is expressed by the shape of this API
+ * rather than by a comment each caller has to notice.
  */
 @Component
 public class CloudRunDeployCommandBuilder {
 
     private static final Logger log = LoggerFactory.getLogger(CloudRunDeployCommandBuilder.class);
 
-    /** Cloud Run's own default container port, used only for the stored-manifest case in {@link #ingressPort}. */
-    private static final int DEFAULT_INGRESS_PORT = 8080;
+    /**
+     * Startup-probe budget: {@code failureThreshold × periodSeconds} = 120s to come up, against
+     * Cloud Run's own 240s ceiling for that product. Stated explicitly rather than left to Cloud
+     * Run's defaults, which allow roughly 30s — comfortable for a Node ingress and routinely too
+     * tight for a JVM sidecar, whose cold start includes classloading before it can answer
+     * anything. A container that misses its startup probe is shut down and takes the whole
+     * revision's deploy down with it, so the default's failure mode is a deploy that fails for
+     * reasons nothing in the manifest explains.
+     */
+    private static final int PROBE_TIMEOUT_SECONDS = 5;
+    private static final int PROBE_PERIOD_SECONDS = 10;
+    private static final int PROBE_FAILURE_THRESHOLD = 12;
+
+    private final PocRuntimeProperties pocRuntime;
+
+    public CloudRunDeployCommandBuilder(PocRuntimeProperties pocRuntime) {
+        this.pocRuntime = pocRuntime;
+    }
 
     /**
-     * gcloud's documented way to clear a container's port ("To unset this field, pass the special
-     * value 'default'"). Emitted for every sidecar rather than simply saying nothing about its
-     * port, because a deploy is a merge into the existing service, not a replacement: a service
-     * first deployed by an earlier version of this builder — which handed the sidecar's own
-     * declared port to gcloud as {@code --port} — keeps that port on the sidecar forever otherwise,
-     * and Cloud Run rejects the whole revision with "should contain exactly one container with an
-     * exposed port" once the ingress correctly gets one too. Saying it explicitly every time makes
-     * the deploy self-healing instead of permanently stuck. It also retargets any TCP startup probe
-     * gcloud had pointed at that port.
+     * Flags belonging to the service as a whole rather than to any one container, so they must all
+     * precede the first {@code --container=}. Scaling is the manifest's only say in this group;
+     * everything else a caller emits here is its own (region, credentials, access).
      */
-    private static final String UNSET_PORT = "default";
-
-    private final PipelineProperties properties;
-
-    public CloudRunDeployCommandBuilder(PipelineProperties properties) {
-        this.properties = properties;
+    public List<String> buildServiceArgs(PocManifest manifest) {
+        List<String> args = new ArrayList<>();
+        Scaling scaling = manifest.scaling();
+        if (scaling == null) {
+            return args;
+        }
+        if (scaling.min() != null) {
+            args.add("--min-instances=" + scaling.min());
+        }
+        if (scaling.max() != null) {
+            args.add("--max-instances=" + scaling.max());
+        }
+        return args;
     }
 
     /**
@@ -60,6 +86,8 @@ public class CloudRunDeployCommandBuilder {
      */
     public List<String> buildContainerArgs(String pocSlug, PocManifest manifest, Map<String, String> imagesByContainer) {
         warnIfPlatformApiUrlIsUnreachableFromCloudRun(pocSlug);
+        warnIfPortalOriginIsUnset(pocSlug);
+
         List<ManifestContainer> containers = manifest.containers();
         if (containers.size() == 1) {
             return buildSingleContainerArgs(pocSlug, containers.get(0), manifest.resources(), imagesByContainer);
@@ -70,9 +98,10 @@ public class CloudRunDeployCommandBuilder {
     private List<String> buildSingleContainerArgs(String pocSlug, ManifestContainer container, Resources resources, Map<String, String> imagesByContainer) {
         List<String> args = new ArrayList<>();
         args.add("--image=" + requireImage(container, imagesByContainer));
-        // No --port=: the validator already requires a manifest's sole (necessarily ingress)
-        // container to declare none — it binds Cloud Run's own $PORT, same as before this feature.
+        // No --port=: a single-container service is the one case Cloud Run does default a port for,
+        // so it binds its own $PORT exactly as it did before this feature existed.
         addResourceArgs(resources, args);
+        addStartupProbeArg(container, ingressPort(container), args);
         args.add(envArg(platformEnv(pocSlug, container, List.of(container))));
         return args;
     }
@@ -80,38 +109,93 @@ public class CloudRunDeployCommandBuilder {
     /**
      * A single container's flags are "in scope" from its own --container= until the next one.
      *
-     * <p>{@code --port=} is emitted for the ingress container only, and only from its own
-     * declared port — never a sidecar's. Cloud Run's rule for a multi-container service is "only
-     * one container can have the port exposed"; a sidecar's {@code port} in the manifest exists so
-     * the platform can inject {@code SVC_<NAME>_URL} for other containers to reach it over
-     * localhost, not to be handed to Cloud Run as this container's public port.
+     * <p>{@code --port=} is emitted for the ingress container only. Cloud Run's rule for a
+     * multi-container service is "only one container can have the port exposed", and the container
+     * holding that port <em>is</em> how Cloud Run identifies the ingress — there is no separate
+     * field for it. A sidecar's {@code port} in the manifest exists so the platform can inject
+     * {@code SVC_<NAME>_URL} and {@code PORT} for it, never to be handed to Cloud Run as a second
+     * exposed port.
      */
     private List<String> buildMultiContainerArgs(String pocSlug, List<ManifestContainer> containers, Resources resources, Map<String, String> imagesByContainer) {
         List<String> args = new ArrayList<>();
         for (ManifestContainer container : containers) {
             args.add("--container=" + container.name());
             args.add("--image=" + requireImage(container, imagesByContainer));
+
             if (container.role() == ContainerRole.INGRESS) {
-                args.add("--port=" + ingressPort(container));
+                int ingressPort = ingressPort(container);
+                args.add("--port=" + ingressPort);
                 addResourceArgs(resources, args);
+                addStartupProbeArg(container, ingressPort, args);
+                addDependsOnArg(containers, args);
             } else {
-                args.add("--port=" + UNSET_PORT);
+                // No --port for a sidecar, not even gcloud's "unset" value: gcloud counts any
+                // container carrying the flag as one that specifies a port, so passing
+                // --port=default here still trips its own check — "Invalid value for [--container]:
+                // Exactly one container must specify --port or --use-http2" — before the request is
+                // ever sent. Its startup probe still names the port, which is what the sidecar
+                // actually listens on.
+                addStartupProbeArg(container, container.port(), args);
             }
+
             args.add(envArg(platformEnv(pocSlug, container, containers)));
         }
         return args;
     }
 
     /**
-     * Every container gets PLATFORM_API_URL (to verify a POC-scoped JWT against this API's JWKS)
-     * and POC_SLUG, plus one SVC_&lt;NAME&gt;_URL per sidecar in the manifest other than itself — a
-     * sidecar shares its ingress's network namespace, so it's reachable at plain localhost:&lt;port&gt;,
-     * exactly the address {@link com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidator}
-     * already requires every sidecar to declare a port for.
+     * A container's {@code health:} path becomes a Cloud Run startup probe against the port that
+     * container actually listens on — the platform's ingress port for the ingress, its own declared
+     * port for a sidecar. Skipped entirely when the manifest declared no path, so {@code health:}
+     * stays optional; a sidecar the ingress depends on must have one (see {@link #addDependsOnArg}).
+     */
+    private void addStartupProbeArg(ManifestContainer container, Integer port, List<String> args) {
+        if (container.health() == null || container.health().isBlank() || port == null) {
+            return;
+        }
+        args.add("--startup-probe=httpGet.path=" + container.health() + ",httpGet.port=" + port
+                + ",timeoutSeconds=" + PROBE_TIMEOUT_SECONDS
+                + ",periodSeconds=" + PROBE_PERIOD_SECONDS
+                + ",failureThreshold=" + PROBE_FAILURE_THRESHOLD);
+    }
+
+    /**
+     * Without ordering, every container starts in parallel and the ingress can proxy to a sidecar
+     * that isn't listening yet — a 502 on every cold start. Cloud Run accepts a dependency only on
+     * a container that has a startup probe, so this lists exactly those sidecars that declared a
+     * {@code health:} path, and is omitted entirely when none did. Tying it to {@code health:}
+     * rather than emitting it for every sidecar keeps a probe-less manifest deployable instead of
+     * turning an optional key into a required one.
+     */
+    private void addDependsOnArg(List<ManifestContainer> containers, List<String> args) {
+        String probedSidecars = containers.stream()
+                .filter(container -> container.role() == ContainerRole.SIDECAR)
+                .filter(container -> container.health() != null && !container.health().isBlank() && container.port() != null)
+                .map(ManifestContainer::name)
+                .collect(Collectors.joining(","));
+        if (!probedSidecars.isEmpty()) {
+            args.add("--depends-on=" + probedSidecars);
+        }
+    }
+
+    /**
+     * Every container gets PLATFORM_API_URL (to verify a POC-scoped JWT against this API's JWKS),
+     * POC_SLUG and PORTAL_ORIGIN, plus one SVC_&lt;NAME&gt;_URL per sidecar in the manifest other
+     * than itself — a sidecar shares its ingress's network namespace, so it's reachable at plain
+     * localhost:&lt;port&gt;, exactly the address
+     * {@link com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidator} already
+     * requires every sidecar to declare a port for.
+     *
+     * <p>POC_SLUG is what lets a POC's backend build its expected audience ({@code poc:<slug>})
+     * from its own configuration rather than from the token it is checking — reading the expected
+     * audience out of the object being validated is a check that validates nothing. PORTAL_ORIGIN
+     * is both the postMessage targetOrigin and the POC's own frame-ancestors value, supplied here
+     * precisely so a POC never derives it from {@code document.referrer} or
+     * {@code location.ancestorOrigins}, both of which an embedder controls.
      *
      * <p>A sidecar additionally gets PORT, set to that same declared port. Cloud Run injects PORT
      * into the ingress container only, and {@link #buildMultiContainerArgs} deliberately clears
-     * every sidecar's port ({@link #UNSET_PORT}) so exactly one container exposes one — which
+     * every sidecar carries no --port at all, so exactly one container specifies one — which
      * leaves a sidecar with no way at all to learn the port the platform is simultaneously
      * advertising to everyone else as SVC_&lt;NAME&gt;_URL. It cannot supply the value itself either:
      * PORT is in {@code manifest.reserved-env-names}, so a manifest setting it is rejected. Without
@@ -121,8 +205,11 @@ public class CloudRunDeployCommandBuilder {
      */
     private Map<String, String> platformEnv(String pocSlug, ManifestContainer container, List<ManifestContainer> allContainers) {
         Map<String, String> env = new LinkedHashMap<>(container.env());
-        env.put("PLATFORM_API_URL", properties.platformApiUrl());
+        env.put("PLATFORM_API_URL", pocRuntime.platformApiUrl());
         env.put("POC_SLUG", pocSlug);
+        if (pocRuntime.hasPortalOrigin()) {
+            env.put("PORTAL_ORIGIN", pocRuntime.portalOrigin());
+        }
         if (container.role() == ContainerRole.SIDECAR && container.port() != null) {
             env.put("PORT", String.valueOf(container.port()));
         }
@@ -137,17 +224,19 @@ public class CloudRunDeployCommandBuilder {
     }
 
     /**
-     * {@link com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidator} requires an
-     * ingress port whenever a manifest has sidecars, so a freshly built version always declares
-     * one. A redeploy or rollback does not go through that validation — it re-parses the manifest
-     * text stored with the version being rolled back to ({@code ManifestService.resolveStored}),
-     * which for any version built before that rule existed has no ingress port at all. Falling
-     * back to Cloud Run's own default keeps those versions rollable instead of sending gcloud the
-     * literal string "--port=null"; failing here instead would strand them permanently, since a
-     * stored manifest is immutable history and there is nothing an admin could edit to fix it.
+     * The ingress port is platform-owned ({@code poc-runtime.ingress-port}) — Cloud Run gives a
+     * multi-container service no default for it, and only one container may expose one, so it is
+     * not something a manifest decides per-container. A manifest that names its own ingress port
+     * still wins: {@code poc-platform-sdk}'s published schema allows one and real POC repos are
+     * already written against it, so rejecting it would break them for no gain.
+     *
+     * <p>This is also what keeps a rollback working. A redeploy re-parses the manifest text stored
+     * with the version being rolled back to ({@code ManifestService.resolveStored}), which never
+     * goes through validation and, for anything built before the ingress port was expressible, has
+     * none at all — the platform default covers it instead of sending gcloud "--port=null".
      */
     private int ingressPort(ManifestContainer ingress) {
-        return ingress.port() == null ? DEFAULT_INGRESS_PORT : ingress.port();
+        return ingress.port() == null ? pocRuntime.ingressPort() : ingress.port();
     }
 
     /**
@@ -158,11 +247,23 @@ public class CloudRunDeployCommandBuilder {
      * block deploying one that doesn't.
      */
     private void warnIfPlatformApiUrlIsUnreachableFromCloudRun(String pocSlug) {
-        String url = properties.platformApiUrl();
-        if (url.contains("localhost") || url.contains("127.0.0.1")) {
+        if (pocRuntime.platformApiUrlIsUnreachableFromCloudRun()) {
             log.warn("Deploying '{}' with PLATFORM_API_URL={} — a deployed container cannot reach that address. "
-                    + "Set pipeline.platform-api-url (PLATFORM_API_URL) to this API's public URL, or the POC's "
-                    + "JWKS lookup will fail and every launch token will be rejected.", pocSlug, url);
+                    + "Set poc-runtime.platform-api-url (POC_RUNTIME_PLATFORM_API_URL) to this API's public URL, "
+                    + "or the POC's JWKS lookup will fail and every launch token will be rejected.",
+                    pocSlug, pocRuntime.platformApiUrl());
+        }
+    }
+
+    /**
+     * A POC given no PORTAL_ORIGIN has to fall back to accepting any origin for the portal
+     * handshake and cannot set frame-ancestors at all. The deploy succeeds and the POC still loads,
+     * so without this the gap stays invisible until someone audits the embedding.
+     */
+    private void warnIfPortalOriginIsUnset(String pocSlug) {
+        if (!pocRuntime.hasPortalOrigin()) {
+            log.warn("Deploying '{}' with no PORTAL_ORIGIN — set poc-runtime.portal-origin "
+                    + "(POC_RUNTIME_PORTAL_ORIGIN), or the POC cannot restrict who may frame it.", pocSlug);
         }
     }
 

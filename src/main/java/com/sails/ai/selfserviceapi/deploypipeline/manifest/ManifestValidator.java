@@ -43,16 +43,11 @@ public class ManifestValidator {
             violations.add("exactly one container must have role 'ingress' — found " + ingressCount);
         }
 
-        // Cloud Run gives a single-container service a default port (8080) automatically, but a
-        // service with sidecars gets no default for its ingress container at all — the ingress
-        // must declare one explicitly, or Cloud Run has nothing to route external traffic to. See
-        // https://cloud.google.com/run/docs/configuring/services/containers.
-        boolean hasSidecars = containers.stream().anyMatch(c -> c.role() == ContainerRole.SIDECAR);
-
         Set<String> seenNames = new HashSet<>();
         for (ManifestContainer container : containers) {
             validateName(container, seenNames, violations);
-            validatePort(container, hasSidecars, violations);
+            validatePort(container, violations);
+            validateRepo(container, violations);
             validateEnv(container, violations);
         }
 
@@ -87,25 +82,38 @@ public class ManifestValidator {
     }
 
     /**
-     * A lone ingress container (no sidecars) deploys through the plain, single-image
-     * {@code --image=} form, which Cloud Run defaults to port 8080 for — any {@code port} it
-     * declares would be meaningless, so it's neither required nor forbidden. Once a sidecar
-     * exists, the deploy switches to the multi-container {@code --container=} form, where Cloud
-     * Run's own rule is "only one container can have the port exposed" and gives the ingress
-     * container no default — so the ingress must declare one there, unconditionally.
+     * An ingress port is permitted but never required. Cloud Run gives a multi-container service's
+     * ingress no default port, but the platform owns that value
+     * ({@code poc-runtime.ingress-port}) rather than making every manifest restate it — so a
+     * manifest declaring none is complete, and one declaring its own still wins at deploy time
+     * ({@code CloudRunDeployCommandBuilder.ingressPort}). Requiring it instead would break every
+     * multi-container repo already written against {@code poc-platform-sdk}'s published schema,
+     * for a value the platform can always supply.
+     *
+     * <p>A sidecar's port is required and means something different: it is the only address the
+     * ingress can reach it at, and what the platform injects as that sidecar's own {@code PORT}.
      */
-    private void validatePort(ManifestContainer container, boolean hasSidecars, List<String> violations) {
+    private void validatePort(ManifestContainer container, List<String> violations) {
         if (container.role() == ContainerRole.INGRESS) {
-            if (hasSidecars && container.port() == null) {
-                violations.add("ingress container '" + container.name()
-                        + "' must declare a port when the manifest has sidecars — Cloud Run has no"
-                        + " default port for a multi-container service's ingress container");
-            }
             return;
         }
         if (container.port() == null) {
             violations.add("sidecar container '" + container.name()
                     + "' must declare a port — it's only reachable at an address the ingress names");
+        }
+    }
+
+    /**
+     * Rejected rather than ignored. Every container this phase builds comes from the POC's primary
+     * repo, so a {@code repo:} key changes nothing about what gets deployed — and a key that
+     * silently does nothing is exactly how an author ends up believing their second repository was
+     * built. Saying so costs one message and removes the guesswork.
+     */
+    private void validateRepo(ManifestContainer container, List<String> violations) {
+        if (container.repo() != null && !container.repo().isBlank()) {
+            violations.add("container '" + container.name() + "' declares repo '" + container.repo()
+                    + "' — cross-repository containers aren't supported yet; every container builds"
+                    + " from this POC's own repository");
         }
     }
 

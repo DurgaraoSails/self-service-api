@@ -162,4 +162,36 @@ class ManifestParserTest {
         assertThat(manifest.scaling()).isEqualTo(new Scaling(1, 5));
         assertThat(manifest.platform()).isEqualTo(new PlatformConfig(false, true));
     }
+
+    /** Parsed rather than dropped, so ManifestValidator can reject it with a message naming the key. */
+    @Test
+    void parsesAContainersRepoSoItCanBeRejectedByNameLater() {
+        PocManifest manifest = parser.parse("""
+                containers:
+                  - name: app
+                    role: ingress
+                    repo: github.com/acme/other
+                """);
+
+        assertThat(manifest.containers().get(0).repo()).isEqualTo("github.com/acme/other");
+    }
+
+    /** An unknown key is warned about, never rejected — a repo written against the fuller published schema still deploys. */
+    @Test
+    void stillParsesAManifestCarryingKeysThisPipelineDoesNotUnderstand() {
+        PocManifest manifest = parser.parse("""
+                apiVersion: sails.poc/v1
+                name: Testbed
+                description: something
+                team: platform
+                somethingNew: yes
+                containers:
+                  - name: app
+                    role: ingress
+                    futureKey: value
+                """);
+
+        assertThat(manifest.containers()).hasSize(1);
+        assertThat(manifest.containers().get(0).name()).isEqualTo("app");
+    }
 }
