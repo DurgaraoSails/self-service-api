@@ -10,6 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,8 +24,23 @@ import org.springframework.stereotype.Component;
 @Component
 public class CloudRunDeployCommandBuilder {
 
+    private static final Logger log = LoggerFactory.getLogger(CloudRunDeployCommandBuilder.class);
+
     /** Cloud Run's own default container port, used only for the stored-manifest case in {@link #ingressPort}. */
     private static final int DEFAULT_INGRESS_PORT = 8080;
+
+    /**
+     * gcloud's documented way to clear a container's port ("To unset this field, pass the special
+     * value 'default'"). Emitted for every sidecar rather than simply saying nothing about its
+     * port, because a deploy is a merge into the existing service, not a replacement: a service
+     * first deployed by an earlier version of this builder — which handed the sidecar's own
+     * declared port to gcloud as {@code --port} — keeps that port on the sidecar forever otherwise,
+     * and Cloud Run rejects the whole revision with "should contain exactly one container with an
+     * exposed port" once the ingress correctly gets one too. Saying it explicitly every time makes
+     * the deploy self-healing instead of permanently stuck. It also retargets any TCP startup probe
+     * gcloud had pointed at that port.
+     */
+    private static final String UNSET_PORT = "default";
 
     private final PipelineProperties properties;
 
@@ -42,6 +59,7 @@ public class CloudRunDeployCommandBuilder {
      * container keeps every deploy that worked before this feature working exactly as it did.
      */
     public List<String> buildContainerArgs(String pocSlug, PocManifest manifest, Map<String, String> imagesByContainer) {
+        warnIfPlatformApiUrlIsUnreachableFromCloudRun(pocSlug);
         List<ManifestContainer> containers = manifest.containers();
         if (containers.size() == 1) {
             return buildSingleContainerArgs(pocSlug, containers.get(0), manifest.resources(), imagesByContainer);
@@ -76,6 +94,8 @@ public class CloudRunDeployCommandBuilder {
             if (container.role() == ContainerRole.INGRESS) {
                 args.add("--port=" + ingressPort(container));
                 addResourceArgs(resources, args);
+            } else {
+                args.add("--port=" + UNSET_PORT);
             }
             args.add(envArg(platformEnv(pocSlug, container, containers)));
         }
@@ -115,6 +135,22 @@ public class CloudRunDeployCommandBuilder {
      */
     private int ingressPort(ManifestContainer ingress) {
         return ingress.port() == null ? DEFAULT_INGRESS_PORT : ingress.port();
+    }
+
+    /**
+     * A localhost PLATFORM_API_URL resolves, inside the deployed container, to that container
+     * itself — so the POC's own JWKS fetch 404s and every launch token it is handed fails
+     * verification with a 401 that looks like a token problem rather than a config one. The deploy
+     * still proceeds: this is only wrong for a POC that verifies tokens, and refusing here would
+     * block deploying one that doesn't.
+     */
+    private void warnIfPlatformApiUrlIsUnreachableFromCloudRun(String pocSlug) {
+        String url = properties.platformApiUrl();
+        if (url.contains("localhost") || url.contains("127.0.0.1")) {
+            log.warn("Deploying '{}' with PLATFORM_API_URL={} — a deployed container cannot reach that address. "
+                    + "Set pipeline.platform-api-url (PLATFORM_API_URL) to this API's public URL, or the POC's "
+                    + "JWKS lookup will fail and every launch token will be rejected.", pocSlug, url);
+        }
     }
 
     private String requireImage(ManifestContainer container, Map<String, String> imagesByContainer) {

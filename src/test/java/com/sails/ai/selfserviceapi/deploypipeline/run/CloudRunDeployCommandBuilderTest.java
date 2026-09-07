@@ -58,7 +58,7 @@ class CloudRunDeployCommandBuilderTest {
         assertThat(args).containsExactly(
                 "--container=api", "--image=img/api:1", "--port=8080",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;SVC_WORKER_URL=http://localhost:9000",
-                "--container=worker", "--image=img/worker:1",
+                "--container=worker", "--image=img/worker:1", "--port=default",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc");
     }
 
@@ -109,7 +109,7 @@ class CloudRunDeployCommandBuilderTest {
         assertThat(args).containsExactly(
                 "--container=api", "--image=img/api:1", "--port=8080", "--cpu=2", "--memory=1Gi",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;SVC_WORKER_URL=http://localhost:9000",
-                "--container=worker", "--image=img/worker:1",
+                "--container=worker", "--image=img/worker:1", "--port=default",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc");
     }
 
@@ -134,9 +134,39 @@ class CloudRunDeployCommandBuilderTest {
 
         List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
 
-        int workerEnvIndex = args.indexOf("--container=worker") + 2;
-        assertThat(args.get(workerEnvIndex)).isEqualTo(
+        assertThat(blockFor("worker", args)).contains(
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;SVC_CACHE_URL=http://localhost:9001");
+    }
+
+    /**
+     * A deploy is a merge into the existing service, not a replacement. A service first deployed
+     * by the earlier builder — which passed the sidecar's own declared port to gcloud — keeps that
+     * port on the sidecar unless this explicitly clears it, and Cloud Run then rejects the whole
+     * revision ("Revision template should contain exactly one container with an exposed port")
+     * as soon as the ingress correctly gets one too. Observed on a real deploy, not hypothetical.
+     */
+    @Test
+    void explicitlyUnsetsEachSidecarsPortSoAServiceDeployedWithThePortOnTheWrongContainerSelfHeals() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+        Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
+
+        assertThat(blockFor("worker", args)).contains("--port=default");
+        assertThat(blockFor("api", args)).contains("--port=8080");
+    }
+
+    /** One container's flags run from its own --container= up to the next one's. */
+    private static List<String> blockFor(String containerName, List<String> args) {
+        int start = args.indexOf("--container=" + containerName);
+        assertThat(start).isNotNegative();
+        int end = start + 1;
+        while (end < args.size() && !args.get(end).startsWith("--container=")) {
+            end++;
+        }
+        return args.subList(start, end);
     }
 
     @Test
