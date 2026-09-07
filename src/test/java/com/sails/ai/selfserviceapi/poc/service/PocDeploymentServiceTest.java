@@ -317,6 +317,37 @@ class PocDeploymentServiceTest {
         assertThat(updated.getLogsUrl()).isEqualTo("https://logs");
     }
 
+    /**
+     * Regression test: a deployment that fails mid-build (e.g. Cloud Build's single shared job
+     * throws before ever reaching DEPLOYING) still has whatever containerProgress the last
+     * successful reportManifestStatus(BUILDING, ...) call wrote — every container frozen at
+     * "PENDING"/Building…. Reported via this method (PipelineRunner.fail), not
+     * reportManifestStatus, so nothing else would ever clear it — the admin UI would keep showing
+     * "Building…" for every container forever, even though the deployment is plainly FAILED.
+     */
+    @Test
+    void reportStatusOnFailureClearsAnyStaleContainerProgressFromAnEarlierBuildingTransition() {
+        PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
+        deployment.setStatus("BUILDING");
+        deployment.setContainerProgress("[{\"name\":\"frontend\",\"role\":\"INGRESS\",\"state\":\"PENDING\"}]");
+        when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
+
+        PocDeployment updated = service.reportStatus(deployment.getId(), "FAILED", null, null, null, null, "Build failed.");
+
+        assertThat(updated.getContainerProgress()).isNull();
+    }
+
+    @Test
+    void reportStatusOnSkippedClearsAnyContainerProgress() {
+        PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
+        deployment.setContainerProgress("[{\"name\":\"app\",\"role\":\"INGRESS\",\"state\":\"PENDING\"}]");
+        when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
+
+        PocDeployment updated = service.reportStatus(deployment.getId(), "SKIPPED", null, null, null, null, null);
+
+        assertThat(updated.getContainerProgress()).isNull();
+    }
+
     @Test
     void reportStatusOnSuccessSetsTheVersionsContainerImageAndThePocsActiveVersion() {
         PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");

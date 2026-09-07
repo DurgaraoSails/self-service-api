@@ -115,6 +115,12 @@ public class PipelineRunner {
         }
     }
 
+    /**
+     * Reports through the plain {@code reportStatus} contract, not {@code reportManifestStatus} —
+     * this is the webhook-facing contract, used here because FAILED needs no manifest/container
+     * data at all: {@code reportStatus} clears {@code containerProgress} outright on FAILED (see
+     * its own javadoc for why), rather than trying to attribute the failure to one container.
+     */
     private void fail(UUID deploymentId, Long pocId, String pocSlug, String versionLabel, Exception e) {
         log.error("Deployment failed for poc: {} with poc-id: {} — version {}", pocSlug, pocId, versionLabel, e);
         try {

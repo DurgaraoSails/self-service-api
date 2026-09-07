@@ -8,7 +8,8 @@ package com.sails.ai.selfserviceapi.poc.service;
  * reflection of what that single job actually tells us, without parsing build logs.
  *
  * <p>{@code state} is one of PENDING (manifest resolved, not yet built), BUILT (images pushed,
- * not yet deployed), DEPLOYED (the service is live).
+ * not yet deployed), DEPLOYED (the service is live). There is no FAILED state here — a failed
+ * deployment clears containerProgress entirely instead (see {@code PocDeploymentService.reportStatus}).
  */
 public record ContainerProgress(String name, String role, String state, String containerImage, Integer port) {
 }

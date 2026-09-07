@@ -326,7 +326,14 @@ public class PocDeploymentService {
     /**
      * The webhook-facing status contract (POST /pocs/deployments/{id}/status) — a single
      * containerImage for the whole deployment, no manifest/container breakdown. Used by that
-     * endpoint and by PipelineRunner for FAILED/SKIPPED, neither of which touches container state.
+     * endpoint and by PipelineRunner for FAILED/SKIPPED.
+     *
+     * <p>FAILED/SKIPPED both clear {@code containerProgress} rather than leaving it alone: it was
+     * last written at whichever checkpoint (BUILDING, say) the pipeline reached before stopping,
+     * and a single Cloud Build job builds every container as one unit — there's no way to attribute
+     * the failure to one container over another, so a frozen "still Building…" row per container
+     * would be actively misleading once the deployment as a whole is done and failed. The overall
+     * status badge and error message already say everything this deployment has to say.
      */
     @Transactional
     public PocDeployment reportStatus(UUID deploymentId, String status, String containerImage, String commitSha,
@@ -343,8 +350,10 @@ public class PocDeploymentService {
 
         if (FAILED.equals(status)) {
             deployment.setErrorMessage(errorMessage);
+            deployment.setContainerProgress(null);
             deployment.setCompletedAt(Instant.now());
         } else if (SKIPPED.equals(status)) {
+            deployment.setContainerProgress(null);
             deployment.setCompletedAt(Instant.now());
         } else if (SUCCEEDED.equals(status)) {
             if (hostedUrl == null || hostedUrl.isBlank()) {
@@ -381,7 +390,8 @@ public class PocDeploymentService {
      * The in-process pipeline's status contract for BUILDING/DEPLOYING/SUCCEEDED — carries the
      * manifest and, once known, each container's pushed image, so the admin can see a
      * per-container breakdown instead of one coarse status for the whole multi-container deploy.
-     * FAILED/SKIPPED go through {@link #reportStatus} instead — neither needs any of this.
+     * FAILED/SKIPPED go through {@link #reportStatus} instead — neither needs any of this (and
+     * that method clears containerProgress for exactly the reason explained on its own javadoc).
      */
     @Transactional
     public PocDeployment reportManifestStatus(UUID deploymentId, String status, PocManifest manifest,
