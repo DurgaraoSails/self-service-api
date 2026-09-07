@@ -63,15 +63,24 @@ class ManifestValidatorTest {
     }
 
     /**
-     * Cloud Run has no default port for a multi-container service's ingress — see
-     * https://cloud.google.com/run/docs/configuring/services/containers ("there is no default
-     * port for the ingress container"). Once a sidecar exists, the ingress must declare one.
+     * Cloud Run has no default port for a multi-container service's ingress, but the platform owns
+     * that value (poc-runtime.ingress-port) rather than making every manifest restate it. Requiring
+     * it here would reject every multi-container repo already written against poc-platform-sdk's
+     * published schema, for a value the deploy can always supply itself.
      */
     @Test
-    void rejectsAnIngressContainerWithNoPortWhenSidecarsExist() {
+    void acceptsAMultiContainerManifestWhoseIngressDeclaresNoPort() {
         PocManifest manifest = new PocManifest(List.of(ingress("api"), sidecar("worker", 9000)), new Resources(null, null));
 
-        assertThat(validator.validate(manifest)).anySatisfy(v -> assertThat(v).contains("must declare a port"));
+        assertThat(validator.validate(manifest)).isEmpty();
+    }
+
+    /** Permitted, not forbidden — a manifest that names its own ingress port still deploys with it. */
+    @Test
+    void acceptsAnIngressContainerThatDeclaresItsOwnPort() {
+        PocManifest manifest = new PocManifest(List.of(ingress("api", 3000), sidecar("worker", 9000)), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).isEmpty();
     }
 
     @Test
@@ -161,5 +170,27 @@ class ManifestValidatorTest {
         // container's port is a violation here: no sidecar exists, so a declared port is merely
         // inert rather than wrong, and a missing one isn't required.)
         assertThat(violations).hasSizeGreaterThanOrEqualTo(3);
+    }
+
+    /**
+     * Rejected by name rather than ignored: every container builds from the POC's own repo, so a
+     * repo: key changes nothing about what deploys — and silently dropping it is how an author
+     * ends up believing their second repository was built.
+     */
+    @Test
+    void rejectsAContainerThatDeclaresItsOwnRepository() {
+        ManifestContainer crossRepo = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of(), null, "github.com/acme/other");
+        PocManifest manifest = new PocManifest(List.of(crossRepo), new Resources(null, null));
+
+        assertThat(validator.validate(manifest))
+                .anySatisfy(violation -> assertThat(violation).contains("cross-repository containers aren't supported yet"));
+    }
+
+    @Test
+    void acceptsAContainerThatDeclaresNoRepository() {
+        PocManifest manifest = new PocManifest(List.of(ingress("app")), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).isEmpty();
     }
 }

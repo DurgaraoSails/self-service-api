@@ -2,23 +2,21 @@ package com.sails.ai.selfserviceapi.deploypipeline.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
+import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.Resources;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CloudRunDeployCommandBuilderTest {
 
-    private final PipelineProperties properties = new PipelineProperties(
-            "local", null, null, null, false, true, null, Duration.ofMinutes(10), Duration.ofMinutes(10), Duration.ofSeconds(5),
-            "https://self-service-api.example.com");
+    private final PocRuntimeProperties pocRuntime = new PocRuntimeProperties(
+            8080, "https://self-service-api.example.com", "https://portal.example.com");
 
-    private final CloudRunDeployCommandBuilder builder = new CloudRunDeployCommandBuilder(properties);
+    private final CloudRunDeployCommandBuilder builder = new CloudRunDeployCommandBuilder(pocRuntime);
 
     @Test
     void aSingleDefaultContainerProducesTheSamePlainFormAsBeforeManifestSupportPlusPlatformEnv() {
@@ -32,7 +30,7 @@ class CloudRunDeployCommandBuilderTest {
 
         assertThat(args).containsExactly(
                 "--image=registry/proj/poc-images/slug/app:1.0.1",
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc");
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com");
     }
 
     @Test
@@ -43,7 +41,7 @@ class CloudRunDeployCommandBuilderTest {
         List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
 
         assertThat(args).containsExactly("--image=img/app:1", "--cpu=2", "--memory=1Gi",
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc");
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com");
     }
 
     @Test
@@ -57,9 +55,9 @@ class CloudRunDeployCommandBuilderTest {
 
         assertThat(args).containsExactly(
                 "--container=api", "--image=img/api:1", "--port=8080",
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;SVC_WORKER_URL=http://localhost:9000",
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;SVC_WORKER_URL=http://localhost:9000",
                 "--container=worker", "--image=img/worker:1", "--port=default",
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORT=9000");
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;PORT=9000");
     }
 
     /**
@@ -108,9 +106,9 @@ class CloudRunDeployCommandBuilderTest {
 
         assertThat(args).containsExactly(
                 "--container=api", "--image=img/api:1", "--port=8080", "--cpu=2", "--memory=1Gi",
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;SVC_WORKER_URL=http://localhost:9000",
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;SVC_WORKER_URL=http://localhost:9000",
                 "--container=worker", "--image=img/worker:1", "--port=default",
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORT=9000");
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;PORT=9000");
     }
 
     @Test
@@ -121,7 +119,7 @@ class CloudRunDeployCommandBuilderTest {
         List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("api", "img/api:1"));
 
         assertThat(args).contains(
-                "--set-env-vars=^;^LOG_LEVEL=info;PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc");
+                "--set-env-vars=^;^LOG_LEVEL=info;PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com");
     }
 
     @Test
@@ -135,7 +133,7 @@ class CloudRunDeployCommandBuilderTest {
         List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
 
         assertThat(blockFor("worker", args)).contains(
-                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORT=9000"
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;PORT=9000"
                         + ";SVC_CACHE_URL=http://localhost:9001");
     }
 
@@ -232,6 +230,144 @@ class CloudRunDeployCommandBuilderTest {
             end++;
         }
         return args.subList(start, end);
+    }
+
+    /**
+     * PORTAL_ORIGIN is both the postMessage targetOrigin a POC replies to and the value it puts in
+     * its own frame-ancestors, so it has to come from the platform rather than from anything an
+     * embedder controls.
+     */
+    @Test
+    void givesEveryContainerThePortalOriginAllowedToFrameIt() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+        Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
+
+        assertThat(envOf("api", args)).containsEntry("PORTAL_ORIGIN", "https://portal.example.com");
+        assertThat(envOf("worker", args)).containsEntry("PORTAL_ORIGIN", "https://portal.example.com");
+    }
+
+    /** Nothing to inject beats injecting the empty string, which a POC would read as a real origin. */
+    @Test
+    void omitsPortalOriginEntirelyWhenNoneIsConfigured() {
+        CloudRunDeployCommandBuilder noOrigin = new CloudRunDeployCommandBuilder(
+                new PocRuntimeProperties(8080, "https://self-service-api.example.com", ""));
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = noOrigin.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args.toString()).doesNotContain("PORTAL_ORIGIN");
+    }
+
+    /** The platform owns the ingress port; a manifest that names none gets the configured one. */
+    @Test
+    void usesTheConfiguredIngressPortWhenTheManifestDeclaresNone() {
+        CloudRunDeployCommandBuilder onPort9090 = new CloudRunDeployCommandBuilder(
+                new PocRuntimeProperties(9090, "https://self-service-api.example.com", "https://portal.example.com"));
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+
+        List<String> args = onPort9090.buildContainerArgs("my-poc", manifest,
+                Map.of("api", "img/api:1", "worker", "img/worker:1"));
+
+        assertThat(blockFor("api", args)).contains("--port=9090");
+    }
+
+    /** A manifest that names its own ingress port still wins — poc-platform-sdk's schema allows one. */
+    @Test
+    void prefersTheManifestsOwnIngressPortOverTheConfiguredDefault() {
+        CloudRunDeployCommandBuilder onPort9090 = new CloudRunDeployCommandBuilder(
+                new PocRuntimeProperties(9090, "https://self-service-api.example.com", "https://portal.example.com"));
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 3000, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+
+        List<String> args = onPort9090.buildContainerArgs("my-poc", manifest,
+                Map.of("api", "img/api:1", "worker", "img/worker:1"));
+
+        assertThat(blockFor("api", args)).contains("--port=3000");
+    }
+
+    /** A probe targets the port that container actually listens on, which differs per role. */
+    @Test
+    void turnsEachContainersHealthPathIntoAStartupProbeOnItsOwnPort() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of(), "/healthz");
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of(), "/ready");
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+        Map<String, String> images = Map.of("api", "img/api:1", "worker", "img/worker:1");
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
+
+        assertThat(blockFor("api", args)).contains("--startup-probe=httpGet.path=/healthz,httpGet.port=8080");
+        assertThat(blockFor("worker", args)).contains("--startup-probe=httpGet.path=/ready,httpGet.port=9000");
+    }
+
+    /** health: stays optional — a manifest that declares none must still deploy. */
+    @Test
+    void emitsNoProbeForAContainerThatDeclaresNoHealthPath() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest,
+                Map.of("api", "img/api:1", "worker", "img/worker:1"));
+
+        assertThat(args.toString()).doesNotContain("--startup-probe");
+    }
+
+    /**
+     * Without ordering the ingress can proxy to a sidecar that isn't listening yet — a 502 on every
+     * cold start. Cloud Run only accepts a dependency on a container that has a startup probe, so
+     * this lists exactly the probed sidecars.
+     */
+    @Test
+    void makesTheIngressDependOnEverySidecarThatDeclaredAProbe() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of(), "/healthz");
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of(), "/ready");
+        ManifestContainer cache = new ManifestContainer("cache", ContainerRole.SIDECAR, "Dockerfile", ".", 9001, Map.of(), "/ready");
+        PocManifest manifest = new PocManifest(List.of(api, worker, cache), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest,
+                Map.of("api", "img/api:1", "worker", "img/worker:1", "cache", "img/cache:1"));
+
+        assertThat(blockFor("api", args)).contains("--depends-on=worker,cache");
+    }
+
+    /** Depending on a probe-less container is rejected by Cloud Run, so an unprobed sidecar is left out. */
+    @Test
+    void omitsDependsOnEntirelyWhenNoSidecarDeclaredAProbe() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of(), "/healthz");
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest,
+                Map.of("api", "img/api:1", "worker", "img/worker:1"));
+
+        assertThat(args.toString()).doesNotContain("--depends-on");
+    }
+
+    /** Scaling is service-level: it must never land inside a --container= block. */
+    @Test
+    void buildsScalingAsServiceLevelArgsSeparateFromAnyContainer() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api), new Resources(null, null),
+                new com.sails.ai.selfserviceapi.deploypipeline.manifest.Scaling(0, 3),
+                com.sails.ai.selfserviceapi.deploypipeline.manifest.PlatformConfig.none());
+
+        assertThat(builder.buildServiceArgs(manifest)).containsExactly("--min-instances=0", "--max-instances=3");
+    }
+
+    @Test
+    void buildsNoServiceArgsWhenTheManifestDeclaresNoScaling() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
+        PocManifest manifest = new PocManifest(List.of(api), new Resources(null, null));
+
+        assertThat(builder.buildServiceArgs(manifest)).isEmpty();
     }
 
     @Test

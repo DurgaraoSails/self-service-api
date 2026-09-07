@@ -2,8 +2,12 @@ package com.sails.ai.selfserviceapi.deploypipeline.manifest;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
@@ -22,8 +26,22 @@ import org.yaml.snakeyaml.error.YAMLException;
 @Component
 public class ManifestParser {
 
+    private static final Logger log = LoggerFactory.getLogger(ManifestParser.class);
+
     private static final String DEFAULT_DOCKERFILE = "Dockerfile";
     private static final String DEFAULT_CONTEXT = ".";
+
+    /**
+     * Everything this parser reads, plus the descriptive keys it deliberately ignores
+     * ({@code apiVersion}, {@code name}, {@code description}, {@code team}) — those document the
+     * POC for a human and drive nothing here, so warning about them would be noise on every
+     * manifest written against the published schema.
+     */
+    private static final Set<String> KNOWN_TOP_LEVEL_KEYS =
+            Set.of("apiVersion", "name", "description", "team", "containers", "resources", "scaling", "platform");
+
+    private static final Set<String> KNOWN_CONTAINER_KEYS =
+            Set.of("name", "role", "dockerfile", "context", "port", "env", "health", "repo");
 
     @SuppressWarnings("unchecked")
     public PocManifest parse(String yaml) {
@@ -53,6 +71,8 @@ public class ManifestParser {
         Resources resources = parseResources((Map<String, Object>) root.get("resources"));
         Scaling scaling = parseScaling((Map<String, Object>) root.get("scaling"));
         PlatformConfig platform = parsePlatform((Map<String, Object>) root.get("platform"));
+
+        warnAboutUnsupportedKeys(root, containerList);
         return new PocManifest(containers, resources, scaling, platform);
     }
 
@@ -64,7 +84,34 @@ public class ManifestParser {
         Integer port = optionalInt(map, "port");
         Map<String, String> env = parseEnv(map.get("env"), name);
         String health = optionalString(map, "health", null);
-        return new ManifestContainer(name, role, dockerfile, context, port, env, health);
+        String repo = optionalString(map, "repo", null);
+        return new ManifestContainer(name, role, dockerfile, context, port, env, health, repo);
+    }
+
+    /**
+     * Warned about, never rejected. A POC repo written against the fuller published
+     * {@code poc-platform-sdk} schema must keep deploying even when this pipeline understands only
+     * part of it — but an author who writes a key that does nothing, or misspells one that would
+     * have, otherwise has no way at all to discover it. Logged rather than returned because every
+     * caller of this parser wants the same thing done with it, on both the build and the
+     * redeploy path.
+     */
+    private void warnAboutUnsupportedKeys(Map<String, Object> root, List<?> containerList) {
+        Set<String> unsupported = new LinkedHashSet<>(root.keySet());
+        unsupported.removeAll(KNOWN_TOP_LEVEL_KEYS);
+
+        for (Object entry : containerList) {
+            if (entry instanceof Map<?, ?> map) {
+                map.keySet().stream()
+                        .map(String::valueOf)
+                        .filter(key -> !KNOWN_CONTAINER_KEYS.contains(key))
+                        .forEach(key -> unsupported.add("containers[]." + key));
+            }
+        }
+
+        if (!unsupported.isEmpty()) {
+            log.warn("unsupported manifest keys, ignored: {}", String.join(", ", unsupported));
+        }
     }
 
     private ContainerRole parseRole(String raw, String containerName) {
