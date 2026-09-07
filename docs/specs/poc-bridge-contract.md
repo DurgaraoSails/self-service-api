@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft — designed, not implemented. Defines the contract between the portal and an embedded POC; the architectural reasoning behind it lives in `docs/specs/poc-hosting-architecture.md`.
+In Progress — the library exists and the portal uses it; publishing and several opt-in features are outstanding (see Implementation Status). Defines the contract between the portal and an embedded POC; the architectural reasoning behind it lives in `docs/specs/poc-hosting-architecture.md`.
 
 *Scope note: unlike the other specs here, this one describes a package (`@sails/poc-bridge`) that does not live in `self-service-api`. It is kept alongside the rest of the POC platform design because that is where the decisions it implements are recorded.*
 
@@ -206,9 +206,82 @@ Additive changes — a new message type, a new optional field — take normal re
 **The deprecation window is decided from data, not from argument.**
 `poc:ready` carries `v`, so the portal can record which protocol versions are actually live across the deployed fleet. "Can we drop v1?" is therefore a query rather than a guess, and the admin fleet view is the natural place to surface it.
 
+## Implementation Status
+
+`@sails/poc-bridge` lives in `self-service-portal` at `projects/poc-bridge`, as this document
+specifies. As of 2026-09-07:
+
+**Built.** `lib/protocol.ts` — every message type, its guards, and version negotiation, imported by
+both halves so drift is a compile error. `PocFrameHost` (portal half) — origin *and* source checks,
+shape and version guards, replies on the version the POC announced, and refuses to answer a frame
+that keeps asking after the session ended. `PocBridge` (POC half) — `poc:ready` with retry backoff,
+blocking `waitForSession()` for `provideAppInitializer`, token in memory only, proactive refresh at
+75% of lifetime, concurrent refreshes collapsed into one, live theme, `ResizeObserver` emitting
+`poc:resize`. `providePocBridge` — required `portalOrigin`, throwing at bootstrap on a missing,
+wildcard, or path-carrying value. `pocBridgeInterceptor` — token attachment and
+`401 → refresh → retry once`. `startDevHarness` — the standalone dev harness.
+
+**Structure.** Three entry points: `@sails/poc-bridge` (the contract alone), `/host`, and `/poc`.
+Exporting both halves from one barrel measurably put the POC-side client into the portal's
+production bundle — its `providedIn: 'root'` registration survives tree-shaking — and offered
+`PocBridge` and `PocFrameHost` from one import path, making the wrong choice a runtime
+`NullInjectorError` rather than a compile error. The split maps onto ng-packagr's
+primary/secondary entry-point layout, so it is also the shape publishing needs.
+
+**Diagnostics, and where this document's "ignore silently" rule was too blunt.** Silence is right
+on the wire and miserable to debug: strict checks plus no logging meant a broken handshake produced
+no error, no request, and a POC that never came alive. The library now draws the line at origin —
+traffic from an origin we are not talking to is dropped in total silence, as specified, while a
+message from the origin we *are* talking to that then fails the source, shape or version check is
+reported to an optional `onIgnored` handler. The portal logs it under `isDevMode()`; the POC side
+defaults to a dev-mode warning and production silence. `onIgnored` also fires on handshake timeout,
+separating "heard nothing at all" (usually `PORTAL_ORIGIN` not matching the portal's real origin,
+which the browser discards silently) from "heard the portal but dropped everything" — the
+diagnostic a POC author actually needs.
+
+**Settled during implementation.** `portal:session`'s `expiresAt` is an **ISO-8601 string**, not
+epoch milliseconds: it is what the portal already sent, and it matches the date convention the rest
+of this API uses. `user` and `theme` are read from the token's own claims rather than from portal
+state, so they cannot disagree with what the POC's backend will independently verify.
+
+**Guarded.** `SUPPORTED_VERSIONS` is a literal list, never derived from `PROTOCOL_VERSION` —
+deriving it means a version bump silently drops every older version in the same edit, and since
+every POC announces its version in `poc:ready`, the whole fleet would lose sessions at once. Tests
+assert the previous version survives a bump, which is the one change that can break every deployed
+POC simultaneously.
+
+**Not built.** Publishing to GitHub Packages — the library is consumed from source via a tsconfig
+path mapping, so POC repos still hand-roll their half; this is the single largest gap, since the
+package existing but being unpublished delivers none of the anti-drift benefit to POC teams.
+Deep-link `portal:navigate`/`poc:navigate` are wired in the protocol and the client but no portal
+route mirrors them. `poc:resize` is emitted but the workspace ignores it, since it already gives
+the frame full viewport height. The file uploader is not started — this document's own open
+question about whether it is one component or a headless primitive is unresolved.
+
+**Drift this closed.** `poc-integration-testbed` listens for `{type: 'sails:theme', mode}` while the
+portal sends `{type: 'portal:theme', theme}`. Two hand-rolled halves that had already disagreed —
+exactly what this document predicted and what the shared package prevents. The testbed still needs
+updating onto the contract (or onto the package, once published).
+
 ## Open Questions / Future Work
 
 - **How many protocol versions does the portal support?** "Current and previous" is stated above as a starting rule. The real window should be set once `poc:ready` version telemetry exists to inform it, along with what the portal does when it meets a bridge older than the window — refuse to hand over a session, or hand one over and degrade.
 - **Is the uploader one component or a headless primitive plus a default UI?** A single component is faster to ship and enforces consistency; a headless core lets a POC style upload into an unusual flow. The second is more work and can follow.
 - **Deep-link semantics.** `poc:navigate` and `portal:navigate` assume the portal mirrors an opaque POC path into its own URL. Whether the portal validates that path, and what it does with a path a POC no longer recognises, is undefined.
 - **Does the pipeline verify that `PORTAL_ORIGIN` was actually injected?** The conformance check can assert the variable is set on the Cloud Run service at deploy time, which would catch the one failure mode this design still has — a deploy path that forgets it, leaving the POC to throw at bootstrap in production rather than in CI.
+
+## Changelog
+
+- 2026-09-07 — Implemented as `projects/poc-bridge` in `self-service-portal`. The portal's
+  hand-rolled `core/poc/poc-bridge.ts` was folded into the library as `PocFrameHost`, keeping its
+  design (attach-before-src, reuse the live iframe on refresh, claims read from the token) and
+  gaining the shape/version guards this document requires. The POC half, the interceptor, the
+  provider validation and the dev harness are new — nothing implemented them before, which is why
+  POC repos hand-rolled their own. `expiresAt` settled as an ISO-8601 string. See Implementation
+  Status above for what is still outstanding, publishing chief among it.
+- 2026-09-07 — Hardened against the library's own silent failure modes. `SUPPORTED_VERSIONS` is no
+  longer derived from `PROTOCOL_VERSION` (a bump would have dropped every older version at once).
+  Split into three entry points, which removed the POC-side client from the portal's production
+  bundle. Added the `onIgnored` diagnostics described in Implementation Status — the one place this
+  document's "ignore silently, without logging" rule needed qualifying, since it applies to a
+  shared message bus rather than to messages from the origin we are actually talking to.
