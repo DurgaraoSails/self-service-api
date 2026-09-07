@@ -36,17 +36,17 @@ public class CloudRunDeployCommandBuilder {
     private static final Logger log = LoggerFactory.getLogger(CloudRunDeployCommandBuilder.class);
 
     /**
-     * gcloud's documented way to clear a container's port ("To unset this field, pass the special
-     * value 'default'"). Emitted for every sidecar rather than simply saying nothing about its
-     * port, because a deploy is a merge into the existing service, not a replacement: a service
-     * first deployed by an earlier version of this builder — which handed the sidecar's own
-     * declared port to gcloud as {@code --port} — keeps that port on the sidecar forever otherwise,
-     * and Cloud Run rejects the whole revision with "should contain exactly one container with an
-     * exposed port" once the ingress correctly gets one too. Saying it explicitly every time makes
-     * the deploy self-healing instead of permanently stuck. It also retargets any TCP startup probe
-     * gcloud had pointed at that port.
+     * Startup-probe budget: {@code failureThreshold × periodSeconds} = 120s to come up, against
+     * Cloud Run's own 240s ceiling for that product. Stated explicitly rather than left to Cloud
+     * Run's defaults, which allow roughly 30s — comfortable for a Node ingress and routinely too
+     * tight for a JVM sidecar, whose cold start includes classloading before it can answer
+     * anything. A container that misses its startup probe is shut down and takes the whole
+     * revision's deploy down with it, so the default's failure mode is a deploy that fails for
+     * reasons nothing in the manifest explains.
      */
-    private static final String UNSET_PORT = "default";
+    private static final int PROBE_TIMEOUT_SECONDS = 5;
+    private static final int PROBE_PERIOD_SECONDS = 10;
+    private static final int PROBE_FAILURE_THRESHOLD = 12;
 
     private final PocRuntimeProperties pocRuntime;
 
@@ -129,7 +129,12 @@ public class CloudRunDeployCommandBuilder {
                 addStartupProbeArg(container, ingressPort, args);
                 addDependsOnArg(containers, args);
             } else {
-                args.add("--port=" + UNSET_PORT);
+                // No --port for a sidecar, not even gcloud's "unset" value: gcloud counts any
+                // container carrying the flag as one that specifies a port, so passing
+                // --port=default here still trips its own check — "Invalid value for [--container]:
+                // Exactly one container must specify --port or --use-http2" — before the request is
+                // ever sent. Its startup probe still names the port, which is what the sidecar
+                // actually listens on.
                 addStartupProbeArg(container, container.port(), args);
             }
 
@@ -148,7 +153,10 @@ public class CloudRunDeployCommandBuilder {
         if (container.health() == null || container.health().isBlank() || port == null) {
             return;
         }
-        args.add("--startup-probe=httpGet.path=" + container.health() + ",httpGet.port=" + port);
+        args.add("--startup-probe=httpGet.path=" + container.health() + ",httpGet.port=" + port
+                + ",timeoutSeconds=" + PROBE_TIMEOUT_SECONDS
+                + ",periodSeconds=" + PROBE_PERIOD_SECONDS
+                + ",failureThreshold=" + PROBE_FAILURE_THRESHOLD);
     }
 
     /**
@@ -187,7 +195,7 @@ public class CloudRunDeployCommandBuilder {
      *
      * <p>A sidecar additionally gets PORT, set to that same declared port. Cloud Run injects PORT
      * into the ingress container only, and {@link #buildMultiContainerArgs} deliberately clears
-     * every sidecar's port ({@link #UNSET_PORT}) so exactly one container exposes one — which
+     * every sidecar carries no --port at all, so exactly one container specifies one — which
      * leaves a sidecar with no way at all to learn the port the platform is simultaneously
      * advertising to everyone else as SVC_&lt;NAME&gt;_URL. It cannot supply the value itself either:
      * PORT is in {@code manifest.reserved-env-names}, so a manifest setting it is rejected. Without

@@ -63,17 +63,17 @@ class RealManifestGoldenTest {
         assertThat(service).containsExactly("--min-instances=0", "--max-instances=3");
 
         // The one invariant Cloud Run rejects the whole revision over.
-        assertThat(args.stream().filter(arg -> arg.startsWith("--port=") && !arg.equals("--port=default")).toList())
+        assertThat(args.stream().filter(arg -> arg.startsWith("--port=")).toList())
                 .containsExactly("--port=8080");
 
         assertThat(args).containsExactly(
                 "--container=frontend", "--image=img/frontend:1.0.5", "--port=8080", "--cpu=1", "--memory=1Gi",
-                "--startup-probe=httpGet.path=/healthz,httpGet.port=8080",
+                "--startup-probe=httpGet.path=/healthz,httpGet.port=8080,timeoutSeconds=5,periodSeconds=10,failureThreshold=12",
                 "--depends-on=backend",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://api.example.com;POC_SLUG=poc-testbed-one"
                         + ";PORTAL_ORIGIN=https://portal.example.com;SVC_BACKEND_URL=http://localhost:8081",
-                "--container=backend", "--image=img/backend:1.0.5", "--port=default",
-                "--startup-probe=httpGet.path=/healthz,httpGet.port=8081",
+                "--container=backend", "--image=img/backend:1.0.5",
+                "--startup-probe=httpGet.path=/healthz,httpGet.port=8081,timeoutSeconds=5,periodSeconds=10,failureThreshold=12",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://api.example.com;POC_SLUG=poc-testbed-one"
                         + ";PORTAL_ORIGIN=https://portal.example.com;PORT=8081");
     }

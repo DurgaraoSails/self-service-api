@@ -56,7 +56,7 @@ class CloudRunDeployCommandBuilderTest {
         assertThat(args).containsExactly(
                 "--container=api", "--image=img/api:1", "--port=8080",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;SVC_WORKER_URL=http://localhost:9000",
-                "--container=worker", "--image=img/worker:1", "--port=default",
+                "--container=worker", "--image=img/worker:1",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;PORT=9000");
     }
 
@@ -107,7 +107,7 @@ class CloudRunDeployCommandBuilderTest {
         assertThat(args).containsExactly(
                 "--container=api", "--image=img/api:1", "--port=8080", "--cpu=2", "--memory=1Gi",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;SVC_WORKER_URL=http://localhost:9000",
-                "--container=worker", "--image=img/worker:1", "--port=default",
+                "--container=worker", "--image=img/worker:1",
                 "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;PORT=9000");
     }
 
@@ -138,14 +138,15 @@ class CloudRunDeployCommandBuilderTest {
     }
 
     /**
-     * A deploy is a merge into the existing service, not a replacement. A service first deployed
-     * by the earlier builder — which passed the sidecar's own declared port to gcloud — keeps that
-     * port on the sidecar unless this explicitly clears it, and Cloud Run then rejects the whole
-     * revision ("Revision template should contain exactly one container with an exposed port")
-     * as soon as the ingress correctly gets one too. Observed on a real deploy, not hypothetical.
+     * gcloud's own check, run before it sends anything: "Invalid value for [--container]: Exactly
+     * one container must specify --port or --use-http2". *Carrying* the flag is what counts, so a
+     * sidecar must not be given one at all — not even gcloud's documented "unset" value
+     * `--port=default`, which an earlier revision emitted to clear a stale port and which failed
+     * every deploy at exit 1 without ever reaching the API. Observed on a real deploy, not
+     * hypothetical: build 953f34be against poc-testbed-one 1.0.9.
      */
     @Test
-    void explicitlyUnsetsEachSidecarsPortSoAServiceDeployedWithThePortOnTheWrongContainerSelfHeals() {
+    void givesTheSidecarNoPortFlagAtAllSinceGcloudCountsCarryingItAsSpecifyingAPort() {
         ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());
         ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
         PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
@@ -153,8 +154,10 @@ class CloudRunDeployCommandBuilderTest {
 
         List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
 
-        assertThat(blockFor("worker", args)).contains("--port=default");
+        assertThat(blockFor("worker", args)).noneMatch(arg -> arg.startsWith("--port="));
         assertThat(blockFor("api", args)).contains("--port=8080");
+        // The whole command, not just one block: exactly one --port anywhere is the rule.
+        assertThat(args).filteredOn(arg -> arg.startsWith("--port=")).hasSize(1);
     }
 
     /**
@@ -303,8 +306,8 @@ class CloudRunDeployCommandBuilderTest {
 
         List<String> args = builder.buildContainerArgs("my-poc", manifest, images);
 
-        assertThat(blockFor("api", args)).contains("--startup-probe=httpGet.path=/healthz,httpGet.port=8080");
-        assertThat(blockFor("worker", args)).contains("--startup-probe=httpGet.path=/ready,httpGet.port=9000");
+        assertThat(blockFor("api", args)).contains("--startup-probe=httpGet.path=/healthz,httpGet.port=8080,timeoutSeconds=5,periodSeconds=10,failureThreshold=12");
+        assertThat(blockFor("worker", args)).contains("--startup-probe=httpGet.path=/ready,httpGet.port=9000,timeoutSeconds=5,periodSeconds=10,failureThreshold=12");
     }
 
     /** health: stays optional — a manifest that declares none must still deploy. */
