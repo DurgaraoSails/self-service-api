@@ -41,7 +41,7 @@ class LocalPipelineExecutorTest {
             8080, "https://self-service-api.example.com", "https://portal.example.com");
 
     private final PipelineProperties properties = new PipelineProperties(
-            "local", null, null, null, false, true, null, Duration.ofMinutes(10), Duration.ofMinutes(10), Duration.ofSeconds(5));
+            "local", null, null, null, null, false, true, null, Duration.ofMinutes(10), Duration.ofMinutes(10), Duration.ofSeconds(5));
 
     private final LocalPipelineExecutor executor = new LocalPipelineExecutor(
             processRunner, gcp, properties, cloudRunService, new CloudRunDeployCommandBuilder(pocRuntime));

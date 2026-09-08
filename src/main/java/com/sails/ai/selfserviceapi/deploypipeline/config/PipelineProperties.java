@@ -46,6 +46,18 @@ public record PipelineProperties(
         String githubToken,
 
         /**
+         * cloud-build only. Secret Manager secret id holding a token with {@code read:packages},
+         * offered to every {@code docker build} as a BuildKit secret named {@code npm_token} so a
+         * POC can install from a private registry without the credential becoming an image layer.
+         * Blank offers none, which is all a POC installing only public packages needs.
+         *
+         * <p>Deliberately separate from {@link #githubTokenSecretId()}, even though both are
+         * GitHub credentials: a GitHub App installation token can clone a repository but cannot
+         * read GitHub Packages, so one secret cannot be assumed to satisfy both roles.
+         */
+        String npmTokenSecretId,
+
+        /**
          * Grants self-service-api's own service account {@code run.invoker} on the service just
          * deployed. Not needed for the default public POC ({@link #allowUnauthenticated}) — a
          * user's browser reaches it directly, self-service-api never sits in that path. This is
@@ -94,6 +106,10 @@ public record PipelineProperties(
 
     public boolean usesSecretManagerToken() {
         return githubTokenSecretId != null && !githubTokenSecretId.isBlank();
+    }
+
+    public boolean usesNpmTokenSecret() {
+        return npmTokenSecretId != null && !npmTokenSecretId.isBlank();
     }
 
     public boolean hasGithubToken() {

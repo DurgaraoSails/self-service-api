@@ -72,10 +72,38 @@ public class BuildService {
      * Each container may declare its own Dockerfile/build context, both independently relative to
      * the repo root cloned into "src" — see {@link ManifestContainer}'s javadoc for why this isn't
      * dockerfile-relative-to-context.
+     *
+     * <p>With {@code pipeline.npm-token-secret-id} set, the build runs under BuildKit with that
+     * token mounted as a build secret, so a POC installing from a private registry can
+     * authenticate without the credential landing in a layer. The secret is offered to every
+     * container unconditionally: a Dockerfile declaring no matching
+     * {@code --mount=type=secret,id=npm_token} simply ignores it. That is what keeps this out of
+     * the manifest — there is nothing per-POC to declare, so {@code poc.yaml} needs no new key and
+     * no existing POC's build changes.
+     *
+     * <p>Note this is a <em>build</em>-time secret, unrelated to the runtime {@code --set-secrets}
+     * of {@code poc-container-environment.md}: that sets env vars on an already-built image and
+     * cannot affect {@code docker build}.
      */
-    private BuildStep buildStep(ManifestContainer container, String image) {
-        return new BuildStep("gcr.io/cloud-builders/docker", null,
-                List.of("build", "-f", "src/" + container.dockerfile(), "-t", image, "src/" + container.context()), null);
+    BuildStep buildStep(ManifestContainer container, String image) {
+        if (!properties.usesNpmTokenSecret()) {
+            return new BuildStep("gcr.io/cloud-builders/docker", null,
+                    List.of("build", "-f", "src/" + container.dockerfile(), "-t", image, "src/" + container.context()), null);
+        }
+
+        // The token is written to /tmp rather than /workspace deliberately: /workspace is the
+        // volume shared with every later step in the same build, so a token left there would
+        // outlive the one step that needs it. /tmp belongs to this step's container alone.
+        //
+        // $$NPM_TOKEN, not $NPM_TOKEN — Cloud Build resolves $$ to a literal $, leaving the shell
+        // to expand the secretEnv var at run time. Interpolating the value here instead would
+        // store it permanently on the Build resource, which is the same trap cloneStep documents.
+        String command = """
+                set -e
+                printf '%%s' "$$NPM_TOKEN" > /tmp/npm_token
+                DOCKER_BUILDKIT=1 docker build --secret id=npm_token,src=/tmp/npm_token -f src/%s -t %s src/%s
+                """.formatted(container.dockerfile(), image, container.context());
+        return new BuildStep("gcr.io/cloud-builders/docker", "bash", List.of("-c", command), List.of("NPM_TOKEN"));
     }
 
     /**
@@ -170,12 +198,22 @@ public class BuildService {
                 List.of("clone", "--branch", versionLabel, "--depth", "1", "https://" + repoPath, "src"), null);
     }
 
+    /**
+     * Every Secret Manager value this build may resolve: the clone token, the npm token, or
+     * neither. Null when neither is configured — Cloud Build rejects an empty availableSecrets
+     * block, so "no secrets" has to mean the field is absent rather than present and empty.
+     */
     private AvailableSecrets availableSecrets() {
-        if (!properties.usesSecretManagerToken()) {
-            return null;
+        List<SecretManagerSecret> secrets = new ArrayList<>();
+        if (properties.usesSecretManagerToken()) {
+            secrets.add(new SecretManagerSecret(
+                    gcp.secretVersionName(properties.githubTokenSecretId()), "GITHUB_TOKEN"));
         }
-        return new AvailableSecrets(List.of(new SecretManagerSecret(
-                gcp.secretVersionName(properties.githubTokenSecretId()), "GITHUB_TOKEN")));
+        if (properties.usesNpmTokenSecret()) {
+            secrets.add(new SecretManagerSecret(
+                    gcp.secretVersionName(properties.npmTokenSecretId()), "NPM_TOKEN"));
+        }
+        return secrets.isEmpty() ? null : new AvailableSecrets(secrets);
     }
     
     /**
@@ -251,7 +289,7 @@ public class BuildService {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private record BuildStep(String name, String entrypoint, List<String> args, List<String> secretEnv) {
+    record BuildStep(String name, String entrypoint, List<String> args, List<String> secretEnv) {
     }
 
     private record SecretManagerSecret(String versionName, String env) {

@@ -144,6 +144,11 @@ pipeline:
   # cloud-build only. Blank falls back to github-token below (see BuildService for why that's
   # worse — an inline token is stored permanently on the Build resource).
   github-token-secret-id: ${BUILD_GITHUB_TOKEN_SECRET:}
+  # cloud-build only. Secret Manager secret id holding a token with read:packages, offered to every
+  # docker build as a BuildKit secret named `npm_token` (see BuildService.buildStep). Blank offers
+  # none. Separate from github-token-secret-id above because a GitHub App installation token can
+  # clone but cannot read GitHub Packages.
+  npm-token-secret-id: ${BUILD_NPM_TOKEN_SECRET:}
   grant-api-invoker: ${BUILD_GRANT_API_INVOKER:false}
   allow-unauthenticated: ${BUILD_ALLOW_UNAUTHENTICATED:true}
 

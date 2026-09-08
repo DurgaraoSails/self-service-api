@@ -38,7 +38,7 @@ class GitHubServiceTest {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
         server = MockRestServiceServer.bindTo(builder).build();
         PipelineProperties properties = new PipelineProperties(
-                "local", "", "", "ghp_test", false, false, "", Duration.ofMinutes(20),
+                "local", "", "", "ghp_test", "", false, false, "", Duration.ofMinutes(20),
                 Duration.ofMinutes(20), Duration.ofSeconds(10));
         gitHubService = new GitHubService(builder.build(), properties);
     }
@@ -111,7 +111,7 @@ class GitHubServiceTest {
                 .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
                 .build();
         PipelineProperties noToken = new PipelineProperties(
-                "local", "", "", "", false, false, "", Duration.ofMinutes(20),
+                "local", "", "", "", "", false, false, "", Duration.ofMinutes(20),
                 Duration.ofMinutes(20), Duration.ofSeconds(10));
 
         assertThatThrownBy(() -> new GitHubService(client, noToken).getDefaultBranch(REPO))
