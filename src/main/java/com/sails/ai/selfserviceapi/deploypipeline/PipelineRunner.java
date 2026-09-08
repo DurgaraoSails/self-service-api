@@ -58,6 +58,11 @@ public class PipelineRunner {
         try {
             GitHubRepoRef repo = gitHubService.parseRepoUrl(githubUrl);
 
+            // Checked before anything is tagged, cloned or submitted to Cloud Build: the very next
+            // call is a write, and a token that cannot make it fails several steps later with a
+            // raw GitHub 403 that never mentions push access. Costs one GET against a build.
+            gitHubService.requirePushAccess(repo);
+
             // Tagging before building, and cloning the tag rather than the branch, is what makes
             // this reproducible — the image can only ever contain the commit the tag points at.
             gitHubService.createTagIfAbsent(repo, versionLabel, commitSha);

@@ -19,14 +19,6 @@ public record PipelineProperties(
          *         immediately reported SKIPPED. For teammates running the app locally with no GCP
          *         account at all, so triggering a deploy says it didn't run instead of failing on
          *         credentials.
-         *
-         * <p>There used to be a third mode, {@code local}, that cloned/built/deployed with
-         * subprocesses on the developer's own machine. It was removed: it needed docker and gcloud
-         * installed to do what Cloud Build already does, and it kept drifting from the Cloud Build
-         * path it was supposed to mirror — its flag ordering would have failed every
-         * multi-container deploy, undetected because no multi-container deploy ever ran through it.
-         * Anything other than the two values above is rejected at startup (see the constructor)
-         * rather than silently matching no executor bean and behaving like {@code skip}.
          */
         String executor,
 
@@ -81,7 +73,23 @@ public record PipelineProperties(
         Duration buildTimeout,
 
         /** cloud-build only. Gap between Cloud Build status checks. */
-        Duration buildPollInterval
+        Duration buildPollInterval,
+
+        /**
+         * The branch every POC is deployed from — the branch whose head commit a new version is
+         * tagged at.
+         *
+         * <p>Blank (the default) means each repository's own default branch, whatever GitHub
+         * reports it to be. Setting this to e.g. {@code main} forces that branch for every POC
+         * instead, which is what you want when repositories disagree about their default and a
+         * deploy must always come from the same branch name.
+         *
+         * <p>It applies to every POC at once, so a repository that genuinely has no branch by this
+         * name can no longer be deployed — that failure is reported explicitly by
+         * {@code GitHubService.getDeployBranchHeadSha} rather than as a bare 404, because the cause
+         * is this setting rather than anything about the repository.
+         */
+        String deployBranch
 ) {
 
     private static final String CLOUD_BUILD = "cloud-build";
@@ -111,6 +119,11 @@ public record PipelineProperties(
 
     public boolean isSkip() {
         return SKIP.equalsIgnoreCase(executor);
+    }
+
+    /** Blank means "follow each repository's own default branch" — see {@link #deployBranch}. */
+    public boolean hasDeployBranch() {
+        return deployBranch != null && !deployBranch.isBlank();
     }
 
     public boolean hasGithubToken() {

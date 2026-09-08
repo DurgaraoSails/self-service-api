@@ -34,7 +34,7 @@ class BuildServiceTest {
 
     private final PipelineProperties pipeline = new PipelineProperties(
             "cloud-build", "self-service-builder", "ghp_realtokenvalue", false, true,
-            Duration.ofMinutes(20), Duration.ofSeconds(10));
+            Duration.ofMinutes(20), Duration.ofSeconds(10), null);
 
     private final BuildService buildService = new BuildService(null, gcp, pipeline,
             new CloudRunDeployCommandBuilder(

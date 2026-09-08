@@ -125,7 +125,7 @@ public class PocDeploymentService {
         String manifestYaml = null;
         if (!pipelineProperties.isSkip()) {
             GitHubRepoRef repo = gitHubService.parseRepoUrl(poc.getGithubUrl());
-            commitSha = gitHubService.getDefaultBranchHeadSha(repo);
+            commitSha = gitHubService.getDeployBranchHeadSha(repo);
             ManifestResolution resolution = manifestService.resolveForBuild(repo, commitSha);
             manifest = resolution.manifest();
             manifestYaml = resolution.rawYaml();
@@ -225,7 +225,7 @@ public class PocDeploymentService {
             PocManifest manifest = null;
             if (!pipelineProperties.isSkip()) {
                 GitHubRepoRef repo = gitHubService.parseRepoUrl(poc.getGithubUrl());
-                commitSha = gitHubService.getDefaultBranchHeadSha(repo);
+                commitSha = gitHubService.getDeployBranchHeadSha(repo);
                 ManifestResolution resolution = manifestService.resolveForBuild(repo, commitSha);
                 manifest = resolution.manifest();
                 if (resolution.rawYaml() != null) {
@@ -291,7 +291,7 @@ public class PocDeploymentService {
             throw new MissingGithubUrlException(pocId);
         }
         GitHubRepoRef repo = gitHubService.parseRepoUrl(poc.getGithubUrl());
-        String commitSha = gitHubService.getDefaultBranchHeadSha(repo);
+        String commitSha = gitHubService.getDeployBranchHeadSha(repo);
         return manifestService.resolveForBuild(repo, commitSha).manifest();
     }
 
