@@ -4,14 +4,14 @@
 -- contract-review POC is not visible to any other POC the same user trials. That scoping is what
 -- makes the purge boundary, the authorization rule and the object layout all the same shape.
 CREATE TABLE user_files (
-    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     -- No ON DELETE CASCADE, deliberately, and unlike activity_sessions. Cascading would let a
     -- deleted user take these rows with it while the GCS objects they name stayed behind — an
     -- orphaned object with no row is data the platform has lost track of and can no longer purge.
     -- Blocking the user delete until purge has run is the safe direction to fail in.
     user_id           VARCHAR(36) NOT NULL REFERENCES users (id),
-    poc_id            BIGINT NOT NULL REFERENCES pocs (id),
+    poc_id            UUID NOT NULL REFERENCES pocs (id),
 
     -- Full GCS object path: users/<userId>/pocs/<pocId>/<fileId>. User-first because purge is the
     -- dominant bulk operation and is scoped to a user, making it one prefix delete.
