@@ -82,6 +82,18 @@ public class UserController implements UserApi {
     }
 
     @Override
+    @PreAuthorize("hasRole('SUPERADMIN')")
+    public ResponseEntity<CustomerResponse> promoteToAdmin(String id) {
+        return ResponseEntity.ok(CustomerResponseMapper.toResponse(userService.promoteToAdmin(id)));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('SUPERADMIN')")
+    public ResponseEntity<CustomerResponse> demoteToUser(String id) {
+        return ResponseEntity.ok(CustomerResponseMapper.toResponse(userService.demoteToUser(id)));
+    }
+
+    @Override
     public ResponseEntity<Void> requestTrialExtension(RequestTrialExtensionRequest requestTrialExtensionRequest) {
         String userId = currentUserId();
         userService.requestTrialExtension(userId, requestTrialExtensionRequest.getNote());

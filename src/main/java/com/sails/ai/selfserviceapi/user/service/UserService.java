@@ -189,6 +189,37 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    /**
+     * Grants ADMIN. Idempotent — a no-op (no write) if the user already has it, so a superadmin
+     * clicking an already-on toggle twice doesn't churn the row. Rebuilds the list rather than
+     * mutating {@code user.getRoles()} in place, matching {@link #registerUser}'s own handling of
+     * this column — not guaranteed mutable once loaded back from the {@code text[]} column.
+     */
+    @Transactional
+    public User promoteToAdmin(String id) {
+        User user = getById(id);
+        if (!user.getRoles().contains("ADMIN")) {
+            List<String> roles = new ArrayList<>(user.getRoles());
+            roles.add("ADMIN");
+            user.setRoles(roles);
+            userRepository.save(user);
+        }
+        return user;
+    }
+
+    /** Revokes ADMIN. Idempotent — a no-op if the user isn't currently an admin. */
+    @Transactional
+    public User demoteToUser(String id) {
+        User user = getById(id);
+        if (user.getRoles().contains("ADMIN")) {
+            List<String> roles = new ArrayList<>(user.getRoles());
+            roles.remove("ADMIN");
+            user.setRoles(roles);
+            userRepository.save(user);
+        }
+        return user;
+    }
+
     private void clearPendingExtensionRequest(User user) {
         user.setPendingExtensionNote(null);
         user.setPendingExtensionRequestedAt(null);

@@ -51,9 +51,22 @@ No new endpoints from this spec directly (see `poc-catalog.md` for the hide/unhi
 
 ## Open Questions / Future Work
 
-- **No demotion path**: removing an email from `ADMIN_EMAILS` doesn't revoke an already-granted `ADMIN` role. An admin-management UI (explicitly deferred this round) or a startup reconciliation job would be needed to close this.
-- **No admin-management UI**: promoting/demoting admins is entirely config-driven for now; a future round could add a real UI for an existing admin to manage others.
+- **Removing an email from `ADMIN_EMAILS` still doesn't revoke an already-granted `ADMIN` role.** `POST /users/{id}/demote-to-user` (below) gives a superadmin a manual way to do this now; there's still no automatic reconciliation against the allowlist.
+- **No UI yet for the new promote/demote endpoints** — the backend and API contract exist (below); the admin Customers page doesn't have the toggle control wired to them yet.
+
+## Superadmin: promoting/demoting other users to ADMIN
+
+Added 2026-09-08, closing this doc's original "no admin-management UI"/"no demotion path" gaps.
+
+**A new `SUPERADMIN` role, one step above `ADMIN`, bootstrapped manually rather than by config.**
+`ADMIN` promotion needed to be gated behind something only a small, trusted set of people hold — otherwise any admin could mint more admins with no oversight. Rather than extend `AdminProperties`' `ADMIN_EMAILS` pattern with a second allowlist, `SUPERADMIN` has no bootstrap code at all: it's a role string assigned directly in the database by whoever manages the deployment. This keeps "who can create admins" off the deploy-time config surface entirely — there's no env var to leak or accidentally widen. `roles` needed no schema change for this, same as `ADMIN` originally — it's still a free-form `text[]`, `"SUPERADMIN"` is just a third possible value alongside `"USER"`/`"ADMIN"`. `SecurityConfig`'s `JwtGrantedAuthoritiesConverter` already turns every `roles` entry into a `ROLE_<value>` authority generically, so `@PreAuthorize("hasRole('SUPERADMIN')")` needed no converter changes either.
+
+**Two single-purpose endpoints, not one toggle** — `POST /users/{id}/promote-to-admin` and `POST /users/{id}/demote-to-user`, mirroring the existing hide/unhide/restore convention from `poc-catalog.md` rather than a single endpoint taking a desired-state body. Both are idempotent (promoting an existing admin, or demoting a non-admin, is a no-op — no write, same row returned) and both return `CustomerResponse`, matching `revokeTrial`/`extendTrial`'s existing shape for an admin acting on another user's account. Both require `SUPERADMIN`, not `ADMIN` — `UserService.promoteToAdmin`/`demoteToUser` only ever add/remove the `"ADMIN"` string; neither endpoint touches `SUPERADMIN` itself.
 
 ## Changelog
 
+- 2026-09-08 — Added `SUPERADMIN` role and `POST /users/{id}/promote-to-admin` /
+  `POST /users/{id}/demote-to-user` (see the new section above). `UserService` gained
+  `promoteToAdmin`/`demoteToUser`, both idempotent. No migration — `roles` already a free-form
+  `text[]`. No admin-management UI wiring yet.
 - 2026-08-26 — Initial draft: config-driven admin bootstrap via `OtpService.verifyOtp`, `@EnableMethodSecurity` + `@PreAuthorize` on POC write endpoints, `TrialExpiredAccessDeniedHandler` fix, frontend `Auth.isAdmin` + `adminGuard`.

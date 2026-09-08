@@ -380,6 +380,68 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /users/{id}/promote-to-admin:
+    post:
+      summary: Grant the ADMIN role to a user (superadmin only)
+      description: >
+        Idempotent — a no-op if the user already has the ADMIN role. Requires the SUPERADMIN
+        role, one step above ADMIN: an admin cannot create other admins, only a superadmin can.
+        There is no bootstrap path for SUPERADMIN itself — it is assigned directly in the
+        database, not via config or this API.
+      operationId: promoteToAdmin
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User promoted to admin
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/CustomerResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /users/{id}/demote-to-user:
+    post:
+      summary: Revoke the ADMIN role from a user (superadmin only)
+      description: Idempotent — a no-op if the user does not currently have the ADMIN role.
+      operationId: demoteToUser
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User demoted to a regular user
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/CustomerResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /support/contact-sales:
     post:
       summary: Notify the sales team that the current user wants to be contacted
