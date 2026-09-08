@@ -1,13 +1,31 @@
 
-JWT_PRIVATE_KEY_PATH: file:/mnt/secrets/jwt/private-key.pem
-JWT_PUBLIC_KEY_PATH: file:/mnt/secrets/jwt/public-key.pem
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+pipeline:
+  github-token: ${GITHUB_TOKEN}
+
+brevo:
+  api-key: ${BREVO_API_KEY}
+
+JWT_PRIVATE_KEY_PATH: file:/mnt/secrets/jwt-private/private-key.pem
+JWT_PUBLIC_KEY_PATH: file:/mnt/secrets/jwt-public/public-key.pem
 
 MAIL_FROM_NAME: Sails Self Service
 MAIL_FROM_ADDRESS: no.reply.sails.poc@gmail.com
+FRONTEND_URL: https://self-service-portal-65130.web.app
+ADMIN_EMAILS: vijayasaradhi.chunduri+admin@sailssoftware.com
 
 FILE_STORAGE: gcs
 FILE_STORAGE_BUCKET: sails-agenthub-poc-files
 
 PIPELINE_EXECUTOR: cloud-build
 BUILD_SERVICE_ACCOUNT: self-service-builder
-PLATFORM_API_URL: https://self-service-api-471182745065
+SELF_SERVICE_API_URL: https://self-service-api-471182745065.us-central1.run.app
+
+#GCP
+GCP_PROJECT_ID: sails-agenthub
+GCP_REGION: us-central1

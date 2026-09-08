@@ -126,18 +126,11 @@ deployment:
   webhook-secret: ${DEPLOYMENT_WEBHOOK_SECRET:local-dev-deployment-webhook-secret-change-me}
 
 gcp:
-  project-id: ${GCP_PROJECT_ID:sails-agenthub}
-  region: ${GCP_REGION:us-central1}
+  project-id: ${GCP_PROJECT_ID:}
+  region: ${GCP_REGION:}
   environment: ${GCP_ENVIRONMENT:dev}
 
 pipeline:
-  # 'local' clones/builds/deploys on this machine with your own gcloud credentials — the default,
-  # so the pipeline is testable immediately with no GCP IAM setup beyond
-  # `gcloud auth application-default login`. 'cloud-build' is what production uses. 'skip' does
-  # none of that — every deploy request just gets reported SKIPPED — for anyone running this
-  # locally with no GCP account/credentials at all, so triggering a deploy never fails with a
-  # `docker`/`gcloud`-not-found error. Put PIPELINE_EXECUTOR=skip in your own
-  # application-local.yaml if that's you.
   executor: ${PIPELINE_EXECUTOR:skip}
 
   # The single source for this token — used by GitHubService (both executors, to create release
@@ -151,21 +144,7 @@ pipeline:
   # cloud-build only. Blank falls back to github-token below (see BuildService for why that's
   # worse — an inline token is stored permanently on the Build resource).
   github-token-secret-id: ${BUILD_GITHUB_TOKEN_SECRET:}
-
-  # Grants self-service-api's own service account run.invoker on the deployed POC. Not needed for
-  # the default public POC (see allow-unauthenticated below) — a user's browser reaches it
-  # directly, self-service-api never proxies that traffic. This exists for the opt-out case: a
-  # specific POC deployed with allow-unauthenticated=false, where self-service-api still needs to
-  # reach it itself (e.g. a health check). Needs run.services.setIamPolicy, which roles/editor
-  # excludes — off by default so a deploy under Editor doesn't fail on this step.
   grant-api-invoker: ${BUILD_GRANT_API_INVOKER:false}
-  # Default security model: POCs are public. The portal iframes a POC's raw Cloud Run URL directly
-  # from the user's browser — there is no proxy in front of it — so an IAM-locked service simply
-  # cannot be reached by anyone, portal-launched or not. Identity (who the user is) is instead
-  # carried by the short-lived POC-scoped JWT minted at launch, verified by the POC itself against
-  # this API's JWKS. Set to false to lock down one specific sensitive POC; that POC then needs
-  # grant-api-invoker (or an identity token — `gcloud run services proxy <slug> --region <region>`)
-  # for anyone, including self-service-api, to reach it at all.
   allow-unauthenticated: ${BUILD_ALLOW_UNAUTHENTICATED:true}
 
   # local only. Blank uses the system temp directory.
@@ -179,19 +158,8 @@ pipeline:
 # which describes how the deploy is carried out rather than what it produces. Every value here is
 # injected into every container and reserved from poc.yaml (see manifest.reserved-env-names).
 poc-runtime:
-  # The port the ingress container binds and receives external traffic on. Cloud Run gives a
-  # multi-container service no default ingress port, and only one container may expose one, so the
-  # platform owns this. A manifest that declares its own ingress port still wins.
   ingress-port: ${POC_RUNTIME_INGRESS_PORT:8080}
-  # This self-service-api deployment's own externally-reachable URL — injected as PLATFORM_API_URL
-  # into every deployed POC container so its backend can verify launch JWTs against this API's
-  # JWKS endpoint. Cloud Run has no way to tell a service its own URL, so this must be set by hand
-  # once it's known. The localhost default is only ever correct when the POC also runs locally:
-  # inside a deployed multi-container instance it resolves to a sibling container, so the POC
-  # fetches "JWKS" and gets another container's response instead of a connection error.
-  # PLATFORM_API_URL is still honoured as the older name, so an environment configured before this
-  # property moved namespaces keeps working.
-  platform-api-url: ${POC_RUNTIME_PLATFORM_API_URL:${PLATFORM_API_URL:http://localhost:8080}}
+  platform-api-url: ${SELF_SERVICE_API_URL:http://localhost:8080}
   # The one origin allowed to frame a deployed POC — injected as PORTAL_ORIGIN, used both as the
   # postMessage targetOrigin a POC replies to and in its own Content-Security-Policy:
   # frame-ancestors, so the script-level origin check and the browser-enforced one cannot disagree.
