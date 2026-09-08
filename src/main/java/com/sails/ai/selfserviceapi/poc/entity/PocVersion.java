@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -18,12 +19,12 @@ import lombok.Setter;
 public class PocVersion {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", nullable = false, updatable = false)
-    private Long id;
+    private UUID id;
 
     @Column(name = "poc_id", nullable = false, updatable = false)
-    private Long pocId;
+    private UUID pocId;
 
     @Column(name = "major", nullable = false, updatable = false)
     private int major;

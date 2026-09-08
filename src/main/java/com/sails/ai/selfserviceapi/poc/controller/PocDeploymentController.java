@@ -55,7 +55,7 @@ public class PocDeploymentController implements DeploymentApi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<PocDeploymentResponse> deployNewVersion(Long id) {
+    public ResponseEntity<PocDeploymentResponse> deployNewVersion(UUID id) {
         PocDeployment deployment = pocDeploymentService.deployNewVersion(id, CurrentUser.id());
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(mapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
@@ -63,10 +63,10 @@ public class PocDeploymentController implements DeploymentApi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<PocVersionResponse>> getPocVersions(Long id) {
+    public ResponseEntity<List<PocVersionResponse>> getPocVersions(UUID id) {
         Poc poc = pocService.getById(id);
         List<PocVersion> versions = pocDeploymentService.listVersions(id);
-        Map<Long, List<PocVersionContainer>> containersByVersionId = pocDeploymentService.containersByVersionId(
+        Map<UUID, List<PocVersionContainer>> containersByVersionId = pocDeploymentService.containersByVersionId(
                 versions.stream().map(PocVersion::getId).toList());
 
         List<PocVersionResponse> responses = versions.stream()
@@ -78,7 +78,7 @@ public class PocDeploymentController implements DeploymentApi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<PocDeploymentResponse> redeployPocVersion(Long id, Long versionId) {
+    public ResponseEntity<PocDeploymentResponse> redeployPocVersion(UUID id, UUID versionId) {
         PocDeployment deployment = pocDeploymentService.redeployVersion(id, versionId, CurrentUser.id());
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(mapper.toDeploymentResponse(deployment, versionLabelOf(deployment)));
@@ -86,7 +86,7 @@ public class PocDeploymentController implements DeploymentApi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<PocDeploymentResponse>> getPocDeployments(Long id) {
+    public ResponseEntity<List<PocDeploymentResponse>> getPocDeployments(UUID id) {
         List<PocDeploymentResponse> deployments = pocDeploymentService.listDeployments(id).stream()
                 .map(deployment -> mapper.toDeploymentResponse(deployment, versionLabelOf(deployment)))
                 .toList();
@@ -110,7 +110,7 @@ public class PocDeploymentController implements DeploymentApi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<PocManifestPreviewResponse> getManifestPreview(Long id) {
+    public ResponseEntity<PocManifestPreviewResponse> getManifestPreview(UUID id) {
         PocManifest manifest = pocDeploymentService.previewManifest(id);
         List<PocManifestPreviewContainer> containers = manifest.containers().stream()
                 .map(this::toPreviewContainer)
@@ -148,19 +148,19 @@ public class PocDeploymentController implements DeploymentApi {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<PocResponse>> getPocsWithDeploymentIssues() {
         List<Poc> deployable = pocService.listDeployable();
-        Map<Long, String> latestStatuses = pocDeploymentService.latestDeploymentStatuses(
+        Map<UUID, String> latestStatuses = pocDeploymentService.latestDeploymentStatuses(
                 deployable.stream().map(Poc::getId).toList());
 
         List<Poc> withIssues = deployable.stream()
                 .filter(poc -> needsAttention(latestStatuses.get(poc.getId())))
                 .toList();
 
-        Map<Long, String> activeVersionLabels = pocDeploymentService.activeVersionLabels(
+        Map<UUID, String> activeVersionLabels = pocDeploymentService.activeVersionLabels(
                 withIssues.stream().map(Poc::getActiveVersionId).filter(Objects::nonNull).toList());
 
         List<PocResponse> responses = withIssues.stream()
                 .map(poc -> {
-                    Long activeVersionId = poc.getActiveVersionId();
+                    UUID activeVersionId = poc.getActiveVersionId();
                     String activeVersionLabel = activeVersionId != null ? activeVersionLabels.get(activeVersionId) : null;
                     return PocResponseMapper.toResponse(poc, activeVersionLabel, latestStatuses.get(poc.getId()));
                 })
@@ -190,7 +190,7 @@ public class PocDeploymentController implements DeploymentApi {
                                                         ReportUpstreamCommitsRequest reportUpstreamCommitsRequest) {
         requirePipelineSecret(xPipelineWebhookSecret);
 
-        Map<Long, String> commitsByPocId = reportUpstreamCommitsRequest.getCommits().stream()
+        Map<UUID, String> commitsByPocId = reportUpstreamCommitsRequest.getCommits().stream()
                 .collect(Collectors.toMap(UpstreamCommit::getPocId, UpstreamCommit::getCommitSha, (first, second) -> second));
         pocService.recordUpstreamCommits(commitsByPocId);
         return ResponseEntity.noContent().build();

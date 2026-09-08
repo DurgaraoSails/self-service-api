@@ -101,8 +101,8 @@ started_at DESC`), not per-row — avoids an N+1 across the dashboard's POC grid
 **`poc_versions`** (immutable once `container_image` is set):
 | column | type | notes |
 |---|---|---|
-| id | BIGINT GENERATED ALWAYS AS IDENTITY PK | |
-| poc_id | BIGINT NOT NULL REFERENCES pocs(id) ON DELETE CASCADE | |
+| id | UUID PK | `BIGINT` until 2026-09-08 — moved to `UUID` since it's exposed as `{versionId}` in `POST /pocs/{id}/versions/{versionId}/redeploy` |
+| poc_id | UUID NOT NULL REFERENCES pocs(id) ON DELETE CASCADE | `BIGINT` until 2026-09-08, moved alongside `pocs.id` |
 | major, minor, patch | INTEGER NOT NULL | `CHECK (patch BETWEEN 1 AND 20)` |
 | version_label | VARCHAR(20) NOT NULL | e.g. `"1.2.4"` |
 | container_image | VARCHAR(500) | nullable until a successful `BUILD_AND_DEPLOY` |
@@ -114,8 +114,8 @@ started_at DESC`), not per-row — avoids an N+1 across the dashboard's POC grid
 | column | type | notes |
 |---|---|---|
 | id | UUID PK | app-generated, same style as `RefreshToken`/`RegistrationVerificationToken` — the correlation id the pipeline echoes back |
-| poc_id | BIGINT NOT NULL REFERENCES pocs(id) ON DELETE CASCADE | |
-| poc_version_id | BIGINT NOT NULL REFERENCES poc_versions(id) ON DELETE CASCADE | for `REDEPLOY`, the *existing* version row |
+| poc_id | UUID NOT NULL REFERENCES pocs(id) ON DELETE CASCADE | `BIGINT` until 2026-09-08, moved alongside `pocs.id` |
+| poc_version_id | UUID NOT NULL REFERENCES poc_versions(id) ON DELETE CASCADE | for `REDEPLOY`, the *existing* version row; `BIGINT` until 2026-09-08, moved alongside `poc_versions.id` |
 | kind | VARCHAR(20) NOT NULL | `BUILD_AND_DEPLOY` \| `REDEPLOY` |
 | status | VARCHAR(20) NOT NULL DEFAULT 'PENDING' | `PENDING` \| `BUILDING` \| `DEPLOYING` \| `SUCCEEDED` \| `FAILED` |
 | logs_url | VARCHAR(500) | nullable — a link out, no log text is stored |
@@ -123,8 +123,9 @@ started_at DESC`), not per-row — avoids an N+1 across the dashboard's POC grid
 | initiated_by | VARCHAR(36) REFERENCES users(id) | nullable, admin who triggered it |
 | started_at / completed_at / updated_at | TIMESTAMPTZ | `completed_at` set on reaching a terminal status |
 
-**`pocs`**: `version`/`container_image` columns removed (migration `V13`); `active_version_id BIGINT
-REFERENCES poc_versions(id)` added (nullable — null means never successfully deployed).
+**`pocs`**: `version`/`container_image` columns removed; `active_version_id UUID
+REFERENCES poc_versions(id)` added (nullable — null means never successfully deployed; `BIGINT`
+until 2026-09-08, moved alongside `poc_versions.id`).
 
 ## API Surface
 
@@ -178,6 +179,12 @@ automatic now, no manual entry.
 
 ## Changelog
 
+- 2026-09-08 — `poc_versions.id`, `poc_deployments.poc_id`/`poc_version_id`, and `pocs.active_version_id`
+  moved from `BIGINT` to `UUID` (see `docs/specs/poc-catalog.md`'s changelog for the full scope of
+  that change, which also touched `pocs.id` and `user_files.id`). Migration history was consolidated
+  in the same pass — `V13__create_poc_versions_and_deployments.sql` no longer exists as such; the
+  current per-table migrations are `V7__create_poc_versions_table.sql` and
+  `V8__create_poc_deployments_table.sql`.
 - 2026-09-01 — Implemented: `V13__create_poc_versions_and_deployments.sql`,
   `PocVersion`/`PocDeployment` entities and repositories, `PocDeploymentService`
   (version allocation, redeploy validation, status-callback handling, batched

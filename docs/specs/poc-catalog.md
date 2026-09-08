@@ -17,8 +17,8 @@ The portal dashboard shows a grid of "POC" (proof-of-concept AI demo) cards — 
 
 ## Architecture Decisions
 
-**Identifier: an incrementing `BIGINT` primary key, not a ULID or a slug.**
-`users` uses a ULID string PK, and the frontend's current hardcoded POCs use human-readable slugs (`"contract-agent"`) as their `id`. Neither was used here — POCs are a small, admin-managed catalog, and a simple identity column is the most direct fit. The frontend's eventual `/poc/:id` routing scheme is a UI-phase decision, not constrained by this choice.
+**Identifier: a `UUID` primary key, not a ULID, a slug, or an incrementing integer.**
+Originally an incrementing `BIGINT`. Changed 2026-09-08 (see Changelog) once `pocs.id` started appearing directly in URL path parameters (`GET /pocs/{id}` and its admin siblings) — a sequential integer there is enumerable by anyone probing the API, unlike every other externally-addressable id in this codebase (`refresh_tokens`, `registration_verification_tokens`, `poc_deployments`, all already `UUID`). `poc_versions.id` and `user_files.id` moved to `UUID` in the same change, for the same reason (both also appear in URL path parameters). `slug` remains the human-readable, externally-meaningful identifier for the deploy pipeline; `id` is the row-addressing key.
 
 **Two response shapes: `PocSummaryResponse` (public) vs `PocResponse` (full, authenticated).**
 The public list only returns `id`, `name`, `description`, `iconUrl` — enough to render a dashboard card. `appUrl`/`githubUrl` (the actual launch/repo links) are only returned from the authenticated single-resource endpoint (`GET /pocs/{id}`) and the write endpoints. `iconUrl` is on the public shape, not just the full one, because the icon is a display element for the same public card as name/description — unlike the launch links, showing it to an anonymous visitor reveals nothing sensitive. `PocResponse` is `allOf: [PocSummaryResponse, {appUrl, githubUrl}]`, the same composition style already used for `LoginResponse` (`allOf: [TokenResponse, {user}]`) in the JWT authentication feature.
@@ -43,14 +43,15 @@ Deliberately not folded into `status` as a third value — hide/unhide (a routin
 OpenAPI's per-operation `security: []` only affects generated documentation — Spring Security's actual authorization comes from `SecurityConfig.securityFilterChain()`'s own `requestMatchers(...)`. Everything not explicitly `permitAll()`-listed falls through to `.anyRequest().access(AuthorizationManagers.allOf(AuthenticatedAuthorizationManager.authenticated(), trialAuthorizationManager))`. Added `.requestMatchers(HttpMethod.GET, "/pocs").permitAll()`, scoped to `GET` only so `POST /pocs` and all of `/pocs/{id}` stay authenticated. (This exact class of mismatch — OpenAPI claiming public, Spring Security actually rejecting — is what broke CORS earlier in this repo's history; see the CORS changelog entry in `docs/specs/jwt-authentication.md`.)
 
 **`category` options come from a `poc_categories` lookup table, not a closed enum.**
-The admin add/edit form originally had `category` as free text. Once it needed to become a dropdown, the choice was a lookup table (like `pocs` itself) vs. a hardcoded enum on `CreatePocRequest`/`UpdatePocRequest`. A table was picked because `pocs.category` stays plain `VARCHAR` (unvalidated, exactly as before — this only changes the admin form's *input widget*, not the API contract), and because the value set is expected to grow without a deploy: adding a category is an `INSERT`, not a migration. `poc_categories` has no relationship to `pocs.category` (no FK) — it's purely a source list for the dropdown, matching the "for now, static" scope the seeded rows started from.
+The admin add/edit form originally had `category` as free text. Once it needed to become a dropdown, the choice was a lookup table (like `pocs` itself) vs. a hardcoded enum on `CreatePocRequest`/`UpdatePocRequest`. A table was picked because the value set is expected to grow without a deploy: adding a category is an `INSERT`, not a migration.
+*(Updated 2026-09-08 — see Changelog: `pocs.category` now has a real `FOREIGN KEY` to `poc_categories(name)`, closing the gap this paragraph originally described. No Java-side validation exists anywhere in `PocService`/`PocController`, so the FK is the only enforcement point — an invalid category now surfaces as a `400 INVALID_REFERENCE` via `GlobalExceptionHandler`'s `DataIntegrityViolationException` handler, not a silently-accepted arbitrary string.)*
 
 ## Data Model
 
-**`pocs`** (migration `V4__create_pocs_table.sql`, entity `poc/entity/Poc.java`)
+**`pocs`** (migration `V6__create_pocs_table.sql`, entity `poc/entity/Poc.java`)
 | column | type | notes |
 |---|---|---|
-| id | BIGINT GENERATED ALWAYS AS IDENTITY PK | |
+| id | UUID PK | `BIGINT` until 2026-09-08 (see Changelog) — moved to `UUID` since it's exposed in URL path parameters |
 | name | VARCHAR(200) NOT NULL | |
 | description | VARCHAR(2000) NOT NULL | |
 | icon_url | VARCHAR(500) | nullable, public URL to an icon image |
@@ -58,21 +59,21 @@ The admin add/edit form originally had `category` as free text. Once it needed t
 | github_url | VARCHAR(500) | nullable, source repo URL |
 | ~~version~~ | ~~VARCHAR(50)~~ | removed 2026-09-01 — see `docs/specs/poc-deployment.md` (`active_version_id` below) |
 | owner | VARCHAR(200) | nullable, owning team/person |
-| category | VARCHAR(100) | nullable |
+| category | VARCHAR(100) REFERENCES poc_categories(name) | nullable; FK added 2026-09-08 (see Changelog) — previously plain, unvalidated `VARCHAR` |
 | technologies | TEXT\[\] NOT NULL DEFAULT '{}' | |
 | ~~container_image~~ | ~~VARCHAR(500)~~ | removed 2026-09-01 — moved to `poc_versions.container_image`, see `docs/specs/poc-deployment.md` |
 | demo_type | VARCHAR(50) | nullable |
-| status | VARCHAR(50) NOT NULL DEFAULT 'ACTIVE' | `ACTIVE` \| `HIDDEN` (enum-validated at the API layer; column itself is still plain text) |
+| status | VARCHAR(50) NOT NULL DEFAULT 'ACTIVE' | `ACTIVE` \| `HIDDEN` (enum-validated at the API layer; column itself is still plain text); renamed `visibility_status` 2026-08-26 (see Changelog) |
 | details | TEXT | nullable, longer-form copy for the public details page |
 | guide_steps | TEXT\[\] NOT NULL DEFAULT '{}' | ordered "how to use this POC" steps, public details page |
 | created_at / updated_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
-| deleted_at | TIMESTAMPTZ | nullable; `NULL` = not deleted (migration `V8__add_deleted_at_to_pocs_table.sql`) |
-| active_version_id | BIGINT REFERENCES poc_versions(id) | nullable; added 2026-09-01, see `docs/specs/poc-deployment.md` |
+| deleted_at | TIMESTAMPTZ | nullable; `NULL` = not deleted |
+| active_version_id | UUID REFERENCES poc_versions(id) | nullable; added 2026-09-01, see `docs/specs/poc-deployment.md`; `BIGINT` until 2026-09-08, moved to `UUID` alongside `poc_versions.id` |
 
-**`poc_categories`** (migration `V14__create_poc_categories_table.sql`, entity `poc/entity/PocCategory.java`)
+**`poc_categories`** (migration `V5__create_poc_categories_table.sql`, entity `poc/entity/PocCategory.java`)
 | column | type | notes |
 |---|---|---|
-| id | BIGINT GENERATED ALWAYS AS IDENTITY PK | |
+| id | BIGINT GENERATED ALWAYS AS IDENTITY PK | never exposed in a URL, so left as `BIGINT` in the 2026-09-08 UUID pass |
 | name | VARCHAR(100) NOT NULL UNIQUE | |
 
 Seeded with 4 rows: `Healthcare`, `RAG`, `Process Assistant`, `Accelerators`.
@@ -111,11 +112,12 @@ Three portal pages consume this API, split along the same public/authenticated l
 - **`PocWorkspace`** (`/poc/:id/workspace`, behind `authGuard`) calls `PocApi.getPocById(id)` — the authenticated full response — since it needs `appUrl` to embed the POC's app in an iframe. This is exactly why `appUrl` was gated to authenticated callers in the first place: the one place that needs it is already behind a login wall.
 - The frontend's `Poc` type (previously its own vocabulary: `title`, `url`, a closed `PocIcon` enum) was retired in favor of `PocSummary`/`PocDetail` (`core/poc/poc.models.ts`), which mirror `PocSummaryResponse`/`PocResponse` directly — `id` is now numeric, matching the backend's identity column, and POC routes (`/poc/:id`, `/poc/:id/workspace`) now resolve against that numeric id instead of the old hardcoded string slugs.
 - `details`/`guideSteps` (shown on the public `PocDetails` page) didn't exist in the original backend contract — added here (public, alongside the other display fields) once discovered mid-wiring, following the same reactive-extension pattern as `version`/`owner`/`category`/etc.
-- Seeded the 5 previously-hardcoded POCs into the database (`V7__seed_initial_pocs.sql`) so the dashboard doesn't regress to empty — only fields with real values were populated (mostly just name/description; `sails-process-assistant` also got its real `appUrl`/`details`/`guideSteps`). Everything else (`version`, `owner`, `category`, `technologies`, `iconUrl`, `containerImage`, `demoType`) is left null rather than filled with fabricated placeholder data.
+- The 5 previously-hardcoded POCs were originally seeded into the database via migration (`V7__seed_initial_pocs.sql`) so the dashboard didn't regress to empty. That seed migration was removed 2026-09-08 when the migration history was consolidated (see Changelog) — the dashboard now starts empty until POCs are created through the admin UI.
 - `PocFormModal`'s category field is a native `<select>`, populated from `PocApi.getCategories()` (fetched once per modal open, in both create and edit mode). It's a plain HTML `<select>` bound via `formControlName="category"`, not a custom combobox, since the option count is small and no search/filter is needed. An existing POC whose stored `category` doesn't match any current row (e.g. legacy seed data) shows no option selected but keeps its original value in the form until the admin explicitly changes it — the dropdown doesn't clear or coerce the underlying field.
 
 ## Changelog
 
+- 2026-09-08 — **Migration history consolidated to one file per table** (`V1`–`V20` → `V1`–`V11`), and **`pocs.id`, `poc_versions.id`, `user_files.id` moved from `BIGINT` to `UUID`** (`poc_categories.id`, `activity_sessions.id`, `poc_version_containers.id` stayed `BIGINT` — never exposed in a URL, no benefit). Every FK column pointing at one of the three converted ids (`poc_versions.poc_id`, `poc_deployments.poc_id`/`poc_version_id`, `activity_sessions.poc_id`, `user_files.poc_id`, `pocs.active_version_id`) moved with it. `pocs.category` gained a real `FOREIGN KEY` to `poc_categories(name)`, and `GlobalExceptionHandler` gained a `DataIntegrityViolationException` handler so violating it now returns a clean `400 INVALID_REFERENCE` instead of an unhandled `500`. The old seed migration (`V7__seed_initial_pocs.sql`) and the dead `deployment_jobs` create/drop pair (`V16`/`V20`, never read or written by any code) were both dropped entirely rather than carried forward. Safe to do as a full history rewrite only because nothing had applied these migrations against a persistent database yet.
 - 2026-09-03 — **`slug` and `githubUrl` are required** on `CreatePocRequest` and `UpdatePocRequest`,
   reversing the 2026-09-01 change that made them optional. That change was right about the
   mechanics — creating a POC records metadata and does not deploy — but optional-at-creation turned

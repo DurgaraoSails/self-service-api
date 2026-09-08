@@ -15,6 +15,7 @@ import com.sails.ai.selfserviceapi.security.CurrentUser;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,14 +37,14 @@ public class PocController implements PocApi {
         boolean isAdmin = CurrentUser.isAdmin();
         List<Poc> pocs = pocService.listForViewer(isAdmin, isAdmin && Boolean.TRUE.equals(includeDeleted));
 
-        List<Long> versionIds = pocs.stream().map(Poc::getActiveVersionId).filter(Objects::nonNull).toList();
-        List<Long> pocIds = pocs.stream().map(Poc::getId).toList();
-        Map<Long, String> activeVersionLabels = pocDeploymentService.activeVersionLabels(versionIds);
-        Map<Long, String> latestStatuses = pocDeploymentService.latestDeploymentStatuses(pocIds);
+        List<UUID> versionIds = pocs.stream().map(Poc::getActiveVersionId).filter(Objects::nonNull).toList();
+        List<UUID> pocIds = pocs.stream().map(Poc::getId).toList();
+        Map<UUID, String> activeVersionLabels = pocDeploymentService.activeVersionLabels(versionIds);
+        Map<UUID, String> latestStatuses = pocDeploymentService.latestDeploymentStatuses(pocIds);
 
         List<PocSummaryResponse> pocResponses = pocs.stream()
                 .map(poc -> {
-                    Long activeVersionId = poc.getActiveVersionId();
+                    UUID activeVersionId = poc.getActiveVersionId();
                     String activeVersionLabel = activeVersionId != null ? activeVersionLabels.get(activeVersionId) : null;
                     return PocResponseMapper.toSummaryResponse(poc, activeVersionLabel, latestStatuses.get(poc.getId()));
                 })
@@ -60,7 +61,7 @@ public class PocController implements PocApi {
     }
 
     @Override
-    public ResponseEntity<PocResponse> getPocById(Long id) {
+    public ResponseEntity<PocResponse> getPocById(UUID id) {
         return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.getById(id)));
     }
 
@@ -88,7 +89,7 @@ public class PocController implements PocApi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<PocResponse> updatePoc(Long id, UpdatePocRequest updatePocRequest) {
+    public ResponseEntity<PocResponse> updatePoc(UUID id, UpdatePocRequest updatePocRequest) {
         PocFields fields = new PocFields(
                 updatePocRequest.getName(),
                 updatePocRequest.getDescription(),
@@ -109,26 +110,26 @@ public class PocController implements PocApi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deletePoc(Long id) {
+    public ResponseEntity<Void> deletePoc(UUID id) {
         pocService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<PocResponse> hidePoc(Long id) {
+    public ResponseEntity<PocResponse> hidePoc(UUID id) {
         return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.hide(id)));
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<PocResponse> unhidePoc(Long id) {
+    public ResponseEntity<PocResponse> unhidePoc(UUID id) {
         return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.unhide(id)));
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<PocResponse> restorePoc(Long id) {
+    public ResponseEntity<PocResponse> restorePoc(UUID id) {
         return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.restore(id)));
     }
 

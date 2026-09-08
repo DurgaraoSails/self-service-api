@@ -108,13 +108,13 @@ This decision depends entirely on the absence of that distribution vector, so it
 
 ## Data Model
 
-**`user_files`** — migration `V18__create_user_files_table.sql`. The original draft named this `V17`; `V17__rename_pocs_status_to_visibility_status.sql` landed first, so the number moved.
+**`user_files`** — migration `V11__create_user_files_table.sql` (migration history was consolidated to one file per table 2026-09-08; this table was originally `V18__create_user_files_table.sql`).
 
 | column | type | notes |
 |---|---|---|
-| id | BIGINT GENERATED ALWAYS AS IDENTITY PK | matches the `pocs` convention |
+| id | UUID PK | `BIGINT` until 2026-09-08 — moved to `UUID` since it's exposed as `{fileId}` in the file download/delete endpoints |
 | user_id | TEXT NOT NULL | ULID, matching `users.id` |
-| poc_id | BIGINT NOT NULL | plain FK column, not a JPA relation — matches `ActivitySession.pocId` and `poc_deployments.poc_id` |
+| poc_id | UUID NOT NULL | plain FK column, not a JPA relation — matches `ActivitySession.pocId` and `poc_deployments.poc_id`; `BIGINT` until 2026-09-08, moved alongside `pocs.id` |
 | object_name | TEXT NOT NULL UNIQUE | full GCS object path, `users/<userId>/pocs/<pocId>/<fileId>` |
 | original_filename | TEXT NOT NULL | as uploaded; never part of `object_name` |
 | content_type | TEXT NOT NULL | client-declared, stored but not trusted |
@@ -183,7 +183,7 @@ No HTTP surface; nothing user-visible.
 - `pom.xml` — `com.google.cloud:google-cloud-storage`, pinned through `libraries-bom` so it aligns
   with the `google-auth-library-oauth2-http` already present for the deploy pipeline rather than
   resolving against it. HTTP/JSON transport, no gRPC, per the dependency decision above.
-- `V18__create_user_files_table.sql` — the `user_files` table as specified under Data Model.
+- `V11__create_user_files_table.sql` (originally `V18`, renumbered in the 2026-09-08 migration consolidation) — the `user_files` table as specified under Data Model.
 - `file/entity/UserFile.java`, `file/repository/UserFileRepository.java` — the `poc` package's
   conventions: identity PK, `deleted_at` soft delete, `poc_id` as a plain column not a JPA relation.
 - `file/config/FileStorageProperties.java` — bucket, per-file ceiling, per-pair file count, per-user
@@ -298,6 +298,12 @@ unmet in the meantime.
   ceiling for whatever that property is configured to, rather than two numbers that happen to
   agree today. `SecurityConfigTest` gained the mirror-image cases Phase 2 didn't yet need: a portal
   token rejected on `/poc-files`, and a POC token accepted there. `MultipartUploadConfigTest` exists because `@WebMvcTest`'s mock dispatcher never touches a real `MultipartConfigElement` — without it, the file whose entire purpose is the spool-threshold guarantee would be untested. 205 tests pass, 30 new.
+- 2026-09-08 — `user_files.id` and `user_files.poc_id` moved from `BIGINT` to `UUID` (see
+  `docs/specs/poc-catalog.md`'s changelog for the full scope, which also touched `pocs.id`,
+  `poc_versions.id`, and `poc_deployments`'s FK columns). Migration history was consolidated in the
+  same pass — `V18__create_user_files_table.sql` no longer exists as such; the current migration is
+  `V11__create_user_files_table.sql`. The `pocId` claim on a POC-scoped token (see Phase 2 below) is
+  now a string, not a number, following `poc.getId()`'s type.
 - 2026-09-03 — **Phase 2 implemented**: `kid` on every issued token, `GET /.well-known/jwks.json`,
   `POST /pocs/{slug}/launch`, and audience separation. The POC token carries `sub`, `aud`,
   `pocId`, display name, theme and `trialEndDate` — and deliberately no `roles`, so a POC launched

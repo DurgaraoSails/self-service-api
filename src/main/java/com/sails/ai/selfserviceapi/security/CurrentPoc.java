@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.security;
 
+import java.util.UUID;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 
@@ -14,12 +15,16 @@ public final class CurrentPoc {
     private CurrentPoc() {
     }
 
-    /** The numeric id, not the slug — what {@code user_files} and object paths are keyed on. */
-    public static Long id() {
+    /** The id, not the slug — what {@code user_files} and object paths are keyed on. */
+    public static UUID id() {
         Jwt jwt = jwt();
         Object claim = jwt.getClaim("pocId");
-        if (claim instanceof Number number) {
-            return number.longValue();
+        if (claim instanceof String value) {
+            try {
+                return UUID.fromString(value);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException("Token has no pocId claim — not a POC-scoped token", e);
+            }
         }
         throw new IllegalStateException("Token has no pocId claim — not a POC-scoped token");
     }

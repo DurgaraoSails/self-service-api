@@ -3,6 +3,7 @@ package com.sails.ai.selfserviceapi.common.exception;
 import com.sails.ai.selfserviceapi.generated.model.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.OffsetDateTime;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -28,6 +29,20 @@ public class GlobalExceptionHandler {
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .orElse("Validation failed");
         ErrorResponse body = new ErrorResponse("VALIDATION_ERROR", message)
+                .timestamp(OffsetDateTime.now())
+                .path(request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /**
+     * Catches a violated FK/unique/check constraint that never got a friendlier ApiException on
+     * the way down — e.g. a POC's category not matching any poc_categories row. Generic on
+     * purpose: the underlying constraint name is a database implementation detail, not something
+     * to leak to a caller.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
+        ErrorResponse body = new ErrorResponse("INVALID_REFERENCE", "Request references a value that does not exist.")
                 .timestamp(OffsetDateTime.now())
                 .path(request.getRequestURI());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);

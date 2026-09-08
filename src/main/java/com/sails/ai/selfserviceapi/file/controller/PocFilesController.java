@@ -8,6 +8,7 @@ import com.sails.ai.selfserviceapi.generated.model.FileResponse;
 import com.sails.ai.selfserviceapi.security.CurrentPoc;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
@@ -48,7 +49,7 @@ public class PocFilesController implements PocFilesApi {
     }
 
     @Override
-    public ResponseEntity<Resource> getPocFileContent(Long fileId) {
+    public ResponseEntity<Resource> getPocFileContent(UUID fileId) {
         FileService.FileDownload download = fileService.download(CurrentUser.id(), CurrentPoc.id(), fileId);
         UserFile metadata = download.file();
 
@@ -67,7 +68,7 @@ public class PocFilesController implements PocFilesApi {
     }
 
     @Override
-    public ResponseEntity<Void> deletePocFile(Long fileId) {
+    public ResponseEntity<Void> deletePocFile(UUID fileId) {
         fileService.delete(CurrentUser.id(), CurrentPoc.id(), fileId);
         return ResponseEntity.noContent().build();
     }

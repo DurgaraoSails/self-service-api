@@ -8,6 +8,7 @@ import com.sails.ai.selfserviceapi.security.JwtService;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.exception.UserNotFoundException;
 import com.sails.ai.selfserviceapi.user.repository.UserRepository;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,6 +61,6 @@ public class PocLaunchService {
                 poc.getSlug());
     }
 
-    public record PocLaunch(String token, long expiresInSeconds, String launchUrl, Long pocId, String slug) {
+    public record PocLaunch(String token, long expiresInSeconds, String launchUrl, UUID pocId, String slug) {
     }
 }

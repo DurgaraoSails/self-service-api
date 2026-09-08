@@ -8,10 +8,10 @@ HeartbeatRequest:
     - pocId
   properties:
     pocId:
-      type: integer
-      format: int64
+      type: string
+      format: uuid
       description: Identifier of the POC the caller currently has open.
-      example: 1
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
 
 PocUsageSummary:
@@ -23,9 +23,9 @@ PocUsageSummary:
     - totalSeconds
   properties:
     pocId:
-      type: integer
-      format: int64
-      example: 1
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
     pocName:
       type: string
@@ -95,9 +95,9 @@ ActivitySessionResponse:
     - status
   properties:
     pocId:
-      type: integer
-      format: int64
-      example: 1
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
     pocName:
       type: string
@@ -183,9 +183,9 @@ ActiveSessionResponse:
       example: "Doe"
 
     pocId:
-      type: integer
-      format: int64
-      example: 1
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
     pocName:
       type: string

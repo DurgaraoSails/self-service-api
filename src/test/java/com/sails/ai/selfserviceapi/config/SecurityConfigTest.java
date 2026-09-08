@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -52,6 +53,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityConfigTest {
 
     private static final KeyPair KEY_PAIR = generateKeyPair();
+    private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
 
     @Autowired
     private MockMvc mockMvc;
@@ -136,7 +138,7 @@ class SecurityConfigTest {
      */
     @Test
     void rejectsAPocScopedTokenOnAPortalFilesEndpoint() throws Exception {
-        mockMvc.perform(get("/pocs/4/files").header("Authorization", "Bearer " + pocToken()))
+        mockMvc.perform(get("/pocs/" + POC_ID + "/files").header("Authorization", "Bearer " + pocToken()))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -144,7 +146,7 @@ class SecurityConfigTest {
     void acceptsAUserAccessTokenOnAPortalFilesEndpoint() throws Exception {
         when(fileService.list(any(), any())).thenReturn(List.of());
 
-        mockMvc.perform(get("/pocs/4/files").header("Authorization", "Bearer " + userToken()))
+        mockMvc.perform(get("/pocs/" + POC_ID + "/files").header("Authorization", "Bearer " + userToken()))
                 .andExpect(status().isOk());
     }
 
@@ -155,7 +157,7 @@ class SecurityConfigTest {
     private static String pocToken() {
         return baseToken()
                 .audience().add(PocAudience.forSlug("contract-agent")).and()
-                .claim("pocId", 4L)
+                .claim("pocId", POC_ID.toString())
                 .compact();
     }
 

@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -26,9 +27,9 @@ public class Poc {
     public static final String VISIBILITY_ACTIVE = "ACTIVE";
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", nullable = false, updatable = false)
-    private Long id;
+    private UUID id;
 
     @Column(name = "name", nullable = false, length = 200)
     private String name;
@@ -78,7 +79,7 @@ public class Poc {
     private Instant deletedAt;
 
     @Column(name = "active_version_id")
-    private Long activeVersionId;
+    private UUID activeVersionId;
 
     /** Addressable name for the deploy target — Cloud Run service name and image path segment. */
     @Column(name = "slug")

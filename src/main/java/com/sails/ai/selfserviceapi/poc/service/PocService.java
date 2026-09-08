@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,7 +39,7 @@ public class PocService {
         return includeDeleted ? pocRepository.findAll() : pocRepository.findByDeletedAtIsNull();
     }
 
-    public Poc getById(Long id) {
+    public Poc getById(UUID id) {
         return pocRepository.findById(id)
                 .orElseThrow(() -> new PocNotFoundException(id));
     }
@@ -85,7 +86,7 @@ public class PocService {
      * and reporting back should not discard the rest of the run's results.
      */
     @Transactional
-    public void recordUpstreamCommits(Map<Long, String> commitShaByPocId) {
+    public void recordUpstreamCommits(Map<UUID, String> commitShaByPocId) {
         Instant checkedAt = Instant.now();
 
         for (Poc poc : pocRepository.findAllById(commitShaByPocId.keySet())) {
@@ -103,35 +104,35 @@ public class PocService {
     }
 
     @Transactional
-    public Poc update(Long id, PocFields fields) {
+    public Poc update(UUID id, PocFields fields) {
         Poc poc = getById(id);
         applyFields(poc, fields);
         return pocRepository.save(poc);
     }
 
     @Transactional
-    public void delete(Long id) {
+    public void delete(UUID id) {
         Poc poc = getById(id);
         poc.setDeletedAt(Instant.now());
         pocRepository.save(poc);
     }
 
     @Transactional
-    public Poc restore(Long id) {
+    public Poc restore(UUID id) {
         Poc poc = getById(id);
         poc.setDeletedAt(null);
         return pocRepository.save(poc);
     }
 
     @Transactional
-    public Poc hide(Long id) {
+    public Poc hide(UUID id) {
         Poc poc = getById(id);
         poc.setVisibilityStatus(HIDDEN_STATUS);
         return pocRepository.save(poc);
     }
 
     @Transactional
-    public Poc unhide(Long id) {
+    public Poc unhide(UUID id) {
         Poc poc = getById(id);
         poc.setVisibilityStatus(DEFAULT_STATUS);
         return pocRepository.save(poc);

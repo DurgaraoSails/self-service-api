@@ -72,10 +72,11 @@ public class JwtService {
                 .issuer(jwtProperties.issuer())
                 .subject(user.getId())
                 .audience().add(PocAudience.forSlug(poc.getSlug())).and()
-                // The numeric id as well as the slug in the audience: file storage is keyed on the
-                // id precisely because a slug can be renamed, and carrying it here saves a lookup
-                // on every request a POC makes.
-                .claim("pocId", poc.getId())
+                // The id as well as the slug in the audience: file storage is keyed on the id
+                // precisely because a slug can be renamed, and carrying it here saves a lookup on
+                // every request a POC makes. Serialized as a string — a UUID has no compact JSON
+                // number form, unlike the old BIGINT id this replaced.
+                .claim("pocId", poc.getId().toString())
                 .claim("name", displayNameOf(user))
                 .claim("theme", user.getTheme().name())
                 .issuedAt(Date.from(now))

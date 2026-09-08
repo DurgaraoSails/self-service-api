@@ -21,6 +21,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -30,6 +31,9 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.util.unit.DataSize;
 
 class FileServiceTest {
+
+    private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
+    private static final UUID FILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private UserFileRepository userFileRepository;
     private FileStorage fileStorage;
@@ -53,10 +57,10 @@ class FileServiceTest {
     void storesTheObjectBeforePersistingTheRow() {
         MockMultipartFile file = pdf("report.pdf");
 
-        UserFile saved = fileService.upload("user-1", 4L, file);
+        UserFile saved = fileService.upload("user-1", POC_ID, file);
 
         verify(fileStorage).store(eq(saved.getObjectName()), eq("application/pdf"), any());
-        assertThat(saved.getObjectName()).isEqualTo(ObjectPaths.object("user-1", 4L, extractFileId(saved.getObjectName())));
+        assertThat(saved.getObjectName()).isEqualTo(ObjectPaths.object("user-1", POC_ID, extractFileId(saved.getObjectName())));
         assertThat(saved.getOriginalFilename()).isEqualTo("report.pdf");
         assertThat(saved.getContentType()).isEqualTo("application/pdf");
         assertThat(saved.getSizeBytes()).isEqualTo(file.getSize());
@@ -66,7 +70,7 @@ class FileServiceTest {
     void fallsBackToAPlaceholderNameWhenNoFilenameWasSent() {
         MockMultipartFile file = new MockMultipartFile("file", null, "application/pdf", pdfBytes());
 
-        UserFile saved = fileService.upload("user-1", 4L, file);
+        UserFile saved = fileService.upload("user-1", POC_ID, file);
 
         assertThat(saved.getOriginalFilename()).isEqualTo("unnamed");
     }
@@ -76,7 +80,7 @@ class FileServiceTest {
         byte[] oversized = new byte[11 * 1024 * 1024];
         MockMultipartFile file = new MockMultipartFile("file", "big.pdf", "application/pdf", oversized);
 
-        assertThatThrownBy(() -> fileService.upload("user-1", 4L, file))
+        assertThatThrownBy(() -> fileService.upload("user-1", POC_ID, file))
                 .isInstanceOf(UploadTooLargeException.class)
                 .extracting(e -> ((UploadTooLargeException) e).getStatus())
                 .isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE);
@@ -86,9 +90,9 @@ class FileServiceTest {
 
     @Test
     void rejectsAFifthFileWhenThePocLimitIsTwo() {
-        when(userFileRepository.countByUserIdAndPocIdAndDeletedAtIsNull("user-1", 4L)).thenReturn(2L);
+        when(userFileRepository.countByUserIdAndPocIdAndDeletedAtIsNull("user-1", POC_ID)).thenReturn(2L);
 
-        assertThatThrownBy(() -> fileService.upload("user-1", 4L, pdf("report.pdf")))
+        assertThatThrownBy(() -> fileService.upload("user-1", POC_ID, pdf("report.pdf")))
                 .isInstanceOf(FileQuotaExceededException.class)
                 .extracting(e -> ((FileQuotaExceededException) e).getStatus())
                 .isEqualTo(HttpStatus.CONFLICT);
@@ -101,7 +105,7 @@ class FileServiceTest {
         when(userFileRepository.sumLiveSizeBytesByUserId("user-1"))
                 .thenReturn(DataSize.ofMegabytes(20).toBytes() - 5);
 
-        assertThatThrownBy(() -> fileService.upload("user-1", 4L, pdf("report.pdf")))
+        assertThatThrownBy(() -> fileService.upload("user-1", POC_ID, pdf("report.pdf")))
                 .isInstanceOf(FileQuotaExceededException.class);
 
         verify(fileStorage, never()).store(anyString(), anyString(), any());
@@ -109,29 +113,29 @@ class FileServiceTest {
 
     @Test
     void quotaIsCheckedBeforeContentTypeSoAFullPocRejectsFastest() {
-        when(userFileRepository.countByUserIdAndPocIdAndDeletedAtIsNull("user-1", 4L)).thenReturn(2L);
+        when(userFileRepository.countByUserIdAndPocIdAndDeletedAtIsNull("user-1", POC_ID)).thenReturn(2L);
         MockMultipartFile badType = new MockMultipartFile("file", "a.exe", "application/x-msdownload", new byte[]{1, 2, 3});
 
-        assertThatThrownBy(() -> fileService.upload("user-1", 4L, badType))
+        assertThatThrownBy(() -> fileService.upload("user-1", POC_ID, badType))
                 .isInstanceOf(FileQuotaExceededException.class);
     }
 
     @Test
     void listReturnsOnlyThatUsersFilesForThatPoc() {
-        fileService.list("user-1", 4L);
+        fileService.list("user-1", POC_ID);
 
-        verify(userFileRepository).findByUserIdAndPocIdAndDeletedAtIsNullOrderByUploadedAtDesc("user-1", 4L);
+        verify(userFileRepository).findByUserIdAndPocIdAndDeletedAtIsNullOrderByUploadedAtDesc("user-1", POC_ID);
     }
 
     @Test
     void downloadOpensTheStoredObjectForAnOwnedFile() {
         UserFile row = ownedRow();
-        when(userFileRepository.findByIdAndUserIdAndPocIdAndDeletedAtIsNull(1L, "user-1", 4L))
+        when(userFileRepository.findByIdAndUserIdAndPocIdAndDeletedAtIsNull(FILE_ID, "user-1", POC_ID))
                 .thenReturn(Optional.of(row));
         when(fileStorage.open(row.getObjectName()))
                 .thenReturn(new ByteArrayInputStream("hello".getBytes(StandardCharsets.UTF_8)));
 
-        FileService.FileDownload download = fileService.download("user-1", 4L, 1L);
+        FileService.FileDownload download = fileService.download("user-1", POC_ID, FILE_ID);
 
         assertThat(download.file()).isSameAs(row);
     }
@@ -139,20 +143,20 @@ class FileServiceTest {
     /** The whole point of the claim-derived scope: an id that exists but is not yours is a 404. */
     @Test
     void downloadRefusesAFileBelongingToAnotherUserOrPoc() {
-        when(userFileRepository.findByIdAndUserIdAndPocIdAndDeletedAtIsNull(1L, "user-1", 4L))
+        when(userFileRepository.findByIdAndUserIdAndPocIdAndDeletedAtIsNull(FILE_ID, "user-1", POC_ID))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> fileService.download("user-1", 4L, 1L))
+        assertThatThrownBy(() -> fileService.download("user-1", POC_ID, FILE_ID))
                 .isInstanceOf(FileNotFoundException.class);
     }
 
     @Test
     void deleteRemovesTheObjectBeforeMarkingTheRowDeleted() {
         UserFile row = ownedRow();
-        when(userFileRepository.findByIdAndUserIdAndPocIdAndDeletedAtIsNull(1L, "user-1", 4L))
+        when(userFileRepository.findByIdAndUserIdAndPocIdAndDeletedAtIsNull(FILE_ID, "user-1", POC_ID))
                 .thenReturn(Optional.of(row));
 
-        fileService.delete("user-1", 4L, 1L);
+        fileService.delete("user-1", POC_ID, FILE_ID);
 
         var inOrder = Mockito.inOrder(fileStorage, userFileRepository);
         inOrder.verify(fileStorage).delete(row.getObjectName());
@@ -163,10 +167,10 @@ class FileServiceTest {
 
     @Test
     void deleteOfAnUnownedFileTouchesNoStorage() {
-        when(userFileRepository.findByIdAndUserIdAndPocIdAndDeletedAtIsNull(1L, "user-1", 4L))
+        when(userFileRepository.findByIdAndUserIdAndPocIdAndDeletedAtIsNull(FILE_ID, "user-1", POC_ID))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> fileService.delete("user-1", 4L, 1L))
+        assertThatThrownBy(() -> fileService.delete("user-1", POC_ID, FILE_ID))
                 .isInstanceOf(FileNotFoundException.class);
 
         verify(fileStorage, never()).delete(anyString());
@@ -182,10 +186,10 @@ class FileServiceTest {
 
     private static UserFile ownedRow() {
         UserFile row = new UserFile();
-        row.setId(1L);
+        row.setId(FILE_ID);
         row.setUserId("user-1");
-        row.setPocId(4L);
-        row.setObjectName(ObjectPaths.object("user-1", 4L, "file-abc"));
+        row.setPocId(POC_ID);
+        row.setObjectName(ObjectPaths.object("user-1", POC_ID, "file-abc"));
         row.setOriginalFilename("report.pdf");
         row.setContentType("application/pdf");
         row.setSizeBytes(100L);

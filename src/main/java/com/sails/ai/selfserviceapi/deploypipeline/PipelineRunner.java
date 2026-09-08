@@ -49,7 +49,7 @@ public class PipelineRunner {
      * both are null exactly when {@code pipeline.executor=skip}, which never touches GitHub.
      */
     @Async
-    public void runBuildAndDeploy(UUID deploymentId, Long pocId, String pocSlug, String githubUrl, String versionLabel,
+    public void runBuildAndDeploy(UUID deploymentId, UUID pocId, String pocSlug, String githubUrl, String versionLabel,
                                    String commitSha, PocManifest manifest) {
         if (properties.isSkip()) {
             skip(deploymentId, pocId, pocSlug, versionLabel);
@@ -85,7 +85,7 @@ public class PipelineRunner {
      * through 4 (tag, build, push) never apply here, only the deploy itself does.
      */
     @Async
-    public void runRedeploy(UUID deploymentId, Long pocId, String pocSlug, String versionLabel,
+    public void runRedeploy(UUID deploymentId, UUID pocId, String pocSlug, String versionLabel,
                              PocManifest manifest, Map<String, String> imagesByContainer) {
         if (properties.isSkip()) {
             skip(deploymentId, pocId, pocSlug, versionLabel);
@@ -105,7 +105,7 @@ public class PipelineRunner {
     }
 
     /** No GitHub tag, no build, no deploy — pipeline.executor=skip means none of it runs at all. */
-    private void skip(UUID deploymentId, Long pocId, String pocSlug, String versionLabel) {
+    private void skip(UUID deploymentId, UUID pocId, String pocSlug, String versionLabel) {
         log.info("Deployment skipped for poc: {} with poc-id: {} — pipeline.executor=skip, version {} was not built or deployed",
                 pocSlug, pocId, versionLabel);
         try {
@@ -121,7 +121,7 @@ public class PipelineRunner {
      * data at all: {@code reportStatus} clears {@code containerProgress} outright on FAILED (see
      * its own javadoc for why), rather than trying to attribute the failure to one container.
      */
-    private void fail(UUID deploymentId, Long pocId, String pocSlug, String versionLabel, Exception e) {
+    private void fail(UUID deploymentId, UUID pocId, String pocSlug, String versionLabel, Exception e) {
         log.error("Deployment failed for poc: {} with poc-id: {} — version {}", pocSlug, pocId, versionLabel, e);
         try {
             pocDeploymentService.reportStatus(deploymentId, "FAILED", null, null, null, null, truncate(e.getMessage()));
@@ -132,7 +132,7 @@ public class PipelineRunner {
         }
     }
 
-    private void logStage(String stage, Long pocId, String pocSlug) {
+    private void logStage(String stage, UUID pocId, String pocSlug) {
         log.info("{} for poc: {} with poc-id: {}", stage, pocSlug, pocId);
     }
 

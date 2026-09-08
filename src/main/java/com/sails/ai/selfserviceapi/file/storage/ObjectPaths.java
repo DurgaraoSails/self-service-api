@@ -1,5 +1,7 @@
 package com.sails.ai.selfserviceapi.file.storage;
 
+import java.util.UUID;
+
 /**
  * The object layout, in one place because three different operations have to agree on it: upload
  * writes it, download reads it, and purge deletes by prefix.
@@ -22,8 +24,8 @@ public final class ObjectPaths {
     }
 
     /** Everything belonging to one (user, POC) pair. */
-    public static String pairPrefix(String userId, long pocId) {
-        return "users/%s/pocs/%d/".formatted(userId, pocId);
+    public static String pairPrefix(String userId, UUID pocId) {
+        return "users/%s/pocs/%s/".formatted(userId, pocId);
     }
 
     /**
@@ -31,7 +33,7 @@ public final class ObjectPaths {
      * here, which removes path traversal, filename collisions, and the disclosure of a name like
      * "Q3-layoffs-J-Smith.pdf" into bucket listings and access logs that outlive the object.
      */
-    public static String object(String userId, long pocId, String fileId) {
+    public static String object(String userId, UUID pocId, String fileId) {
         return pairPrefix(userId, pocId) + fileId;
     }
 }

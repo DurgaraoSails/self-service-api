@@ -1,6 +1,7 @@
 package com.sails.ai.selfserviceapi.poc.exception;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -10,7 +11,7 @@ import org.springframework.http.HttpStatus;
  */
 public class MissingPocSlugException extends ApiException {
 
-    public MissingPocSlugException(Long pocId) {
+    public MissingPocSlugException(UUID pocId) {
         super(HttpStatus.CONFLICT, "POC_SLUG_REQUIRED",
                 "POC " + pocId + " has no slug. Set one before deploying — it names the deployed service.");
     }

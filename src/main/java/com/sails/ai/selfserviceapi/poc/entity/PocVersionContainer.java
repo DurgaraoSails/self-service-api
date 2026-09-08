@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -27,7 +28,7 @@ public class PocVersionContainer {
     private Long id;
 
     @Column(name = "poc_version_id", nullable = false, updatable = false)
-    private Long pocVersionId;
+    private UUID pocVersionId;
 
     @Column(name = "name", nullable = false, length = 40, updatable = false)
     private String name;

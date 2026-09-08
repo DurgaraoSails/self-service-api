@@ -13,7 +13,7 @@ import java.util.UUID;
  */
 public record RedeployRequest(
         UUID deploymentId,
-        Long pocId,
+        UUID pocId,
         String pocSlug,
         String versionLabel,
         PocManifest manifest,

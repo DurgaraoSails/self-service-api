@@ -11,9 +11,9 @@ FileResponse:
     - uploadedAt
   properties:
     id:
-      type: integer
-      format: int64
-      example: 42
+      type: string
+      format: uuid
+      example: "8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
 
     originalFilename:
       type: string

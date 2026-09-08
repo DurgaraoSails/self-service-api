@@ -14,12 +14,15 @@ import com.sails.ai.selfserviceapi.security.JwtService;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.repository.UserRepository;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
 
 class PocLaunchServiceTest {
+
+    private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
 
     private PocRepository pocRepository;
     private UserRepository userRepository;
@@ -47,7 +50,7 @@ class PocLaunchServiceTest {
         assertThat(launch.token()).isEqualTo("a-poc-token");
         assertThat(launch.expiresInSeconds()).isEqualTo(900L);
         assertThat(launch.launchUrl()).isEqualTo("https://contract-agent.example.run.app");
-        assertThat(launch.pocId()).isEqualTo(4L);
+        assertThat(launch.pocId()).isEqualTo(POC_ID);
         assertThat(launch.slug()).isEqualTo("contract-agent");
     }
 
@@ -124,7 +127,7 @@ class PocLaunchServiceTest {
 
     private static Poc activePoc() {
         Poc poc = new Poc();
-        poc.setId(4L);
+        poc.setId(POC_ID);
         poc.setSlug("contract-agent");
         poc.setVisibilityStatus(Poc.VISIBILITY_ACTIVE);
         poc.setAppUrl("https://contract-agent.example.run.app");

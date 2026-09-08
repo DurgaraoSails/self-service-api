@@ -13,13 +13,16 @@ import com.sails.ai.selfserviceapi.generated.model.DailyUsagePoint;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ActivityResponseMapperTest {
 
+    private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
     private static SessionProjection projection(Instant lastSeenAt, Instant endedAt) {
         SessionProjection projection = mock(SessionProjection.class);
-        when(projection.getPocId()).thenReturn(1L);
+        when(projection.getPocId()).thenReturn(POC_ID);
         when(projection.getPocName()).thenReturn("Contract Agent");
         when(projection.getStartedAt()).thenReturn(lastSeenAt.minus(Duration.ofMinutes(5)));
         when(projection.getLastSeenAt()).thenReturn(lastSeenAt);
@@ -77,7 +80,7 @@ class ActivityResponseMapperTest {
         when(projection.getUserId()).thenReturn("u1");
         when(projection.getFirstName()).thenReturn("Ava");
         when(projection.getLastName()).thenReturn("Patel");
-        when(projection.getPocId()).thenReturn(1L);
+        when(projection.getPocId()).thenReturn(POC_ID);
         when(projection.getPocName()).thenReturn("Sails Process Assistant");
         when(projection.getStartedAt()).thenReturn(startedAt);
 
@@ -86,7 +89,7 @@ class ActivityResponseMapperTest {
         assertThat(response.getUserId()).isEqualTo("u1");
         assertThat(response.getFirstName()).isEqualTo("Ava");
         assertThat(response.getLastName()).isEqualTo("Patel");
-        assertThat(response.getPocId()).isEqualTo(1L);
+        assertThat(response.getPocId()).isEqualTo(POC_ID);
         assertThat(response.getPocName()).isEqualTo("Sails Process Assistant");
         assertThat(response.getStartedAt().toInstant()).isEqualTo(startedAt);
     }
