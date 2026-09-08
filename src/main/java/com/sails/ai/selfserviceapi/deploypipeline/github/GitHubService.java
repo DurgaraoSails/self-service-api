@@ -57,8 +57,37 @@ public class GitHubService {
                 repo.owner(), repo.name(), branch).object().sha();
     }
 
-    public String getDefaultBranchHeadSha(GitHubRepoRef repo) {
-        return getBranchHeadSha(repo, getDefaultBranch(repo));
+    /**
+     * The commit a new version is cut from, and therefore the commit the release tag will point at.
+     *
+     * <p>{@code pipeline.deploy-branch} when it is set, otherwise the repository's own default
+     * branch. The default branch is the more forgiving behaviour — repositories disagree about
+     * whether that is {@code main}, {@code master} or something else — but a platform that must cut
+     * every release from one named branch can pin it, and then a repository lacking that branch is
+     * a configuration error worth naming rather than a 404 to decipher.
+     */
+    public String getDeployBranchHeadSha(GitHubRepoRef repo) {
+        if (!properties.hasDeployBranch()) {
+            return getBranchHeadSha(repo, getDefaultBranch(repo));
+        }
+
+        requireToken();
+        String branch = properties.deployBranch();
+        try {
+            return gitHubRestClient.get()
+                    .uri("/repos/{owner}/{repo}/git/ref/heads/{branch}", repo.owner(), repo.name(), branch)
+                    .retrieve()
+                    .body(GitRefResponse.class)
+                    .object().sha();
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                throw new GitHubApiException("Branch '" + branch + "' does not exist in " + repo
+                        + ". pipeline.deploy-branch pins every POC to that branch, so this repository cannot be "
+                        + "deployed until it has one — create the branch, or clear pipeline.deploy-branch to "
+                        + "deploy each repository from its own default branch instead.", e);
+            }
+            throw wrap(e, "read branch " + branch + " of " + repo);
+        }
     }
 
     /**
@@ -113,6 +142,56 @@ public class GitHubService {
     }
 
     /**
+     * Refuses a deploy the configured token could never finish, before it starts one.
+     *
+     * <p>A POC may point at any GitHub URL, including a public repository owned by someone else.
+     * Public visibility grants read to everyone, so the clone would succeed — but this pipeline
+     * creates a release tag first, and a tag is a write. Without this check the deploy fails
+     * several steps later with GitHub's raw rejection ("create tag 1.0.0 on owner/repo: 403 {...}"),
+     * which is accurate and says nothing about the cause. The distinction between "readable" and
+     * "writable" is exactly the thing that surprises people here, so the message names it.
+     *
+     * <p>Deliberately its own call rather than folded into {@link #getDefaultBranch}, which already
+     * reads this endpoint: a permission check hidden inside a method named for something else is
+     * what a later reader deletes as a redundant round trip.
+     */
+    public void requirePushAccess(GitHubRepoRef repo) {
+        requireToken();
+
+        RepoInfo info;
+        try {
+            info = gitHubRestClient.get()
+                    .uri("/repos/{owner}/{repo}", repo.owner(), repo.name())
+                    .retrieve()
+                    .body(RepoInfo.class);
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                // 404 rather than 403 is also what GitHub returns for a private repo the token
+                // cannot see — it does not confirm existence to a caller who may not look.
+                throw new GitHubApiException("GitHub repository " + repo + " was not found, or is not visible to the "
+                        + "configured token. Check the POC's GitHub URL for a typo, and that the token has access "
+                        + "if the repository is private.", e);
+            }
+            throw wrap(e, "read repository " + repo);
+        }
+
+        // Before the push check, not after: archiving freezes a repository read-only for everyone,
+        // so it still reports push: true while rejecting every write. Reporting it as a permission
+        // problem would send an admin to change a role that was never the cause.
+        if (info != null && Boolean.TRUE.equals(info.archived())) {
+            throw new GitHubApiException("GitHub repository " + repo + " is archived, so it is read-only and no "
+                    + "release tag can be created on it. Unarchive it, or point this POC at an active repository.");
+        }
+
+        if (info == null || info.permissions() == null || !info.permissions().push()) {
+            throw new GitHubApiException("The configured GitHub token cannot push to " + repo + ", so it cannot "
+                    + "create the release tag this deploy needs. Note that a public repository is readable by "
+                    + "anyone but still only writable by its collaborators — point this POC at a repository the "
+                    + "token has write access to, or configure a token that does.");
+        }
+    }
+
+    /**
      * GitHub answers 422 for several distinct validation failures — a bad commit SHA and a
      * malformed ref name among them. Only "already exists" is safe to continue from; treating all
      * of them that way would swap a clear error for a confusing tag lookup that then 404s.
@@ -160,7 +239,24 @@ public class GitHubService {
                 e);
     }
 
-    private record RepoInfo(@JsonProperty("default_branch") String defaultBranch) {
+    /**
+     * {@code permissions} is returned only for an authenticated caller, which this always is.
+     *
+     * <p>{@code archived} is boxed rather than a primitive: GitHub always sends it, but a record
+     * component of type {@code boolean} makes the field mandatory to bind, so any response without
+     * it fails deserialization outright instead of defaulting to false. Absent reads as "not
+     * archived" here, which is both the safe direction and the one that keeps a trimmed response
+     * from failing a deploy for the wrong reason.
+     */
+    private record RepoInfo(@JsonProperty("default_branch") String defaultBranch, Permissions permissions,
+                             Boolean archived) {
+    }
+
+    /**
+     * Only {@code push} is read. {@code admin}/{@code pull} are also returned; pull adds nothing
+     * (a repo that could not be read would have 404'd) and admin is more than a tag requires.
+     */
+    private record Permissions(boolean push) {
     }
 
     private record GitRefResponse(String ref, GitObject object) {

@@ -10,3 +10,4 @@ MAIL_FROM_ADDRESS: no.reply.sails.poc@gmail.com
 
 PIPELINE_EXECUTOR: skip
 BUILD_SERVICE_ACCOUNT: self-service-builder
+PIPELINE_DEPLOY_BRANCH: main

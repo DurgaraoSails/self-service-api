@@ -154,6 +154,12 @@ pipeline:
   build-timeout: ${PIPELINE_BUILD_TIMEOUT:20m}
   build-poll-interval: ${PIPELINE_BUILD_POLL_INTERVAL:10s}
 
+  # The branch a new version is cut from — its head commit is what gets tagged and built. Blank
+  # follows each repository's own default branch, whatever GitHub reports it to be. Set it (e.g.
+  # to main) to pin every POC to one branch name regardless of what its repository defaults to;
+  # a repository without that branch then fails with a message naming this setting.
+  deploy-branch: ${PIPELINE_DEPLOY_BRANCH:}
+
 # What a deployed POC may rely on about the container it runs in. Separate from pipeline: above,
 # which describes how the deploy is carried out rather than what it produces. Every value here is
 # injected into every container and reserved from poc.yaml (see manifest.reserved-env-names).

@@ -57,6 +57,6 @@ class PipelinePropertiesTest {
 
     private static PipelineProperties properties(String executor) {
         return new PipelineProperties(executor, "self-service-builder", "ghp_token", false, true,
-                Duration.ofMinutes(20), Duration.ofSeconds(10));
+                Duration.ofMinutes(20), Duration.ofSeconds(10), null);
     }
 }
