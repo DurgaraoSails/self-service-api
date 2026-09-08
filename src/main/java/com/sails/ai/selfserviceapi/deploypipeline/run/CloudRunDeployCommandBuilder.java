@@ -249,7 +249,7 @@ public class CloudRunDeployCommandBuilder {
     private void warnIfPlatformApiUrlIsUnreachableFromCloudRun(String pocSlug) {
         if (pocRuntime.platformApiUrlIsUnreachableFromCloudRun()) {
             log.warn("Deploying '{}' with PLATFORM_API_URL={} — a deployed container cannot reach that address. "
-                    + "Set poc-runtime.platform-api-url (POC_RUNTIME_PLATFORM_API_URL) to this API's public URL, "
+                    + "Set poc-runtime.platform-api-url (SELF_SERVICE_API_URL) to this API's public URL, "
                     + "or the POC's JWKS lookup will fail and every launch token will be rejected.",
                     pocSlug, pocRuntime.platformApiUrl());
         }

@@ -235,7 +235,7 @@ New configuration (`application.yaml`):
 | Property | Env var | Default | Notes |
 |---|---|---|---|
 | `poc-runtime.ingress-port` | `POC_RUNTIME_INGRESS_PORT` | `8080` | The port the ingress container binds. Platform-owned; a manifest cannot set it. |
-| `poc-runtime.platform-api-url` | `POC_RUNTIME_PLATFORM_API_URL` | `http://localhost:8080` | Injected as `PLATFORM_API_URL`. **Must be reachable from Cloud Run** — the local default is a development placeholder that cannot work for a deployed POC. |
+| `poc-runtime.platform-api-url` | `SELF_SERVICE_API_URL` | `http://localhost:8080` | Injected as `PLATFORM_API_URL`. The env var is named for what you supply (this API's own URL); the injected name is what a POC sees (“the platform's API”). **Must be reachable from Cloud Run** — the local default is a development placeholder that cannot work for a deployed POC. |
 | `poc-runtime.portal-origin` | `POC_RUNTIME_PORTAL_ORIGIN` | `${app.frontend.url}` | Injected as `PORTAL_ORIGIN`. Defaults to the portal URL this API already configures for email links. |
 | `pipeline.allow-unauthenticated` | `BUILD_ALLOW_UNAUTHENTICATED` | `true` (**changed from `false`**) | See the security note above. |
 | `manifest.reserved-env-names` | `MANIFEST_RESERVED_ENV_NAMES` | `PORT,POC_SLUG,PLATFORM_API_URL,PORTAL_ORIGIN` | Extended — a manifest may not set what the platform now injects. |
@@ -299,6 +299,16 @@ New configuration (`application.yaml`):
   could not be opened from the portal ("refused to connect"). Covers the ingress-port inversion,
   platform environment injection, public access, service-level flag ordering, and manifest keys
   that were silently discarded.
+
+- 2026-09-08 — The env var feeding `poc-runtime.platform-api-url` is now `SELF_SERVICE_API_URL`;
+  `POC_RUNTIME_PLATFORM_API_URL` and the `PLATFORM_API_URL` alias described in the entry below are
+  both gone. One name meant two different things depending on which process read it — this API's
+  own address on the way in, and "the platform's API" on the way out — which is exactly how the
+  truncated value in `application-prod.yaml` went unnoticed. The *injected* variable is still
+  `PLATFORM_API_URL`: that one is a published contract every POC and `poc-platform-sdk` reads, and
+  "platform" remains the right abstraction from a POC's side. Any deployment setting the old names
+  must be updated — there is no fallback, but a wrong value now surfaces as the localhost warning
+  in `CloudRunDeployCommandBuilder` rather than silently.
 
 - 2026-09-07 — Implemented, with three deliberate departures from the draft above, each recorded
   where it applies rather than only here. (1) A manifest may still declare its own ingress port —
