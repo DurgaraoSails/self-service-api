@@ -230,4 +230,68 @@ class UserServiceTest {
         assertThatThrownBy(() -> userService.requestTrialExtension("missing", "Need more time."))
                 .isInstanceOf(UserNotFoundException.class);
     }
+
+    @Test
+    void promoteToAdminAddsTheAdminRole() {
+        User user = userWithId("u1");
+        user.setRoles(new java.util.ArrayList<>(List.of("USER")));
+        when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        User promoted = userService.promoteToAdmin("u1");
+
+        assertThat(promoted.getRoles()).containsExactlyInAnyOrder("USER", "ADMIN");
+    }
+
+    @Test
+    void promoteToAdminIsANoOpWhenAlreadyAnAdmin() {
+        User user = userWithId("u1");
+        user.setRoles(new java.util.ArrayList<>(List.of("USER", "ADMIN")));
+        when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+
+        User promoted = userService.promoteToAdmin("u1");
+
+        assertThat(promoted.getRoles()).containsExactlyInAnyOrder("USER", "ADMIN");
+        org.mockito.Mockito.verify(userRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void promoteToAdminThrowsWhenUserMissing() {
+        when(userRepository.findById("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.promoteToAdmin("missing"))
+                .isInstanceOf(UserNotFoundException.class);
+    }
+
+    @Test
+    void demoteToUserRemovesTheAdminRole() {
+        User user = userWithId("u1");
+        user.setRoles(new java.util.ArrayList<>(List.of("USER", "ADMIN")));
+        when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        User demoted = userService.demoteToUser("u1");
+
+        assertThat(demoted.getRoles()).containsExactly("USER");
+    }
+
+    @Test
+    void demoteToUserIsANoOpWhenNotAnAdmin() {
+        User user = userWithId("u1");
+        user.setRoles(new java.util.ArrayList<>(List.of("USER")));
+        when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+
+        User demoted = userService.demoteToUser("u1");
+
+        assertThat(demoted.getRoles()).containsExactly("USER");
+        org.mockito.Mockito.verify(userRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void demoteToUserThrowsWhenUserMissing() {
+        when(userRepository.findById("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.demoteToUser("missing"))
+                .isInstanceOf(UserNotFoundException.class);
+    }
 }
