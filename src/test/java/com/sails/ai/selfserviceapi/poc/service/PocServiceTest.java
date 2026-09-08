@@ -15,6 +15,7 @@ import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,6 +23,10 @@ import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
 
 class PocServiceTest {
+
+    private static final UUID ID_1 = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID ID_2 = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    private static final UUID ID_99 = UUID.fromString("00000000-0000-0000-0000-000000000099");
 
     private PocRepository pocRepository;
     private PocCategoryRepository pocCategoryRepository;
@@ -34,7 +39,7 @@ class PocServiceTest {
         pocService = new PocService(pocRepository, pocCategoryRepository);
     }
 
-    private static Poc pocWithId(Long id) {
+    private static Poc pocWithId(UUID id) {
         Poc poc = new Poc();
         poc.setId(id);
         poc.setName("Contract Agent");
@@ -44,7 +49,7 @@ class PocServiceTest {
 
     @Test
     void listForViewerReturnsOnlyActiveNonDeletedForNonAdmins() {
-        List<Poc> pocs = List.of(pocWithId(1L), pocWithId(2L));
+        List<Poc> pocs = List.of(pocWithId(ID_1), pocWithId(ID_2));
         when(pocRepository.findByVisibilityStatusAndDeletedAtIsNull("ACTIVE")).thenReturn(pocs);
 
         assertThat(pocService.listForViewer(false, true)).isEqualTo(pocs);
@@ -52,7 +57,7 @@ class PocServiceTest {
 
     @Test
     void listForViewerExcludesDeletedForAdminsByDefault() {
-        List<Poc> pocs = List.of(pocWithId(1L));
+        List<Poc> pocs = List.of(pocWithId(ID_1));
         when(pocRepository.findByDeletedAtIsNull()).thenReturn(pocs);
 
         assertThat(pocService.listForViewer(true, false)).isEqualTo(pocs);
@@ -60,7 +65,7 @@ class PocServiceTest {
 
     @Test
     void listForViewerIncludesDeletedForAdminsWhenRequested() {
-        List<Poc> pocs = List.of(pocWithId(1L), pocWithId(2L));
+        List<Poc> pocs = List.of(pocWithId(ID_1), pocWithId(ID_2));
         when(pocRepository.findAll()).thenReturn(pocs);
 
         assertThat(pocService.listForViewer(true, true)).isEqualTo(pocs);
@@ -68,17 +73,17 @@ class PocServiceTest {
 
     @Test
     void getByIdReturnsTheMatchingPoc() {
-        Poc poc = pocWithId(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+        Poc poc = pocWithId(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
 
-        assertThat(pocService.getById(1L)).isEqualTo(poc);
+        assertThat(pocService.getById(ID_1)).isEqualTo(poc);
     }
 
     @Test
     void getByIdThrowsNotFoundWhenMissing() {
-        when(pocRepository.findById(99L)).thenReturn(Optional.empty());
+        when(pocRepository.findById(ID_99)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> pocService.getById(99L))
+        assertThatThrownBy(() -> pocService.getById(ID_99))
                 .isInstanceOf(PocNotFoundException.class)
                 .extracting(ex -> ((ApiException) ex).getStatus())
                 .isEqualTo(HttpStatus.NOT_FOUND);
@@ -86,7 +91,7 @@ class PocServiceTest {
 
     @Test
     void getLaunchableReturnsAnActivePocWithAnAppUrl() {
-        Poc poc = pocWithId(1L);
+        Poc poc = pocWithId(ID_1);
         poc.setSlug("contract-agent");
         poc.setAppUrl("https://contract-agent.example.com");
         when(pocRepository.findBySlugAndDeletedAtIsNull("contract-agent")).thenReturn(Optional.of(poc));
@@ -106,7 +111,7 @@ class PocServiceTest {
 
     @Test
     void getLaunchableThrowsNotFoundForAHiddenPocWhenCallerIsNotAdmin() {
-        Poc poc = pocWithId(1L);
+        Poc poc = pocWithId(ID_1);
         poc.setSlug("contract-agent");
         poc.setAppUrl("https://contract-agent.example.com");
         poc.setVisibilityStatus("HIDDEN");
@@ -118,7 +123,7 @@ class PocServiceTest {
 
     @Test
     void getLaunchableAllowsAHiddenPocForAnAdmin() {
-        Poc poc = pocWithId(1L);
+        Poc poc = pocWithId(ID_1);
         poc.setSlug("contract-agent");
         poc.setAppUrl("https://contract-agent.example.com");
         poc.setVisibilityStatus("HIDDEN");
@@ -129,7 +134,7 @@ class PocServiceTest {
 
     @Test
     void getLaunchableThrowsConflictWhenThePocHasNeverBeenDeployed() {
-        Poc poc = pocWithId(1L);
+        Poc poc = pocWithId(ID_1);
         poc.setSlug("contract-agent");
         poc.setAppUrl(null);
         when(pocRepository.findBySlugAndDeletedAtIsNull("contract-agent")).thenReturn(Optional.of(poc));
@@ -155,7 +160,7 @@ class PocServiceTest {
 
     @Test
     void listSourceRepositoriesOnlyReturnsPocsThePipelineCouldActuallyPoll() {
-        List<Poc> withRepos = List.of(pocWithId(1L));
+        List<Poc> withRepos = List.of(pocWithId(ID_1));
         when(pocRepository.findByGithubUrlIsNotNullAndDeletedAtIsNull()).thenReturn(withRepos);
 
         assertThat(pocService.listSourceRepositories()).isEqualTo(withRepos);
@@ -163,11 +168,11 @@ class PocServiceTest {
 
     @Test
     void recordUpstreamCommitsStampsTheShaAndTheCheckTime() {
-        Poc poc = pocWithId(1L);
+        Poc poc = pocWithId(ID_1);
         when(pocRepository.findAllById(any())).thenReturn(List.of(poc));
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        pocService.recordUpstreamCommits(java.util.Map.of(1L, "abc123"));
+        pocService.recordUpstreamCommits(java.util.Map.of(ID_1, "abc123"));
 
         assertThat(poc.getLatestMainCommitSha()).isEqualTo("abc123");
         assertThat(poc.getLatestMainCheckedAt()).isNotNull();
@@ -175,12 +180,12 @@ class PocServiceTest {
 
     @Test
     void recordUpstreamCommitsIgnoresPocsThatVanishedMidRun() {
-        Poc stillHere = pocWithId(1L);
+        Poc stillHere = pocWithId(ID_1);
         // Only one of the two reported ids still resolves — the other was deleted in between.
         when(pocRepository.findAllById(any())).thenReturn(List.of(stillHere));
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        pocService.recordUpstreamCommits(new java.util.LinkedHashMap<>(java.util.Map.of(1L, "abc123", 99L, "def456")));
+        pocService.recordUpstreamCommits(new java.util.LinkedHashMap<>(java.util.Map.of(ID_1, "abc123", ID_99, "def456")));
 
         assertThat(stillHere.getLatestMainCommitSha()).isEqualTo("abc123");
         verify(pocRepository, Mockito.times(1)).save(any(Poc.class));
@@ -195,7 +200,7 @@ class PocServiceTest {
                 "https://rag-assistant.example.com",
                 "https://github.com/example-org/rag-assistant",
                 "AI Team",
-                "Generative AI",
+                "Healthcare",
                 List.of("Python", "FastAPI", "PostgreSQL", "LLM"),
                 "interactive",
                 "ACTIVE",
@@ -216,7 +221,7 @@ class PocServiceTest {
         assertThat(created.getAppUrl()).isEqualTo("https://rag-assistant.example.com");
         assertThat(created.getGithubUrl()).isEqualTo("https://github.com/example-org/rag-assistant");
         assertThat(created.getOwner()).isEqualTo("AI Team");
-        assertThat(created.getCategory()).isEqualTo("Generative AI");
+        assertThat(created.getCategory()).isEqualTo("Healthcare");
         assertThat(created.getTechnologies()).containsExactly("Python", "FastAPI", "PostgreSQL", "LLM");
         assertThat(created.getDemoType()).isEqualTo("interactive");
         assertThat(created.getVisibilityStatus()).isEqualTo("ACTIVE");
@@ -240,11 +245,11 @@ class PocServiceTest {
 
     @Test
     void updateReplacesAllFieldsOnTheExistingPoc() {
-        Poc existing = pocWithId(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
+        Poc existing = pocWithId(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(existing));
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Poc updated = pocService.update(1L, new PocFields(
+        Poc updated = pocService.update(ID_1, new PocFields(
                 "Renamed Agent",
                 "New description.",
                 "renamed-agent",
@@ -252,7 +257,7 @@ class PocServiceTest {
                 "https://renamed.example.com",
                 "https://github.com/example-org/renamed",
                 "Platform Team",
-                "Automation",
+                "RAG",
                 List.of("Java", "Spring Boot"),
                 "video",
                 "INACTIVE",
@@ -266,7 +271,7 @@ class PocServiceTest {
         assertThat(updated.getAppUrl()).isEqualTo("https://renamed.example.com");
         assertThat(updated.getGithubUrl()).isEqualTo("https://github.com/example-org/renamed");
         assertThat(updated.getOwner()).isEqualTo("Platform Team");
-        assertThat(updated.getCategory()).isEqualTo("Automation");
+        assertThat(updated.getCategory()).isEqualTo("RAG");
         assertThat(updated.getTechnologies()).containsExactly("Java", "Spring Boot");
         assertThat(updated.getDemoType()).isEqualTo("video");
         assertThat(updated.getVisibilityStatus()).isEqualTo("INACTIVE");
@@ -276,20 +281,20 @@ class PocServiceTest {
 
     @Test
     void updateThrowsWhenMissing() {
-        when(pocRepository.findById(99L)).thenReturn(Optional.empty());
+        when(pocRepository.findById(ID_99)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> pocService.update(99L, new PocFields(
+        assertThatThrownBy(() -> pocService.update(ID_99, new PocFields(
                 "n", "d", null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(PocNotFoundException.class);
     }
 
     @Test
     void deleteSoftDeletesAnExistingPoc() {
-        Poc existing = pocWithId(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
+        Poc existing = pocWithId(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(existing));
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        pocService.delete(1L);
+        pocService.delete(ID_1);
 
         ArgumentCaptor<Poc> pocCaptor = ArgumentCaptor.forClass(Poc.class);
         verify(pocRepository).save(pocCaptor.capture());
@@ -298,43 +303,43 @@ class PocServiceTest {
 
     @Test
     void deleteThrowsWhenMissing() {
-        when(pocRepository.findById(99L)).thenReturn(Optional.empty());
+        when(pocRepository.findById(ID_99)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> pocService.delete(99L))
+        assertThatThrownBy(() -> pocService.delete(ID_99))
                 .isInstanceOf(PocNotFoundException.class);
     }
 
     @Test
     void restoreClearsDeletedAt() {
-        Poc existing = pocWithId(1L);
+        Poc existing = pocWithId(ID_1);
         existing.setDeletedAt(java.time.Instant.now());
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(existing));
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Poc restored = pocService.restore(1L);
+        Poc restored = pocService.restore(ID_1);
 
         assertThat(restored.getDeletedAt()).isNull();
     }
 
     @Test
     void hideSetsStatusToHidden() {
-        Poc existing = pocWithId(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
+        Poc existing = pocWithId(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(existing));
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Poc hidden = pocService.hide(1L);
+        Poc hidden = pocService.hide(ID_1);
 
         assertThat(hidden.getVisibilityStatus()).isEqualTo("HIDDEN");
     }
 
     @Test
     void unhideSetsStatusBackToActive() {
-        Poc existing = pocWithId(1L);
+        Poc existing = pocWithId(ID_1);
         existing.setVisibilityStatus("HIDDEN");
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(existing));
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Poc unhidden = pocService.unhide(1L);
+        Poc unhidden = pocService.unhide(ID_1);
 
         assertThat(unhidden.getVisibilityStatus()).isEqualTo("ACTIVE");
     }

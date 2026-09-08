@@ -15,10 +15,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class JwtServiceTest {
+
+    private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
 
     private JwtService jwtService;
     private JwtKeySet keySet;
@@ -76,7 +79,7 @@ class JwtServiceTest {
         Claims claims = parse(jwtService.issuePocToken(baseUser(), poc()));
 
         assertThat(claims.getAudience()).containsExactly("poc:contract-agent");
-        assertThat(claims.get("pocId", Long.class)).isEqualTo(4L);
+        assertThat(claims.get("pocId", String.class)).isEqualTo(POC_ID.toString());
         assertThat(claims.getSubject()).isEqualTo("01JABC123XYZ");
     }
 
@@ -144,7 +147,7 @@ class JwtServiceTest {
 
     private Poc poc() {
         Poc poc = new Poc();
-        poc.setId(4L);
+        poc.setId(POC_ID);
         poc.setSlug("contract-agent");
         poc.setAppUrl("https://contract-agent.example.run.app");
         return poc;

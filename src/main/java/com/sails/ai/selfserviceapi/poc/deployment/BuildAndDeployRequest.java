@@ -15,7 +15,7 @@ import java.util.UUID;
  */
 public record BuildAndDeployRequest(
         UUID deploymentId,
-        Long pocId,
+        UUID pocId,
         String pocSlug,
         String githubUrl,
         String versionLabel,

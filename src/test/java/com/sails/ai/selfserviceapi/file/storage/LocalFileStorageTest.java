@@ -12,12 +12,16 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.util.unit.DataSize;
 
 class LocalFileStorageTest {
+
+    private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000007");
+    private static final UUID OTHER_POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000009");
 
     @TempDir
     Path root;
@@ -31,7 +35,7 @@ class LocalFileStorageTest {
 
     @Test
     void storesAndReadsBackTheSameBytes() throws IOException {
-        String objectName = ObjectPaths.object("user-1", 7L, "file-a");
+        String objectName = ObjectPaths.object("user-1", POC_ID, "file-a");
         store(objectName, "hello");
 
         try (InputStream in = storage.open(objectName)) {
@@ -41,7 +45,7 @@ class LocalFileStorageTest {
 
     @Test
     void refusesToOverwriteAnExistingObject() {
-        String objectName = ObjectPaths.object("user-1", 7L, "file-a");
+        String objectName = ObjectPaths.object("user-1", POC_ID, "file-a");
         store(objectName, "original");
 
         assertThatThrownBy(() -> store(objectName, "replacement"))
@@ -51,13 +55,13 @@ class LocalFileStorageTest {
 
     @Test
     void reportsAMissingObjectAsNotFoundRatherThanAnError() {
-        assertThatThrownBy(() -> storage.open(ObjectPaths.object("user-1", 7L, "never-written")))
+        assertThatThrownBy(() -> storage.open(ObjectPaths.object("user-1", POC_ID, "never-written")))
                 .isInstanceOf(FileContentNotFoundException.class);
     }
 
     @Test
     void deleteIsIdempotent() {
-        String objectName = ObjectPaths.object("user-1", 7L, "file-a");
+        String objectName = ObjectPaths.object("user-1", POC_ID, "file-a");
         store(objectName, "hello");
 
         assertThat(storage.delete(objectName)).isTrue();
@@ -67,16 +71,16 @@ class LocalFileStorageTest {
     /** The shape purge depends on: one prefix, every POC that user touched, one call. */
     @Test
     void deletingAUserPrefixRemovesTheirFilesAcrossEveryPoc() {
-        store(ObjectPaths.object("user-1", 7L, "file-a"), "a");
-        store(ObjectPaths.object("user-1", 7L, "file-b"), "b");
-        store(ObjectPaths.object("user-1", 9L, "file-c"), "c");
-        store(ObjectPaths.object("user-2", 7L, "file-d"), "d");
+        store(ObjectPaths.object("user-1", POC_ID, "file-a"), "a");
+        store(ObjectPaths.object("user-1", POC_ID, "file-b"), "b");
+        store(ObjectPaths.object("user-1", OTHER_POC_ID, "file-c"), "c");
+        store(ObjectPaths.object("user-2", POC_ID, "file-d"), "d");
 
         assertThat(storage.deleteByPrefix(ObjectPaths.userPrefix("user-1"))).isEqualTo(3);
 
-        assertThatThrownBy(() -> storage.open(ObjectPaths.object("user-1", 9L, "file-c")))
+        assertThatThrownBy(() -> storage.open(ObjectPaths.object("user-1", OTHER_POC_ID, "file-c")))
                 .isInstanceOf(FileContentNotFoundException.class);
-        assertThat(storage.delete(ObjectPaths.object("user-2", 7L, "file-d"))).isTrue();
+        assertThat(storage.delete(ObjectPaths.object("user-2", POC_ID, "file-d"))).isTrue();
     }
 
     @Test

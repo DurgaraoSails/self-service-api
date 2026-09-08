@@ -1,6 +1,7 @@
 package com.sails.ai.selfserviceapi.activity.repository;
 
 import java.time.Instant;
+import java.util.UUID;
 
 public interface OpenSessionProjection {
 
@@ -10,7 +11,7 @@ public interface OpenSessionProjection {
 
     String getLastName();
 
-    Long getPocId();
+    UUID getPocId();
 
     String getPocName();
 

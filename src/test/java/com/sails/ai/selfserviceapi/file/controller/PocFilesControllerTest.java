@@ -21,6 +21,7 @@ import java.io.ByteArrayInputStream;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,10 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import(GlobalExceptionHandler.class)
 class PocFilesControllerTest {
 
+    private static final UUID UPLOADED_FILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000042");
+    private static final UUID FILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID MISSING_FILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000099");
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -60,7 +65,7 @@ class PocFilesControllerTest {
     @BeforeEach
     void authenticate() {
         Jwt jwt = new Jwt("token", Instant.now(), Instant.now().plusSeconds(300),
-                Map.of("alg", "RS256"), Map.of("sub", "user-1", "pocId", 4L));
+                Map.of("alg", "RS256"), Map.of("sub", "user-1", "pocId", "00000000-0000-0000-0000-000000000004"));
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
     }
 
@@ -72,7 +77,7 @@ class PocFilesControllerTest {
     @Test
     void uploadReturns201WithTheStoredFilesMetadata() throws Exception {
         UserFile stored = new UserFile();
-        stored.setId(42L);
+        stored.setId(UPLOADED_FILE_ID);
         stored.setOriginalFilename("report.pdf");
         stored.setContentType("application/pdf");
         stored.setSizeBytes(1024L);
@@ -83,7 +88,7 @@ class PocFilesControllerTest {
 
         mockMvc.perform(multipart("/poc-files").file(file))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(42))
+                .andExpect(jsonPath("$.id").value(UPLOADED_FILE_ID.toString()))
                 .andExpect(jsonPath("$.originalFilename").value("report.pdf"))
                 .andExpect(jsonPath("$.sizeBytes").value(1024));
     }
@@ -113,7 +118,7 @@ class PocFilesControllerTest {
     @Test
     void listReturnsTheMappedFiles() throws Exception {
         UserFile file = new UserFile();
-        file.setId(1L);
+        file.setId(FILE_ID);
         file.setOriginalFilename("a.pdf");
         file.setContentType("application/pdf");
         file.setSizeBytes(10L);
@@ -122,21 +127,21 @@ class PocFilesControllerTest {
 
         mockMvc.perform(get("/poc-files"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(1))
+                .andExpect(jsonPath("$[0].id").value(FILE_ID.toString()))
                 .andExpect(jsonPath("$[0].originalFilename").value("a.pdf"));
     }
 
     @Test
     void downloadSetsAttachmentDispositionAndTheStoredContentType() throws Exception {
         UserFile file = new UserFile();
-        file.setId(1L);
+        file.setId(FILE_ID);
         file.setOriginalFilename("report.pdf");
         file.setContentType("application/pdf");
         file.setSizeBytes(5L);
-        when(fileService.download(any(), any(), eq(1L)))
+        when(fileService.download(any(), any(), eq(FILE_ID)))
                 .thenReturn(new FileService.FileDownload(file, new ByteArrayInputStream("hello".getBytes())));
 
-        mockMvc.perform(get("/poc-files/1/content"))
+        mockMvc.perform(get("/poc-files/" + FILE_ID + "/content"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "application/pdf"))
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("attachment")))
@@ -146,23 +151,23 @@ class PocFilesControllerTest {
 
     @Test
     void downloadOfAnUnknownFileReturns404() throws Exception {
-        when(fileService.download(any(), any(), eq(99L))).thenThrow(new FileNotFoundException(99L));
+        when(fileService.download(any(), any(), eq(MISSING_FILE_ID))).thenThrow(new FileNotFoundException(MISSING_FILE_ID));
 
-        mockMvc.perform(get("/poc-files/99/content"))
+        mockMvc.perform(get("/poc-files/" + MISSING_FILE_ID + "/content"))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void deleteReturns204() throws Exception {
-        mockMvc.perform(delete("/poc-files/1"))
+        mockMvc.perform(delete("/poc-files/" + FILE_ID))
                 .andExpect(status().isNoContent());
     }
 
     @Test
     void deleteOfAnUnknownFileReturns404() throws Exception {
-        org.mockito.Mockito.doThrow(new FileNotFoundException(99L)).when(fileService).delete(any(), any(), eq(99L));
+        org.mockito.Mockito.doThrow(new FileNotFoundException(MISSING_FILE_ID)).when(fileService).delete(any(), any(), eq(MISSING_FILE_ID));
 
-        mockMvc.perform(delete("/poc-files/99"))
+        mockMvc.perform(delete("/poc-files/" + MISSING_FILE_ID))
                 .andExpect(status().isNotFound());
     }
 }

@@ -43,6 +43,12 @@ import tools.jackson.databind.ObjectMapper;
 
 class PocDeploymentServiceTest {
 
+    private static final UUID ID_1 = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID OTHER_POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    private static final UUID ID_10 = UUID.fromString("00000000-0000-0000-0000-000000000010");
+    private static final UUID ID_11 = UUID.fromString("00000000-0000-0000-0000-000000000011");
+    private static final UUID ID_100 = UUID.fromString("00000000-0000-0000-0000-000000000100");
+
     private PocRepository pocRepository;
     private PocVersionRepository pocVersionRepository;
     private PocDeploymentRepository pocDeploymentRepository;
@@ -70,7 +76,7 @@ class PocDeploymentServiceTest {
         when(pocVersionRepository.save(any(PocVersion.class))).thenAnswer(invocation -> {
             PocVersion version = invocation.getArgument(0);
             if (version.getId() == null) {
-                version.setId(100L);
+                version.setId(ID_100);
             }
             return version;
         });
@@ -85,7 +91,7 @@ class PocDeploymentServiceTest {
         when(manifestService.resolveStored(any())).thenReturn(defaultManifest());
     }
 
-    private static Poc pocWithGithubUrl(Long id) {
+    private static Poc pocWithGithubUrl(UUID id) {
         Poc poc = new Poc();
         poc.setId(id);
         poc.setName("Contract Agent");
@@ -107,11 +113,11 @@ class PocDeploymentServiceTest {
 
     @Test
     void deployNewVersionAllocatesVersionOneZeroOneForAPocWithNoPriorVersions() {
-        Poc poc = pocWithGithubUrl(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
-        when(pocVersionRepository.findTopByPocIdOrderByMajorDescMinorDescPatchDesc(1L)).thenReturn(Optional.empty());
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
+        when(pocVersionRepository.findTopByPocIdOrderByMajorDescMinorDescPatchDesc(ID_1)).thenReturn(Optional.empty());
 
-        PocDeployment deployment = service.deployNewVersion(1L, "admin-1");
+        PocDeployment deployment = service.deployNewVersion(ID_1, "admin-1");
 
         ArgumentCaptor<PocVersion> versionCaptor = ArgumentCaptor.forClass(PocVersion.class);
         verify(pocVersionRepository).save(versionCaptor.capture());
@@ -133,12 +139,12 @@ class PocDeploymentServiceTest {
 
     @Test
     void deployNewVersionIncrementsThePatchWhenBelowTheCap() {
-        Poc poc = pocWithGithubUrl(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
         PocVersion existing = versionOf(1, 2, 5);
-        when(pocVersionRepository.findTopByPocIdOrderByMajorDescMinorDescPatchDesc(1L)).thenReturn(Optional.of(existing));
+        when(pocVersionRepository.findTopByPocIdOrderByMajorDescMinorDescPatchDesc(ID_1)).thenReturn(Optional.of(existing));
 
-        service.deployNewVersion(1L, "admin-1");
+        service.deployNewVersion(ID_1, "admin-1");
 
         ArgumentCaptor<PocVersion> versionCaptor = ArgumentCaptor.forClass(PocVersion.class);
         verify(pocVersionRepository).save(versionCaptor.capture());
@@ -147,12 +153,12 @@ class PocDeploymentServiceTest {
 
     @Test
     void deployNewVersionRollsOverToTheNextMinorWhenPatchWouldExceedTwenty() {
-        Poc poc = pocWithGithubUrl(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
         PocVersion existing = versionOf(1, 2, 20);
-        when(pocVersionRepository.findTopByPocIdOrderByMajorDescMinorDescPatchDesc(1L)).thenReturn(Optional.of(existing));
+        when(pocVersionRepository.findTopByPocIdOrderByMajorDescMinorDescPatchDesc(ID_1)).thenReturn(Optional.of(existing));
 
-        service.deployNewVersion(1L, "admin-1");
+        service.deployNewVersion(ID_1, "admin-1");
 
         ArgumentCaptor<PocVersion> versionCaptor = ArgumentCaptor.forClass(PocVersion.class);
         verify(pocVersionRepository).save(versionCaptor.capture());
@@ -166,10 +172,10 @@ class PocDeploymentServiceTest {
     @Test
     void deployNewVersionThrowsWhenGithubUrlIsBlank() {
         Poc poc = new Poc();
-        poc.setId(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+        poc.setId(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
 
-        assertThatThrownBy(() -> service.deployNewVersion(1L, "admin-1"))
+        assertThatThrownBy(() -> service.deployNewVersion(ID_1, "admin-1"))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getCode())
                 .isEqualTo("MISSING_GITHUB_URL");
@@ -179,8 +185,8 @@ class PocDeploymentServiceTest {
 
     @Test
     void deployNewVersionResolvesAndStoresANonDefaultManifestBeforeAllocatingAVersion() {
-        Poc poc = pocWithGithubUrl(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
         when(pipelineProperties.isSkip()).thenReturn(false);
         GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
         when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
@@ -189,7 +195,7 @@ class PocDeploymentServiceTest {
         when(manifestService.resolveForBuild(repo, "abc123"))
                 .thenReturn(new ManifestResolution(rawYaml, twoContainerManifest()));
 
-        service.deployNewVersion(1L, "admin-1");
+        service.deployNewVersion(ID_1, "admin-1");
 
         ArgumentCaptor<PocVersion> versionCaptor = ArgumentCaptor.forClass(PocVersion.class);
         verify(pocVersionRepository, org.mockito.Mockito.times(2)).save(versionCaptor.capture());
@@ -203,8 +209,8 @@ class PocDeploymentServiceTest {
 
     @Test
     void deployNewVersionRejectsAnInvalidManifestBeforeCreatingAnyRow() {
-        Poc poc = pocWithGithubUrl(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
         when(pipelineProperties.isSkip()).thenReturn(false);
         GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
         when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
@@ -213,7 +219,7 @@ class PocDeploymentServiceTest {
                 .thenThrow(new com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidationException(
                         List.of("exactly one container must have role 'ingress' — none was found")));
 
-        assertThatThrownBy(() -> service.deployNewVersion(1L, "admin-1"))
+        assertThatThrownBy(() -> service.deployNewVersion(ID_1, "admin-1"))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getCode())
                 .isEqualTo("MANIFEST_VALIDATION_ERROR");
@@ -225,8 +231,8 @@ class PocDeploymentServiceTest {
 
     private static PocVersion versionOf(int major, int minor, int patch) {
         PocVersion version = new PocVersion();
-        version.setId(1L);
-        version.setPocId(1L);
+        version.setId(ID_1);
+        version.setPocId(ID_1);
         version.setMajor(major);
         version.setMinor(minor);
         version.setPatch(patch);
@@ -236,15 +242,15 @@ class PocDeploymentServiceTest {
 
     @Test
     void redeployVersionCallsRedeployWithTheExistingImageAndAllocatesNoNewVersion() {
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(pocWithGithubUrl(ID_1)));
         PocVersion version = versionOf(1, 0, 1);
         version.setContainerImage("registry/company/contract-agent:1.0.1");
-        when(pocVersionRepository.findById(1L)).thenReturn(Optional.of(version));
+        when(pocVersionRepository.findById(ID_1)).thenReturn(Optional.of(version));
 
-        PocDeployment deployment = service.redeployVersion(1L, 1L, "admin-1");
+        PocDeployment deployment = service.redeployVersion(ID_1, ID_1, "admin-1");
 
         assertThat(deployment.getKind()).isEqualTo("REDEPLOY");
-        assertThat(deployment.getPocVersionId()).isEqualTo(1L);
+        assertThat(deployment.getPocVersionId()).isEqualTo(ID_1);
         verify(pocVersionRepository, never()).save(any());
 
         ArgumentCaptor<RedeployRequest> requestCaptor = ArgumentCaptor.forClass(RedeployRequest.class);
@@ -257,19 +263,19 @@ class PocDeploymentServiceTest {
 
     @Test
     void redeployVersionUsesTheVersionsPersistedContainerRowsWhenPresent() {
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(pocWithGithubUrl(ID_1)));
         PocVersion version = versionOf(1, 0, 1);
         version.setContainerImage("registry/company/contract-agent/api:1.0.1");
-        when(pocVersionRepository.findById(1L)).thenReturn(Optional.of(version));
+        when(pocVersionRepository.findById(ID_1)).thenReturn(Optional.of(version));
         PocVersionContainer api = new PocVersionContainer();
         api.setName("api");
         api.setContainerImage("registry/company/contract-agent/api:1.0.1");
         PocVersionContainer worker = new PocVersionContainer();
         worker.setName("worker");
         worker.setContainerImage("registry/company/contract-agent/worker:1.0.1");
-        when(pocVersionContainerRepository.findByPocVersionId(1L)).thenReturn(List.of(api, worker));
+        when(pocVersionContainerRepository.findByPocVersionId(ID_1)).thenReturn(List.of(api, worker));
 
-        service.redeployVersion(1L, 1L, "admin-1");
+        service.redeployVersion(ID_1, ID_1, "admin-1");
 
         ArgumentCaptor<RedeployRequest> requestCaptor = ArgumentCaptor.forClass(RedeployRequest.class);
         verify(deploymentTrigger).redeploy(requestCaptor.capture());
@@ -280,11 +286,11 @@ class PocDeploymentServiceTest {
 
     @Test
     void redeployVersionThrowsWhenTheVersionWasNeverSuccessfullyBuilt() {
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(pocWithGithubUrl(ID_1)));
         PocVersion version = versionOf(1, 0, 1);
-        when(pocVersionRepository.findById(1L)).thenReturn(Optional.of(version));
+        when(pocVersionRepository.findById(ID_1)).thenReturn(Optional.of(version));
 
-        assertThatThrownBy(() -> service.redeployVersion(1L, 1L, "admin-1"))
+        assertThatThrownBy(() -> service.redeployVersion(ID_1, ID_1, "admin-1"))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getStatus())
                 .isEqualTo(HttpStatus.CONFLICT);
@@ -294,13 +300,13 @@ class PocDeploymentServiceTest {
 
     @Test
     void redeployVersionThrowsWhenTheVersionBelongsToADifferentPoc() {
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(pocWithGithubUrl(ID_1)));
         PocVersion versionOfAnotherPoc = versionOf(1, 0, 1);
-        versionOfAnotherPoc.setPocId(2L);
+        versionOfAnotherPoc.setPocId(OTHER_POC_ID);
         versionOfAnotherPoc.setContainerImage("registry/company/other:1.0.1");
-        when(pocVersionRepository.findById(1L)).thenReturn(Optional.of(versionOfAnotherPoc));
+        when(pocVersionRepository.findById(ID_1)).thenReturn(Optional.of(versionOfAnotherPoc));
 
-        assertThatThrownBy(() -> service.redeployVersion(1L, 1L, "admin-1"))
+        assertThatThrownBy(() -> service.redeployVersion(ID_1, ID_1, "admin-1"))
                 .hasMessageContaining("not found");
     }
 
@@ -470,8 +476,8 @@ class PocDeploymentServiceTest {
     private static PocDeployment pendingDeployment(String kind) {
         PocDeployment deployment = new PocDeployment();
         deployment.setId(UUID.randomUUID());
-        deployment.setPocId(1L);
-        deployment.setPocVersionId(1L);
+        deployment.setPocId(ID_1);
+        deployment.setPocVersionId(ID_1);
         deployment.setKind(kind);
         deployment.setStatus("PENDING");
         deployment.setStartedAt(Instant.now());
@@ -481,19 +487,19 @@ class PocDeploymentServiceTest {
     @Test
     void activeVersionLabelsBatchLoadsLabelsKeyedById() {
         PocVersion v1 = versionOf(1, 0, 1);
-        v1.setId(10L);
+        v1.setId(ID_10);
         PocVersion v2 = versionOf(1, 0, 2);
-        v2.setId(11L);
-        when(pocVersionRepository.findByIdIn(List.of(10L, 11L))).thenReturn(List.of(v1, v2));
+        v2.setId(ID_11);
+        when(pocVersionRepository.findByIdIn(List.of(ID_10, ID_11))).thenReturn(List.of(v1, v2));
 
-        Map<Long, String> labels = service.activeVersionLabels(List.of(10L, 11L));
+        Map<UUID, String> labels = service.activeVersionLabels(List.of(ID_10, ID_11));
 
-        assertThat(labels).containsEntry(10L, "1.0.1").containsEntry(11L, "1.0.2");
+        assertThat(labels).containsEntry(ID_10, "1.0.1").containsEntry(ID_11, "1.0.2");
     }
 
     @Test
     void activeVersionLabelsSkipsTheQueryWhenGivenNoIds() {
-        Map<Long, String> labels = service.activeVersionLabels(List.of());
+        Map<UUID, String> labels = service.activeVersionLabels(List.of());
 
         assertThat(labels).isEmpty();
         verify(pocVersionRepository, never()).findByIdIn(any());
@@ -501,11 +507,11 @@ class PocDeploymentServiceTest {
     @Test
     void deployNewVersionRefusesAPocWithNoSlug() {
         Poc poc = new Poc();
-        poc.setId(1L);
+        poc.setId(ID_1);
         poc.setGithubUrl("https://github.com/example-org/contract-agent");
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
 
-        assertThatThrownBy(() -> service.deployNewVersion(1L, "admin-1"))
+        assertThatThrownBy(() -> service.deployNewVersion(ID_1, "admin-1"))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getCode())
                 .isEqualTo("POC_SLUG_REQUIRED");
@@ -516,12 +522,12 @@ class PocDeploymentServiceTest {
 
     @Test
     void deployNewVersionRefusesAPocThatAlreadyHasADeploymentInProgress() {
-        Poc poc = pocWithGithubUrl(1L);
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(poc));
-        when(pocDeploymentRepository.existsByPocIdAndStatusIn(1L, List.of("PENDING", "BUILDING", "DEPLOYING")))
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
+        when(pocDeploymentRepository.existsByPocIdAndStatusIn(ID_1, List.of("PENDING", "BUILDING", "DEPLOYING")))
                 .thenReturn(true);
 
-        assertThatThrownBy(() -> service.deployNewVersion(1L, "admin-1"))
+        assertThatThrownBy(() -> service.deployNewVersion(ID_1, "admin-1"))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getCode())
                 .isEqualTo("DEPLOYMENT_ALREADY_IN_PROGRESS");
@@ -532,11 +538,11 @@ class PocDeploymentServiceTest {
 
     @Test
     void redeployVersionRefusesAPocThatAlreadyHasADeploymentInProgress() {
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
-        when(pocDeploymentRepository.existsByPocIdAndStatusIn(1L, List.of("PENDING", "BUILDING", "DEPLOYING")))
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(pocWithGithubUrl(ID_1)));
+        when(pocDeploymentRepository.existsByPocIdAndStatusIn(ID_1, List.of("PENDING", "BUILDING", "DEPLOYING")))
                 .thenReturn(true);
 
-        assertThatThrownBy(() -> service.redeployVersion(1L, 1L, "admin-1"))
+        assertThatThrownBy(() -> service.redeployVersion(ID_1, ID_1, "admin-1"))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).getCode())
                 .isEqualTo("DEPLOYMENT_ALREADY_IN_PROGRESS");
@@ -551,11 +557,10 @@ class PocDeploymentServiceTest {
         failed.setErrorMessage("Build failed: npm install exited with code 1");
         failed.setCompletedAt(Instant.now());
         when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
-        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(1L)).thenReturn(Optional.of(failed));
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
+        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(ID_1)).thenReturn(Optional.of(failed));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(pocWithGithubUrl(ID_1)));
         PocVersion version = versionOf(1, 0, 1);
-        version.setId(1L);
-        when(pocVersionRepository.findById(1L)).thenReturn(Optional.of(version));
+        when(pocVersionRepository.findById(ID_1)).thenReturn(Optional.of(version));
 
         PocDeployment retry = service.retryDeployment(failed.getId(), "admin-2");
 
@@ -563,7 +568,7 @@ class PocDeploymentServiceTest {
         // build, not a new one, so the admin's history doesn't grow every time Retry is clicked.
         assertThat(retry.getId()).isEqualTo(failed.getId());
         assertThat(retry.getKind()).isEqualTo("BUILD_AND_DEPLOY");
-        assertThat(retry.getPocVersionId()).isEqualTo(1L);
+        assertThat(retry.getPocVersionId()).isEqualTo(ID_1);
         verify(pocVersionRepository, never()).save(any());
 
         // Exactly one save — the reset of the existing row — never a second, freshly-created one.
@@ -588,12 +593,11 @@ class PocDeploymentServiceTest {
         PocDeployment failed = pendingDeployment("REDEPLOY");
         failed.setStatus("FAILED");
         when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
-        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(1L)).thenReturn(Optional.of(failed));
-        when(pocRepository.findById(1L)).thenReturn(Optional.of(pocWithGithubUrl(1L)));
+        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(ID_1)).thenReturn(Optional.of(failed));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(pocWithGithubUrl(ID_1)));
         PocVersion version = versionOf(1, 0, 1);
-        version.setId(1L);
         version.setContainerImage("registry/company/contract-agent:1.0.1");
-        when(pocVersionRepository.findById(1L)).thenReturn(Optional.of(version));
+        when(pocVersionRepository.findById(ID_1)).thenReturn(Optional.of(version));
 
         service.retryDeployment(failed.getId(), "admin-1");
 
@@ -625,7 +629,7 @@ class PocDeploymentServiceTest {
         newerSucceeded.setStatus("SUCCEEDED");
         when(pocDeploymentRepository.findById(oldFailed.getId())).thenReturn(Optional.of(oldFailed));
         // The most recent deployment for this POC is a different row — oldFailed is history now.
-        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(1L)).thenReturn(Optional.of(newerSucceeded));
+        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(ID_1)).thenReturn(Optional.of(newerSucceeded));
 
         assertThatThrownBy(() -> service.retryDeployment(oldFailed.getId(), "admin-1"))
                 .isInstanceOf(ApiException.class)
@@ -641,8 +645,8 @@ class PocDeploymentServiceTest {
         PocDeployment failed = pendingDeployment("BUILD_AND_DEPLOY");
         failed.setStatus("FAILED");
         when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
-        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(1L)).thenReturn(Optional.of(failed));
-        when(pocDeploymentRepository.existsByPocIdAndStatusIn(1L, List.of("PENDING", "BUILDING", "DEPLOYING")))
+        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(ID_1)).thenReturn(Optional.of(failed));
+        when(pocDeploymentRepository.existsByPocIdAndStatusIn(ID_1, List.of("PENDING", "BUILDING", "DEPLOYING")))
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.retryDeployment(failed.getId(), "admin-1"))

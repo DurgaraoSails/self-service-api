@@ -24,10 +24,10 @@ public class PocDeployment {
     private UUID id;
 
     @Column(name = "poc_id", nullable = false, updatable = false)
-    private Long pocId;
+    private UUID pocId;
 
     @Column(name = "poc_version_id", nullable = false, updatable = false)
-    private Long pocVersionId;
+    private UUID pocVersionId;
 
     @Column(name = "kind", nullable = false, length = 20, updatable = false)
     private String kind;

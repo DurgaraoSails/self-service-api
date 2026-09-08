@@ -10,16 +10,16 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface PocDeploymentRepository extends JpaRepository<PocDeployment, UUID> {
 
-    List<PocDeployment> findByPocIdOrderByStartedAtDesc(Long pocId);
+    List<PocDeployment> findByPocIdOrderByStartedAtDesc(UUID pocId);
 
     /** The one deployment a retry is allowed to target — an older FAILED one that's since been superseded is not retryable. */
-    Optional<PocDeployment> findTopByPocIdOrderByStartedAtDesc(Long pocId);
+    Optional<PocDeployment> findTopByPocIdOrderByStartedAtDesc(UUID pocId);
 
     /** Powers the one-active-deployment-per-POC rule. */
-    boolean existsByPocIdAndStatusIn(Long pocId, List<String> statuses);
+    boolean existsByPocIdAndStatusIn(UUID pocId, List<String> statuses);
 
     /** One row per poc_id: its most recently started deployment. Powers latestDeploymentStatus on GET /pocs without an N+1. */
     @Query(value = "SELECT DISTINCT ON (poc_id) * FROM poc_deployments WHERE poc_id IN (:pocIds) ORDER BY poc_id, started_at DESC",
             nativeQuery = true)
-    List<PocDeployment> findLatestPerPoc(@Param("pocIds") List<Long> pocIds);
+    List<PocDeployment> findLatestPerPoc(@Param("pocIds") List<UUID> pocIds);
 }

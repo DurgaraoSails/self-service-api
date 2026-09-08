@@ -112,7 +112,7 @@ public class PocDeploymentService {
      * above has run reduces the window for the pipeline's own callback to race an uncommitted row.
      */
     @Transactional
-    public PocDeployment deployNewVersion(Long pocId, String initiatedByUserId) {
+    public PocDeployment deployNewVersion(UUID pocId, String initiatedByUserId) {
         Poc poc = getPoc(pocId);
         if (poc.getGithubUrl() == null || poc.getGithubUrl().isBlank()) {
             throw new MissingGithubUrlException(pocId);
@@ -145,7 +145,7 @@ public class PocDeploymentService {
     }
 
     @Transactional
-    public PocDeployment redeployVersion(Long pocId, Long versionId, String initiatedByUserId) {
+    public PocDeployment redeployVersion(UUID pocId, UUID versionId, String initiatedByUserId) {
         Poc poc = getPoc(pocId);
         requireSlug(poc);
         requireNoActiveDeployment(pocId);
@@ -186,7 +186,7 @@ public class PocDeploymentService {
      * to write the same POC's active version, and a slower one can silently clobber a faster
      * one's success. Checked before allocating a version, so a rejected attempt never burns one.
      */
-    private void requireNoActiveDeployment(Long pocId) {
+    private void requireNoActiveDeployment(UUID pocId) {
         if (pocDeploymentRepository.existsByPocIdAndStatusIn(pocId, IN_PROGRESS_STATUSES)) {
             throw new DeploymentAlreadyInProgressException(pocId);
         }
@@ -285,7 +285,7 @@ public class PocDeploymentService {
      * declares, without creating a deployment — lets the admin UI show what a deploy would do (or
      * why it would fail) before the admin actually triggers it.
      */
-    public PocManifest previewManifest(Long pocId) {
+    public PocManifest previewManifest(UUID pocId) {
         Poc poc = getPoc(pocId);
         if (poc.getGithubUrl() == null || poc.getGithubUrl().isBlank()) {
             throw new MissingGithubUrlException(pocId);
@@ -295,11 +295,11 @@ public class PocDeploymentService {
         return manifestService.resolveForBuild(repo, commitSha).manifest();
     }
 
-    public List<PocVersion> listVersions(Long pocId) {
+    public List<PocVersion> listVersions(UUID pocId) {
         return pocVersionRepository.findByPocIdOrderByMajorDescMinorDescPatchDesc(pocId);
     }
 
-    public List<PocDeployment> listDeployments(Long pocId) {
+    public List<PocDeployment> listDeployments(UUID pocId) {
         return pocDeploymentRepository.findByPocIdOrderByStartedAtDesc(pocId);
     }
 
@@ -308,14 +308,14 @@ public class PocDeploymentService {
                 .orElseThrow(() -> new PocDeploymentNotFoundException(id));
     }
 
-    public String versionLabel(Long versionId) {
+    public String versionLabel(UUID versionId) {
         return pocVersionRepository.findById(versionId)
                 .map(PocVersion::getVersionLabel)
                 .orElseThrow(() -> new PocVersionNotFoundException(versionId));
     }
 
     /** Batch lookup for GET /pocs/{id}/versions — one query for every version's container list. */
-    public Map<Long, List<PocVersionContainer>> containersByVersionId(List<Long> versionIds) {
+    public Map<UUID, List<PocVersionContainer>> containersByVersionId(List<UUID> versionIds) {
         if (versionIds.isEmpty()) {
             return Map.of();
         }
@@ -439,7 +439,7 @@ public class PocDeploymentService {
      * rows here, which is what lets a pre-manifest version redeploy correctly through this
      * manifest-aware pipeline with zero data migration.
      */
-    public Map<String, String> resolveImagesByContainer(Long versionId, String legacyContainerImage) {
+    public Map<String, String> resolveImagesByContainer(UUID versionId, String legacyContainerImage) {
         List<PocVersionContainer> rows = pocVersionContainerRepository.findByPocVersionId(versionId);
         if (rows.isEmpty()) {
             return Map.of(DEFAULT_CONTAINER_NAME, legacyContainerImage);
@@ -447,7 +447,7 @@ public class PocDeploymentService {
         return rows.stream().collect(Collectors.toMap(PocVersionContainer::getName, PocVersionContainer::getContainerImage));
     }
 
-    private void persistVersionContainers(Long versionId, PocManifest manifest, Map<String, String> imagesByContainer) {
+    private void persistVersionContainers(UUID versionId, PocManifest manifest, Map<String, String> imagesByContainer) {
         // Delete-then-insert rather than update-in-place: idempotent if a retried build persists
         // the same version's containers twice, and simpler than diffing an admin's manifest edit
         // between two attempts against whatever rows already exist.
@@ -489,7 +489,7 @@ public class PocDeploymentService {
     }
 
     /** Batch lookup for GET /pocs — versionIds come from each POC's activeVersionId. */
-    public Map<Long, String> activeVersionLabels(List<Long> versionIds) {
+    public Map<UUID, String> activeVersionLabels(List<UUID> versionIds) {
         if (versionIds.isEmpty()) {
             return Map.of();
         }
@@ -498,7 +498,7 @@ public class PocDeploymentService {
     }
 
     /** Batch lookup for GET /pocs — one query for the whole list's latestDeploymentStatus. */
-    public Map<Long, String> latestDeploymentStatuses(List<Long> pocIds) {
+    public Map<UUID, String> latestDeploymentStatuses(List<UUID> pocIds) {
         if (pocIds.isEmpty()) {
             return Map.of();
         }
@@ -506,11 +506,11 @@ public class PocDeploymentService {
                 .collect(Collectors.toMap(PocDeployment::getPocId, PocDeployment::getStatus));
     }
 
-    private Poc getPoc(Long pocId) {
+    private Poc getPoc(UUID pocId) {
         return pocRepository.findById(pocId).orElseThrow(() -> new PocNotFoundException(pocId));
     }
 
-    private PocVersion allocateNextVersion(Long pocId) {
+    private PocVersion allocateNextVersion(UUID pocId) {
         PocVersion version = new PocVersion();
         version.setPocId(pocId);
 
@@ -536,7 +536,7 @@ public class PocDeploymentService {
         return pocVersionRepository.save(version);
     }
 
-    private PocDeployment createDeployment(Long pocId, Long versionId, String kind, String initiatedBy) {
+    private PocDeployment createDeployment(UUID pocId, UUID versionId, String kind, String initiatedBy) {
         PocDeployment deployment = new PocDeployment();
         deployment.setPocId(pocId);
         deployment.setPocVersionId(versionId);

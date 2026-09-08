@@ -1,10 +1,11 @@
 package com.sails.ai.selfserviceapi.activity.repository;
 
 import java.time.Instant;
+import java.util.UUID;
 
 public interface SessionProjection {
 
-    Long getPocId();
+    UUID getPocId();
 
     String getPocName();
 

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -13,6 +14,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 class CurrentPocTest {
 
+    private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
+
     @AfterEach
     void clearContext() {
         SecurityContextHolder.clearContext();
@@ -20,20 +23,16 @@ class CurrentPocTest {
 
     @Test
     void readsThePocIdClaim() {
-        authenticateAs(jwt(Map.of("sub", "user-1", "pocId", 4L)));
+        authenticateAs(jwt(Map.of("sub", "user-1", "pocId", POC_ID.toString())));
 
-        assertThat(CurrentPoc.id()).isEqualTo(4L);
+        assertThat(CurrentPoc.id()).isEqualTo(POC_ID);
     }
 
-    /**
-     * JSON has one number type; a small pocId can come back deserialized as an Integer rather
-     * than a Long depending on the decoder. Both must resolve to the same Long id.
-     */
     @Test
-    void acceptsAnIntegerClaimTheSameAsALong() {
-        authenticateAs(jwt(Map.of("sub", "user-1", "pocId", 4)));
+    void refusesAMalformedPocIdClaim() {
+        authenticateAs(jwt(Map.of("sub", "user-1", "pocId", "not-a-uuid")));
 
-        assertThat(CurrentPoc.id()).isEqualTo(4L);
+        assertThatThrownBy(CurrentPoc::id).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

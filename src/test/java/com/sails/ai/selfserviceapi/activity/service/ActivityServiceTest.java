@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,7 +27,7 @@ import org.mockito.Mockito;
 class ActivityServiceTest {
 
     private static final String USER_ID = "01JABC123XYZ";
-    private static final Long POC_ID = 1L;
+    private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private ActivitySessionRepository activitySessionRepository;
     private PocService pocService;

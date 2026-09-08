@@ -7,6 +7,7 @@ import com.sails.ai.selfserviceapi.generated.api.PortalFilesApi;
 import com.sails.ai.selfserviceapi.generated.model.FileResponse;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
@@ -33,7 +34,7 @@ public class PortalFilesController implements PortalFilesApi {
     }
 
     @Override
-    public ResponseEntity<List<FileResponse>> listPocFilesForUser(Long id) {
+    public ResponseEntity<List<FileResponse>> listPocFilesForUser(UUID id) {
         List<FileResponse> files = fileService.list(CurrentUser.id(), id).stream()
                 .map(FileResponseMapper::toResponse)
                 .toList();
@@ -41,7 +42,7 @@ public class PortalFilesController implements PortalFilesApi {
     }
 
     @Override
-    public ResponseEntity<Resource> getPocFileContentForUser(Long id, Long fileId) {
+    public ResponseEntity<Resource> getPocFileContentForUser(UUID id, UUID fileId) {
         FileService.FileDownload download = fileService.download(CurrentUser.id(), id, fileId);
         UserFile metadata = download.file();
 
@@ -57,7 +58,7 @@ public class PortalFilesController implements PortalFilesApi {
     }
 
     @Override
-    public ResponseEntity<Void> deletePocFileForUser(Long id, Long fileId) {
+    public ResponseEntity<Void> deletePocFileForUser(UUID id, UUID fileId) {
         fileService.delete(CurrentUser.id(), id, fileId);
         return ResponseEntity.noContent().build();
     }

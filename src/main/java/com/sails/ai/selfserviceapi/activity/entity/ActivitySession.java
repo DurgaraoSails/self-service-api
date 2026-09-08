@@ -9,6 +9,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -27,7 +28,7 @@ public class ActivitySession {
     private String userId;
 
     @Column(name = "poc_id", nullable = false)
-    private Long pocId;
+    private UUID pocId;
 
     @Column(name = "started_at", nullable = false)
     private Instant startedAt;

@@ -1,8 +1,10 @@
 package com.sails.ai.selfserviceapi.activity.repository;
 
+import java.util.UUID;
+
 public interface PocUsageProjection {
 
-    Long getPocId();
+    UUID getPocId();
 
     String getPocName();
 

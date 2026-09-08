@@ -9,6 +9,7 @@ import com.sails.ai.selfserviceapi.common.exception.GlobalExceptionHandler;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
@@ -33,6 +34,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc(addFilters = false)
 @Import(GlobalExceptionHandler.class)
 class PocControllerValidationTest {
+
+    private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     @Autowired
     private MockMvc mockMvc;
@@ -65,7 +68,7 @@ class PocControllerValidationTest {
     /** PUT replaces rather than merges, so an omitted githubUrl used to null a working POC's repo. */
     @Test
     void rejectsUpdateWithoutAGithubUrl() throws Exception {
-        mockMvc.perform(put("/pocs/1").contentType(MediaType.APPLICATION_JSON).content("""
+        mockMvc.perform(put("/pocs/" + POC_ID).contentType(MediaType.APPLICATION_JSON).content("""
                         {"name": "Contract Agent", "description": "Review contracts.",
                          "slug": "contract-agent"}"""))
                 .andExpect(status().isBadRequest());
@@ -83,7 +86,7 @@ class PocControllerValidationTest {
     @Test
     void acceptsACreateCarryingBoth() throws Exception {
         Poc created = new Poc();
-        created.setId(1L);
+        created.setId(POC_ID);
         Mockito.when(pocService.create(ArgumentMatchers.any())).thenReturn(created);
         Mockito.when(pocDeploymentService.latestDeploymentStatuses(ArgumentMatchers.any()))
                 .thenReturn(java.util.Map.of());

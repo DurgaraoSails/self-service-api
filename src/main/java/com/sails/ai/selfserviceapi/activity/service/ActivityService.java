@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,7 +57,7 @@ public class ActivityService {
      * with no explicit "session end" call and no reconciliation job.
      */
     @Transactional
-    public void recordHeartbeat(String userId, Long pocId) {
+    public void recordHeartbeat(String userId, UUID pocId) {
         pocService.getById(pocId);
 
         Instant now = Instant.now();
@@ -96,7 +97,7 @@ public class ActivityService {
      * cleanup and a beacon on tab close) is harmless.
      */
     @Transactional
-    public void endSession(String userId, Long pocId) {
+    public void endSession(String userId, UUID pocId) {
         Optional<ActivitySession> openSession =
                 activitySessionRepository.findFirstByUserIdAndPocIdAndEndedAtIsNullOrderByLastSeenAtDesc(userId, pocId);
         if (openSession.isEmpty()) {

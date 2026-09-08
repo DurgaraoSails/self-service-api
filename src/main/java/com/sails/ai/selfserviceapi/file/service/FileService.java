@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -50,7 +51,7 @@ public class FileService {
      * an upload rejected before anything was written.
      */
     @Transactional
-    public UserFile upload(String userId, Long pocId, MultipartFile file) {
+    public UserFile upload(String userId, UUID pocId, MultipartFile file) {
         long sizeBytes = file.getSize();
         if (sizeBytes > properties.maxFileSizeBytes()) {
             throw new UploadTooLargeException(sizeBytes, properties.maxFileSizeBytes());
@@ -87,13 +88,13 @@ public class FileService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserFile> list(String userId, Long pocId) {
+    public List<UserFile> list(String userId, UUID pocId) {
         return userFileRepository.findByUserIdAndPocIdAndDeletedAtIsNullOrderByUploadedAtDesc(userId, pocId);
     }
 
     /** The caller closes {@link FileDownload#content()}. */
     @Transactional(readOnly = true)
-    public FileDownload download(String userId, Long pocId, Long fileId) {
+    public FileDownload download(String userId, UUID pocId, UUID fileId) {
         UserFile userFile = findOwned(userId, pocId, fileId);
         return new FileDownload(userFile, fileStorage.open(userFile.getObjectName()));
     }
@@ -107,14 +108,14 @@ public class FileService {
      * read surfaces as 404; an orphaned object with no row is data nothing can find to purge.
      */
     @Transactional
-    public void delete(String userId, Long pocId, Long fileId) {
+    public void delete(String userId, UUID pocId, UUID fileId) {
         UserFile userFile = findOwned(userId, pocId, fileId);
         fileStorage.delete(userFile.getObjectName());
         userFile.setDeletedAt(Instant.now());
         userFileRepository.save(userFile);
     }
 
-    private UserFile findOwned(String userId, Long pocId, Long fileId) {
+    private UserFile findOwned(String userId, UUID pocId, UUID fileId) {
         return userFileRepository.findByIdAndUserIdAndPocIdAndDeletedAtIsNull(fileId, userId, pocId)
                 .orElseThrow(() -> new FileNotFoundException(fileId));
     }

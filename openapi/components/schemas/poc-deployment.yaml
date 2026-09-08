@@ -12,14 +12,14 @@ PocVersionResponse:
     - createdAt
   properties:
     id:
-      type: integer
-      format: int64
-      example: 4
+      type: string
+      format: uuid
+      example: "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
 
     pocId:
-      type: integer
-      format: int64
-      example: 1
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
     versionLabel:
       type: string
@@ -119,14 +119,14 @@ PocDeploymentResponse:
       example: "b3f4c1e2-1234-4a5b-8c9d-0e1f2a3b4c5d"
 
     pocId:
-      type: integer
-      format: int64
-      example: 1
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
     pocVersionId:
-      type: integer
-      format: int64
-      example: 4
+      type: string
+      format: uuid
+      example: "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
 
     versionLabel:
       type: string
@@ -290,9 +290,9 @@ PocSourceRepositoryResponse:
     - githubUrl
   properties:
     pocId:
-      type: integer
-      format: int64
-      example: 1
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
     slug:
       type: string
@@ -313,9 +313,9 @@ UpstreamCommit:
     - commitSha
   properties:
     pocId:
-      type: integer
-      format: int64
-      example: 1
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
     commitSha:
       type: string

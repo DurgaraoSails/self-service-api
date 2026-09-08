@@ -9,6 +9,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -27,15 +28,15 @@ import lombok.Setter;
 public class UserFile {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", nullable = false, updatable = false)
-    private Long id;
+    private UUID id;
 
     @Column(name = "user_id", nullable = false, updatable = false, length = 36)
     private String userId;
 
     @Column(name = "poc_id", nullable = false, updatable = false)
-    private Long pocId;
+    private UUID pocId;
 
     /** Full object path in the bucket. Generated, never derived from the uploaded filename. */
     @Column(name = "object_name", nullable = false, updatable = false)

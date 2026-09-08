@@ -1,6 +1,7 @@
 package com.sails.ai.selfserviceapi.file.exception;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -12,7 +13,7 @@ import org.springframework.http.HttpStatus;
  */
 public class FileNotFoundException extends ApiException {
 
-    public FileNotFoundException(Long fileId) {
+    public FileNotFoundException(UUID fileId) {
         super(HttpStatus.NOT_FOUND, "FILE_NOT_FOUND", "File not found: " + fileId);
     }
 }
