@@ -131,26 +131,26 @@ gcp:
   environment: ${GCP_ENVIRONMENT:dev}
 
 pipeline:
+  # 'cloud-build' submits every build and deploy to Cloud Build; 'skip' does none of it and reports
+  # each request SKIPPED, for running the app with no GCP account at all. Nothing else is accepted —
+  # a leftover 'local' (that executor was removed) fails at startup rather than silently skipping.
   executor: ${PIPELINE_EXECUTOR:skip}
 
-  # The single source for this token — used by GitHubService (both executors, to create release
-  # tags via the GitHub API), the local executor's clone, and as a fallback for cloud-build's
-  # clone step. Blank works only for a public repository.
+  # This app's own GitHub credential, for REST API calls only: read a branch head, read poc.yaml,
+  # create the release tag. Needed even for a public repo, because tagging is a write. It is never
+  # sent to Cloud Build — the clone inside a build reads the same secret from Secret Manager
+  # itself, so no literal token is ever stored on a Build resource. Supplied like any other
+  # credential here: this env var in a deployed environment, secrets/application-local-secrets.yaml
+  # locally.
   github-token: ${GITHUB_TOKEN:}
 
-  # cloud-build only. Blank runs the build as Cloud Build's own default service account, which is
-  # what you need until self-service-builder holds its intended bindings.
+  # Identity the build runs as. Must be the account holding secretAccessor on the github-token
+  # secret (self-service-builder, per self-service-terraform) — blank would run builds as Cloud
+  # Build's own default service account, which holds no such grant, and every clone would fail.
   build-service-account: ${BUILD_SERVICE_ACCOUNT:}
-  # cloud-build only. Blank falls back to github-token below (see BuildService for why that's
-  # worse — an inline token is stored permanently on the Build resource).
-  github-token-secret-id: ${BUILD_GITHUB_TOKEN_SECRET:}
   grant-api-invoker: ${BUILD_GRANT_API_INVOKER:false}
   allow-unauthenticated: ${BUILD_ALLOW_UNAUTHENTICATED:true}
 
-  # local only. Blank uses the system temp directory.
-  workspace-dir: ${PIPELINE_WORKSPACE_DIR:}
-  command-timeout: ${PIPELINE_COMMAND_TIMEOUT:20m}
-  # cloud-build only.
   build-timeout: ${PIPELINE_BUILD_TIMEOUT:20m}
   build-poll-interval: ${PIPELINE_BUILD_POLL_INTERVAL:10s}
 

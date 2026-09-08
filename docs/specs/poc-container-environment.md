@@ -292,7 +292,7 @@ Ordered so each phase is independently shippable and useful.
 **Phase 1 — secrets end to end.** `requires:` parsing (`ManifestParser`, `ManifestContainer`) and
 shape validation (`ManifestValidator`); `V21__poc_container_env.sql`; `secretManagerRestClient` bean
 plus a `SecretManagerService` (create / addVersion / setIamPolicy / delete); the three endpoints;
-`--set-secrets` emission in `CloudRunDeployCommandBuilder` (both executors get it for free — it is
+`--set-secrets` emission in `CloudRunDeployCommandBuilder` (it is
 container-scoped, so it belongs with the existing per-container flags, not in `buildServiceArgs`);
 the unsatisfied-requirements precondition in `PocDeploymentService`; the portal Environment tab.
 
@@ -321,11 +321,12 @@ following the existing tab and `?tab=` query-param pattern.
 - **Audit trail is one row.** `updated_at`/`updated_by` record only the most recent change. If who
   changed a secret and when matters historically, this should emit into `activity-tracking.md`'s
   existing model rather than growing a private history table.
-- **The local executor needs Secret Manager access.** `LocalPipelineExecutor` emits the same
-  `--set-secrets`, so a developer running `pipeline.executor=local` needs ADC with
-  `secretmanager.admin` to bind and the runtime SA to read. A POC with no `requires:` is unaffected;
-  `pipeline.executor=skip` remains the escape hatch. Worth confirming this is acceptable before
-  Phase 1 rather than after.
+- **Binding a secret needs Secret Manager access.** The `--set-secrets` flags are emitted into the
+  Cloud Build deploy step, so it is the build service account that needs to bind them and the
+  runtime SA that needs to read them. A POC with no `requires:` is unaffected;
+  `pipeline.executor=skip` remains the escape hatch. (This previously read as a caveat about the
+  local executor needing a developer's own ADC to hold `secretmanager.admin` — that executor no
+  longer exists, and every build now runs as the build service account.)
 - **Should `requires:` subsume `env:`?** A `requires:` entry with a `default:` would express both,
   leaving one concept instead of two. Deferred deliberately: `env:` is already in the published
   `poc-platform-sdk` schema and in every existing manifest, so collapsing them is a breaking change

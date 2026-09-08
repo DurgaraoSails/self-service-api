@@ -133,6 +133,28 @@ All new/changed endpoints live under `/pocs`, same `PocApi`-generating tag as `p
 
 ## Changelog
 
+- 2026-09-08 — **Cloud Build is now the only executor.** The `local` executor and its
+  `ProcessRunner`/`LocalBuildException` support were deleted, along with `pipeline.workspace-dir`
+  and `pipeline.command-timeout`, which existed only for it. It had already drifted from the path
+  it was meant to mirror — its flag ordering would have failed every multi-container deploy — and
+  nothing exercised it. `pipeline.executor` now accepts only `cloud-build` and `skip`, and
+  `PipelineProperties` rejects anything else at startup: with `SkippingPipelineExecutor` inheriting
+  the `matchIfMissing` fallback, a leftover `PIPELINE_EXECUTOR=local` would otherwise boot cleanly
+  and report every deploy SKIPPED. Both ways of running the app are unaffected —
+  `GoogleCredentials.getApplicationDefault()` resolves a developer's ADC locally and the attached
+  service account on Cloud Run, with no branch in our code.
+- 2026-09-08 — **One GitHub token property, and the token no longer leaks past the clone step.**
+  `pipeline.github-token-secret-id` is gone; the Cloud Build secret name is now a constant resolved
+  through `GcpProperties.secretVersionName("github-token")`, which already matches the
+  `github-token-<env>` secret self-service-terraform creates, so no Terraform change was needed.
+  `pipeline.github-token` remains as this app's own GitHub REST credential only and is never sent to
+  Cloud Build. `cloneStep` lost both fallbacks: an inline token (stored permanently on the Build
+  resource) and an anonymous clone (silently public-repo-only). Sourcing from Secret Manager is not
+  by itself sufficient, so two further leaks were closed — the credential moved out of the clone URL
+  into an `http.extraHeader`, because a credentialed URL is written verbatim into `src/.git/config`
+  and `/workspace` is shared with every later step; and `.git` is deleted immediately after the
+  clone, because a manifest may set `context: "."` (the default for a repo with no `poc.yaml`),
+  which would otherwise let a `COPY . .` bake git metadata into a published image layer.
 - 2026-09-01 — Added the admin fleet view `GET /pocs/deployments/latest?status=`, closing a hole this feature had opened: because `GET /pocs` hides everything not live, an admin previously had no way to find a building or failed POC without already knowing its slug. One endpoint serves both the "latest build status of every POC" and "show me only the failures" screens. Also added an in-flight guard: `deploy-new-version` now returns `409 DEPLOYMENT_ALREADY_IN_PROGRESS` if a build for that POC is still `building`, since a double-clicked UI button would otherwise start two pipelines racing on the same status field. Confirmed no backend change was needed for the "admin clicks Update, pipeline picks the version" requirement — the existing no-body `deploy-new-version` already does exactly that.
 - 2026-09-01 — **First live end-to-end run**, against the real Neon database with migrations `V13`–`V15` applied. Flyway validated all 15 migrations and Hibernate's `ddl-auto: validate` passed, confirming the `Poc`/`PocDeployment` mappings match the real schema. A real `POST /pocs` returned `201` immediately, the async pipeline created real GitHub tags (`1.0.0` → `1.1.0` → `1.2.0`, exercising both the initial deploy and `deploy-new-version`), submitted real Cloud Build jobs, and the poller correctly transitioned the row to `failed` with Cloud Build's own `secretmanager.versions.access` message as `failure_reason`. Verified live: the POC is excluded from `GET /pocs` even for admins; `current_release_tag` correctly stayed `null` (nothing reached active); `check-updates` returns `updateAvailable: false` with a null `deployedCommitSha` when no deployment has ever gone active; `404` on unknown slug, `401` unauthenticated, and `400` on both a missing and a malformed `slug`. **Fixed a defect found by this testing**: a duplicate `slug` surfaced the database unique-constraint violation as a bare `500`, instead of a usable error — `PocService.createForPipeline` now pre-checks and throws `PocSlugAlreadyExistsException` (`409`, matching the existing `UserAlreadyExistsException` pattern), and the `409` is documented on `POST /pocs`. The failed duplicate attempt was confirmed to leave no orphan row, tag, or build behind.
 - 2026-09-01 — `BuildService` (submit + `getBuildStatus`), `DeploymentOrchestrator`, `DeploymentStatusPoller`, `CheckUpdatesService`, and the four API endpoints (`createPoc` rewritten, `checkPocUpdates`, `deployNewPocVersion`, `getLatestPocDeployment`) implemented and wired. Added `V15` (`poc_deployments.commit_sha`) once `check-updates`'s real comparison target turned out not to exist. Confirmed via a real Cloud Build submission that the pipeline's only remaining blocker is the IAM grant already tracked in Terraform; discovered and added a second missing binding (`roles/logging.logWriter` for `self-service-builder`) in the process.

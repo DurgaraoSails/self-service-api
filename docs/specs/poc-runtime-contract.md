@@ -44,8 +44,10 @@ about the container they are deployed into, and the pipeline's obligation to pro
   that is the only way it is ever consumed.
 - A `poc.yaml` key the pipeline does not act on must be visible to the person who wrote it, not
   silently discarded.
-- Both executors (`local`, `cloud-build`) must produce gcloud invocations that differ only in
-  mechanism, never in the resulting service.
+- Every build and deploy runs through Cloud Build. This was once "both executors must produce
+  gcloud invocations that differ only in mechanism" — the local executor that requirement policed
+  has been deleted precisely because its invocation *had* drifted, undetected, and one path cannot
+  disagree with itself.
 
 ## Architecture Decisions
 
@@ -76,12 +78,14 @@ wrong:
   spec originally had the validator forbid it, which would have rejected every multi-container
   `poc.yaml` already written against `poc-platform-sdk`'s schema — including the testbed's — for a
   value the platform can always supply anyway. Permitting both costs nothing and breaks nothing.
-- A sidecar gets `--port=default`, gcloud's documented "unset" value, rather than no `--port` flag
-  at all. A deploy is a merge into the existing service, so a service first deployed under the
-  inverted behaviour would otherwise keep its sidecar's port forever, and Cloud Run would reject
-  every later revision with "should contain exactly one container with an exposed port" once the
-  ingress correctly got one too. Saying nothing leaves such a service permanently stuck; clearing
-  it every time makes the deploy self-healing. This was found on a real deploy, not in review.
+- A sidecar gets no `--port` flag at all. An earlier revision emitted gcloud's documented "unset"
+  value, `--port=default`, to clear a stale port a service might be carrying from the inverted
+  behaviour, since a deploy merges into the existing service rather than replacing it. gcloud
+  rejects that outright — *carrying* the flag is what its own check counts, so two containers
+  appeared to specify a port and every deploy failed before a request was sent (`Invalid value for
+  [--container]: Exactly one container must specify --port or --use-http2`). The stale-port case it
+  was defending against had never occurred: the service had never been successfully created at all.
+  Both the fix and the theory it replaced came from real deploys, not review.
 
 This is deliberately not "emit `--port` for whichever container declared one" with the validator
 inverted to match. The manifest's meaning — *the ingress binds whatever the platform gives it; a
@@ -161,14 +165,16 @@ gcloud parses every flag after the first `--container=` as scoped to that contai
 anything it does not recognise as container-level with a usage error (exit code 2) — a regression
 this repo has already hit once and documented on `BuildService.deployStep`.
 
-`BuildService` respected that ordering; `LocalPipelineExecutor.deploy` did the opposite, appending
+`BuildService` respected that ordering; the local executor's `deploy` did the opposite, appending
 `--region`, `--project`, `--service-account` and `--allow-unauthenticated` *after* the container
 block. Any multi-container deploy through `executor=local` would have failed with exit code 2 — it
-survived only because no multi-container deploy had run through it.
+survived only because no multi-container deploy had run through it. That executor has since been
+deleted outright, and this is a large part of why: a second path that mirrors the real one, but is
+never exercised, records its drift as a latent failure rather than a caught one.
 
 Rather than fixing the ordering in one place and trusting the next author to notice,
 `CloudRunDeployCommandBuilder` now exposes **`buildServiceArgs`** alongside `buildContainerArgs`.
-Both executors emit their own credentials/region flags, then `buildServiceArgs`, then
+`BuildService.deployStep` emits its own credentials/region flags, then `buildServiceArgs`, then
 `buildContainerArgs` — the ordering constraint is expressed by the API's shape instead of by a
 comment. `buildServiceArgs` is also where `scaling:` lands (below), which is service-level and had
 nowhere to go before.
@@ -273,9 +279,9 @@ New configuration (`application.yaml`):
   this spec.
 - **Nothing validates that `PLATFORM_API_URL` is reachable from Cloud Run.** The natural check is
   at deploy time — refuse to deploy with a loopback address — which would have caught this whole
-  class of failure before a build ran. Deliberately not added yet: the local executor legitimately
-  deploys from a laptop where the value may be a tunnel, and guessing which loopback addresses are
-  wrong risks blocking a working setup.
+  class of failure before a build ran. Deliberately not added yet: a developer running the app
+  locally against Cloud Build may legitimately point this at a tunnel, and guessing which addresses
+  are unreachable from Cloud Run risks blocking a working setup. The deploy warns instead.
 - **`--startup-probe` and `--depends-on` are unit-tested but not deploy-tested.** The flag strings
   are asserted against gcloud's documented syntax; only a real multi-container deploy proves Cloud
   Run accepts them.

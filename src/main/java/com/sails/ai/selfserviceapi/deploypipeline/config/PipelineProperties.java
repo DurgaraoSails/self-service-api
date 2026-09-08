@@ -11,15 +11,22 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record PipelineProperties(
 
         /**
-         * local — clones, builds and deploys on THIS machine using your own gcloud credentials.
-         *         Needs git, docker and gcloud installed. For development.
-         * cloud-build — submits the work to Cloud Build and polls it. For production; the only
-         *         option that works once self-service-api itself runs on Cloud Run, which has no
-         *         Docker daemon.
-         * skip — does none of the above: no GitHub tag, no build, no deploy. Every deploy request
-         *         is immediately reported SKIPPED. For teammates running the app locally with no
-         *         GCP account/credentials, so triggering a deploy never fails with a confusing
-         *         "docker: command not found"-style error — it just says it didn't run.
+         * cloud-build — submits the work to Cloud Build and polls it. The only way this app builds
+         *         anything. Works identically whether self-service-api runs on a laptop or on
+         *         Cloud Run, because the credentials come from
+         *         {@code GoogleCredentials.getApplicationDefault()} either way.
+         * skip — does none of it: no GitHub tag, no build, no deploy. Every deploy request is
+         *         immediately reported SKIPPED. For teammates running the app locally with no GCP
+         *         account at all, so triggering a deploy says it didn't run instead of failing on
+         *         credentials.
+         *
+         * <p>There used to be a third mode, {@code local}, that cloned/built/deployed with
+         * subprocesses on the developer's own machine. It was removed: it needed docker and gcloud
+         * installed to do what Cloud Build already does, and it kept drifting from the Cloud Build
+         * path it was supposed to mirror — its flag ordering would have failed every
+         * multi-container deploy, undetected because no multi-container deploy ever ran through it.
+         * Anything other than the two values above is rejected at startup (see the constructor)
+         * rather than silently matching no executor bean and behaving like {@code skip}.
          */
         String executor,
 
@@ -31,17 +38,16 @@ public record PipelineProperties(
         String buildServiceAccount,
 
         /**
-         * cloud-build only. Secret Manager secret id holding the GitHub token, resolved inside
-         * the build so it is never stored on the Build resource. Blank falls back to
-         * {@link #githubToken()}.
-         */
-        String githubTokenSecretId,
-
-        /**
-         * Used by GitHubService (both executors, to create release tags via the GitHub API) and
-         * by the local executor's clone. For cloud-build's own clone step, prefer
-         * {@link #githubTokenSecretId()} — an inline token there is stored permanently on the
-         * Build resource. Leave blank for a public repository.
+         * This app's own GitHub credential, and only that: {@code GitHubService} uses it for REST
+         * API calls — reading a branch's head commit, reading {@code poc.yaml} at that commit, and
+         * creating the release tag. Required even for a public repository, since creating a tag is
+         * a write.
+         *
+         * <p>It is never sent to Cloud Build. The clone that happens inside a build reads the same
+         * underlying secret straight from Secret Manager instead (see {@code BuildService}), so no
+         * literal token is ever written into a build's stored configuration. Supplied like any
+         * other credential this app holds: {@code GITHUB_TOKEN} in a deployed environment,
+         * {@code secrets/application-local-secrets.yaml} locally.
          */
         String githubToken,
 
@@ -71,12 +77,6 @@ public record PipelineProperties(
          */
         boolean allowUnauthenticated,
 
-        /** local only. Blank uses the system temp directory. */
-        String workspaceDir,
-
-        /** local only. How long any single git/docker/gcloud command may take. */
-        Duration commandTimeout,
-
         /** cloud-build only. How long to keep polling one build before giving up on it. */
         Duration buildTimeout,
 
@@ -84,16 +84,33 @@ public record PipelineProperties(
         Duration buildPollInterval
 ) {
 
+    private static final String CLOUD_BUILD = "cloud-build";
+    private static final String SKIP = "skip";
+
+    /**
+     * Rejects an executor this app cannot honour, at startup rather than at the first deploy.
+     *
+     * <p>Spring picks the executor bean with {@code @ConditionalOnProperty}, which has no way to
+     * express "fail on anything else" — an unrecognised value simply matches no condition. Since
+     * {@code SkippingPipelineExecutor} is the {@code matchIfMissing} fallback, a stale
+     * {@code PIPELINE_EXECUTOR=local} left over from before that mode was removed would otherwise
+     * start cleanly and quietly skip every deploy, reporting SKIPPED for work an operator believes
+     * is running. Failing here turns that into one unmissable line at boot.
+     */
+    public PipelineProperties {
+        if (executor != null && !CLOUD_BUILD.equalsIgnoreCase(executor) && !SKIP.equalsIgnoreCase(executor)) {
+            throw new IllegalArgumentException("pipeline.executor must be '" + CLOUD_BUILD + "' or '" + SKIP
+                    + "', but was '" + executor + "'. The 'local' executor was removed — every build now runs"
+                    + " in Cloud Build.");
+        }
+    }
+
     public boolean isCloudBuild() {
-        return "cloud-build".equalsIgnoreCase(executor);
+        return CLOUD_BUILD.equalsIgnoreCase(executor);
     }
 
     public boolean isSkip() {
-        return "skip".equalsIgnoreCase(executor);
-    }
-
-    public boolean usesSecretManagerToken() {
-        return githubTokenSecretId != null && !githubTokenSecretId.isBlank();
+        return SKIP.equalsIgnoreCase(executor);
     }
 
     public boolean hasGithubToken() {

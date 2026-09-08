@@ -12,9 +12,15 @@ import org.springframework.stereotype.Component;
  * checks {@code PipelineProperties.isSkip()} before ever calling GitHub or an executor, so neither
  * method here should actually run; they throw rather than silently pretend to have deployed
  * something.
+ *
+ * <p>{@code matchIfMissing} makes this the fallback when {@code pipeline.executor} is not set at
+ * all, which it inherited from the deleted local executor. Something must claim that case: with no
+ * bean matching, {@link PipelineRunner}'s constructor injection fails and the whole context refuses
+ * to start. Skipping is the right default anyway — an app booted with no pipeline configuration
+ * should decline to deploy rather than assume it may build.
  */
 @Component
-@ConditionalOnProperty(prefix = "pipeline", name = "executor", havingValue = "skip")
+@ConditionalOnProperty(prefix = "pipeline", name = "executor", havingValue = "skip", matchIfMissing = true)
 public class SkippingPipelineExecutor implements PipelineExecutor {
 
     @Override
