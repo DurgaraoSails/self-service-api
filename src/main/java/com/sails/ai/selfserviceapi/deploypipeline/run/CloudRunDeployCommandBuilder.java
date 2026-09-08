@@ -18,10 +18,13 @@ import org.springframework.stereotype.Component;
 
 /**
  * Builds the arguments {@code gcloud run deploy} needs to turn a manifest into one Cloud Run
- * service. Shared by both executors ({@code BuildService}'s Cloud Build step and
- * {@code LocalPipelineExecutor}'s subprocess argv) — this flag shape is genuine cross-executor
- * platform knowledge that must not drift between the two, unlike the build steps themselves, which
- * are deliberately not shared.
+ * service, for {@code BuildService}'s Cloud Build deploy step.
+ *
+ * <p>Kept separate from {@code BuildService} even though there is now only one caller: this is
+ * knowledge about Cloud Run's own flag grammar, which is what makes it worth testing directly
+ * against a manifest rather than through a submitted build. It was previously shared with a second,
+ * local executor whose copy of these flags had already drifted out of agreement — that executor is
+ * gone, and the drift is what this shape exists to prevent recurring.
  *
  * <p>Split in two on purpose. gcloud parses every flag after the first {@code --container=} as
  * scoped to that container and rejects anything it doesn't recognise as container-level with a

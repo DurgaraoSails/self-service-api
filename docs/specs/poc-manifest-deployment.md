@@ -70,11 +70,14 @@ a request or a `$PORT`. The current rules:
 - A sidecar **must** declare a port — but it is never passed to gcloud as that container's `--port`.
   It exists so the platform can inject `SVC_<NAME>_URL` for the other containers, and `PORT` for the
   sidecar itself.
-- Every sidecar is explicitly given `--port=default` (gcloud's documented "unset" value). A deploy
-  is a merge into the existing service, not a replacement, so a service first deployed under the
-  old, inverted behaviour would otherwise keep its sidecar's port forever and Cloud Run would
-  reject every subsequent revision with "should contain exactly one container with an exposed port"
-  once the ingress correctly got one too. Clearing it every time makes the deploy self-healing.
+- A sidecar gets **no** `--port` flag at all — not even gcloud's documented "unset" value,
+  `--port=default`. An earlier revision emitted that to clear a stale port left by the inverted
+  behaviour above, on the reasoning that a deploy merges into the existing service rather than
+  replacing it. gcloud rejects it: *carrying* the flag is what its own check counts, so two
+  containers appeared to specify a port and every deploy failed before a request was even sent
+  (`Invalid value for [--container]: Exactly one container must specify --port or --use-http2`).
+  The stale-port case it was defending against turned out never to have existed — the service had
+  failed to be created at all.
 - Rollback re-parses a stored manifest, which never passes through `ManifestValidator` — a version
   built before any of this has no ingress port at all. The same platform default covers it, rather
   than emitting `--port=null`, since a stored manifest is immutable history and nothing an admin
@@ -140,15 +143,19 @@ the single `container_image` under the synthesized default's ingress name (`"app
 has no rows here — what makes an old, pre-manifest version redeploy correctly through the new,
 manifest-aware pipeline with zero data migration.
 
-**Manifest parsing/validation is shared, build/deploy execution isn't (by design).**
-`ManifestParser`/`ManifestValidator`/`ManifestService` are single implementations used by both
-`LocalPipelineExecutor` (real subprocesses) and `CloudBuildPipelineExecutor`/`BuildService` (Cloud
-Build API steps) — a manifest means the same thing regardless of executor. The *build step
-construction* is intentionally not shared beyond that: a local `docker build` argv and a Cloud
-Build step's `args` are different mechanisms, and forcing them through one abstraction would cost
-more than the ~10 lines of overlap it would save. `CloudRunDeployCommandBuilder`, in contrast, *is*
-shared between both executors' `deploy()` — the `--container`/`--port`/`--set-env-vars` flag logic
-is one non-trivial piece of knowledge that must not drift between the two paths. (`--min-instances`
+**Manifest parsing/validation is separate from build/deploy execution (by design).**
+`ManifestParser`/`ManifestValidator`/`ManifestService` know only what a manifest *means*, and
+`CloudBuildPipelineExecutor`/`BuildService` know only how to turn that into Cloud Build steps. That
+split originally kept a second, local executor honest — it has since been deleted, and the split
+earns its keep anyway: it is what lets a manifest be parsed and validated before anything is cloned
+or built. The *build step construction* is intentionally not generalised beyond that: forcing it
+through one abstraction would cost
+more than the ~10 lines of overlap it would save. `CloudRunDeployCommandBuilder`, in contrast, is
+kept as its own unit — the `--container`/`--port`/`--set-env-vars` flag logic is one non-trivial
+piece of knowledge, and holding it apart is what allows testing it directly against a manifest
+rather than through a submitted build. It was previously shared with the local executor's
+`deploy()`, whose copy of the surrounding flags had already drifted out of agreement with this one.
+(`--min-instances`
 /`--max-instances` are the exception: service-level, so each executor emits them before its own
 first `--container=`, at the cost of a duplicated `addScalingArgs`.)
 
@@ -296,7 +303,7 @@ Changelog.
   `Platform`/`Resources`/`Scaling`/`PocManifest` records, `ManifestParser`, `ManifestValidator`,
   `ManifestService` (including the single-container default synthesis and stored-manifest
   redeploy resolution), `CloudRunDeployCommandBuilder` (shared multi-container `gcloud run deploy`
-  arg construction), both `LocalPipelineExecutor` and `BuildService` updated to build/push one image
+  arg construction), `BuildService` updated to build/push one image
   per manifest container, `poc_version_containers` table and entity, and
   `PocDeploymentService`/`PipelineRunner` wiring to persist and redeploy every container's image.
   Unit-tested (`ManifestParserTest`, `ManifestValidatorTest`, `CloudRunDeployCommandBuilderTest`,

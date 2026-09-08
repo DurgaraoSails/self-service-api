@@ -32,6 +32,14 @@ import org.springframework.web.client.RestClientResponseException;
 @Service
 public class BuildService {
 
+    /**
+     * Secret Manager secret holding the GitHub token the clone step authenticates with. A constant
+     * rather than a property: the platform owns the name, {@code GcpProperties.secretVersionName}
+     * appends the environment, and self-service-terraform creates exactly this secret. One less
+     * thing an environment can get subtly wrong.
+     */
+    private static final String GITHUB_TOKEN_SECRET_ID = "github-token";
+
     private final RestClient cloudBuildRestClient;
     private final GcpProperties gcp;
     private final PipelineProperties properties;
@@ -143,39 +151,61 @@ public class BuildService {
     }
 
     /**
-     * How the clone authenticates, in descending order of safety.
+     * The clone always authenticates from Secret Manager, and the token never becomes part of
+     * anything that outlives the step.
      *
-     * <p>With a Secret Manager secret the token is referenced by name and resolved inside the
-     * build, so it never lands on the Build resource. With an inline token it is interpolated
-     * into the step's arguments, which Cloud Build stores permanently — a real exposure, only
-     * meant for a local dev token on a repo you don't mind exposing. With neither, the clone is
-     * anonymous, which is all a public repository needs.
+     * <p>There is deliberately no fallback. An inline token would be interpolated into the step's
+     * arguments, which Cloud Build stores permanently on the Build resource for anyone with build
+     * read access; an anonymous clone would work only for a public repo and fail confusingly for
+     * every other one. A missing or unreadable secret now fails the build outright, which is the
+     * honest outcome — the fix is an IAM grant, not a quieter code path.
+     *
+     * <p>Three details carry the token safely, and each is load-bearing:
+     *
+     * <ul>
+     *   <li>{@code $$} is Cloud Build's escape for a literal {@code $}. What is stored on the Build
+     *       resource is {@code $GITHUB_TOKEN} as text; the value is substituted by the shell at
+     *       execution time from {@code secretEnv}. Writing a single {@code $} would make Cloud
+     *       Build try to resolve its own substitution and fail.</li>
+     *   <li>The credential goes in an {@code Authorization} header, not in the clone URL. A
+     *       credentialed URL is written verbatim into {@code src/.git/config} as
+     *       {@code remote.origin.url}, and {@code /workspace} is shared with every later step — so
+     *       a token in the URL would outlive this step, and git could echo it into the build log
+     *       on a clone failure.</li>
+     *   <li>{@code .git} is deleted immediately. A manifest may set {@code context: "."} (the
+     *       default for a repo with no poc.yaml), which makes the whole checkout the docker build
+     *       context — a {@code COPY . .} with no .dockerignore would otherwise bake git metadata
+     *       into a published image layer. Nothing downstream needs history: later steps only run
+     *       docker build, and poc.yaml is read through the GitHub API, not from this checkout.</li>
+     * </ul>
      */
-    private BuildStep cloneStep(String versionLabel, GitHubRepoRef repo) {
-        String repoPath = "github.com/%s/%s.git".formatted(repo.owner(), repo.name());
+    BuildStep cloneStep(String versionLabel, GitHubRepoRef repo) {
+        String repoUrl = "https://github.com/%s/%s.git".formatted(repo.owner(), repo.name());
+        String command = """
+                set -e
+                AUTH=$$(printf 'x-access-token:%%s' "$$GITHUB_TOKEN" | base64 -w0)
+                git -c http.extraHeader="Authorization: Basic $$AUTH" \
+                    clone --branch %s --depth 1 %s src
+                rm -rf src/.git
+                """.formatted(versionLabel, repoUrl);
 
-        if (properties.usesSecretManagerToken()) {
-            String command = "git clone --branch %s --depth 1 https://x-access-token:$$GITHUB_TOKEN@%s src"
-                    .formatted(versionLabel, repoPath);
-            return new BuildStep("gcr.io/cloud-builders/git", "bash", List.of("-c", command), List.of("GITHUB_TOKEN"));
-        }
-
-        if (properties.hasGithubToken()) {
-            String command = "git clone --branch %s --depth 1 https://x-access-token:%s@%s src"
-                    .formatted(versionLabel, properties.githubToken(), repoPath);
-            return new BuildStep("gcr.io/cloud-builders/git", "bash", List.of("-c", command), null);
-        }
-
-        return new BuildStep("gcr.io/cloud-builders/git", null,
-                List.of("clone", "--branch", versionLabel, "--depth", "1", "https://" + repoPath, "src"), null);
+        return new BuildStep("gcr.io/cloud-builders/git", "bash", List.of("-c", command), List.of("GITHUB_TOKEN"));
     }
 
+    /**
+     * The secret's name is a platform convention rather than configuration:
+     * {@code GcpProperties.secretVersionName} appends the environment, so this resolves to
+     * {@code projects/<project>/secrets/github-token-<env>/versions/latest} and dev/prod separate
+     * on their own. It matches {@code google_secret_manager_secret.github_token} in
+     * self-service-terraform, which also grants the build service account read access to it.
+     *
+     * <p>Unconditional: a build with no way to authenticate its clone should fail loudly rather
+     * than fall back to something weaker. Note this grants the build access to the secret's *name*
+     * only — Cloud Build resolves the value itself, so no token passes through this app.
+     */
     private AvailableSecrets availableSecrets() {
-        if (!properties.usesSecretManagerToken()) {
-            return null;
-        }
         return new AvailableSecrets(List.of(new SecretManagerSecret(
-                gcp.secretVersionName(properties.githubTokenSecretId()), "GITHUB_TOKEN")));
+                gcp.secretVersionName(GITHUB_TOKEN_SECRET_ID), "GITHUB_TOKEN")));
     }
     
     /**
@@ -186,7 +216,7 @@ public class BuildService {
      * single-container manifest never emits --container= at all, so this ordering is harmless
      * there too.
      */
-    private BuildStep deployStep(String slug, PocManifest manifest, Map<String, String> imagesByContainer) {
+    BuildStep deployStep(String slug, PocManifest manifest, Map<String, String> imagesByContainer) {
         List<String> args = new ArrayList<>(List.of("run", "deploy", slug));
         args.add("--region=" + gcp.region());
         args.add("--service-account=" + gcp.serviceAccountEmail("poc-runtime"));
@@ -251,7 +281,7 @@ public class BuildService {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private record BuildStep(String name, String entrypoint, List<String> args, List<String> secretEnv) {
+    record BuildStep(String name, String entrypoint, List<String> args, List<String> secretEnv) {
     }
 
     private record SecretManagerSecret(String versionName, String env) {

@@ -27,12 +27,13 @@ import org.springframework.web.client.RestClient;
 public class PipelineRestClientConfig {
 
     /**
-     * pipeline.github-token is the single source for this token — used here for the Authorization
-     * header, and separately by GitHubService/LocalPipelineExecutor/BuildService for the same
-     * value. One property rather than two that could silently drift out of sync. No boot-time
-     * failure on it being blank — someone working on an unrelated part of the app shouldn't need
-     * a GitHub token just to run `mvn spring-boot:run`; GitHubService fails loudly, with a clear
-     * message, the moment it's actually asked to do something.
+     * pipeline.github-token is this app's only GitHub credential, and it is used only here — for
+     * the Authorization header on the REST calls GitHubService makes. The clone inside a Cloud
+     * Build run authenticates separately, reading the same secret from Secret Manager, so this
+     * value never leaves the app. No boot-time failure on it being blank — someone working on an
+     * unrelated part of the app shouldn't need a GitHub token just to run `mvn spring-boot:run`;
+     * GitHubService fails loudly, with a clear message, the moment it's actually asked to do
+     * something.
      */
     @Bean
     public RestClient gitHubRestClient(PipelineProperties properties) {
