@@ -23,7 +23,9 @@ credentials.
   version number and kicks off a build+deploy.
 - An admin can roll back to any previously-built version; this redeploys that version's already-built
   image, without rebuilding.
-- Versions are numbered automatically — `MAJOR.MINOR.PATCH`, no manual entry anywhere.
+- Versions are numbered automatically — `MAJOR.MINOR.PATCH`, no manual entry anywhere. (Superseded:
+  `poc-tag-driven-deployment.md` moves numbering to the repository's own tags, because numbering
+  chosen here collides with tags that already exist.)
 - Deployment status (and a link to logs, once the pipeline reports one) is visible while a deployment
   is in progress and afterward, in a "Deployment History" view.
 - Regular Save (editing name/description/icon/etc.) never triggers a build — only the explicit deploy
@@ -50,6 +52,14 @@ deploy is `1.0.1`. Rollback never allocates a version number (it reuses the targ
 number+image); a failed build's number is never reused (the next deploy always allocates the next
 number). `major` is still its own column so a future manual-major-bump control would be a pure
 addition, no migration.
+
+> **Superseded by `poc-tag-driven-deployment.md`.** This scheme allocates a number from this
+> platform's own rows without ever consulting the repository, so a repo that already has tags
+> becomes undeployable: the pipeline tries to create a name git has already used for a different
+> commit, and `GitHubService` correctly refuses. Version numbers are moving to the repository's tags,
+> which also removes the `1–20` patch range and the numeric unique constraint recorded below. That
+> spec is the authority on version numbering; the description above is kept because it is what the
+> code and the current schema still do.
 
 **`pocs.version` and `pocs.container_image` (free-text, unvalidated, single-writer-only) are
 removed entirely, replaced by `pocs.active_version_id` (nullable FK to `poc_versions`).** Mirrors
@@ -103,7 +113,7 @@ started_at DESC`), not per-row — avoids an N+1 across the dashboard's POC grid
 |---|---|---|
 | id | UUID PK | `BIGINT` until 2026-09-08 — moved to `UUID` since it's exposed as `{versionId}` in `POST /pocs/{id}/versions/{versionId}/redeploy` |
 | poc_id | UUID NOT NULL REFERENCES pocs(id) ON DELETE CASCADE | `BIGINT` until 2026-09-08, moved alongside `pocs.id` |
-| major, minor, patch | INTEGER NOT NULL | `CHECK (patch BETWEEN 1 AND 20)` |
+| major, minor, patch | INTEGER NOT NULL | `CHECK (patch BETWEEN 1 AND 20)` — both this range and the uniqueness below are dropped by `poc-tag-driven-deployment.md`, which makes `version_label` the identity |
 | version_label | VARCHAR(20) NOT NULL | e.g. `"1.2.4"` |
 | container_image | VARCHAR(500) | nullable until a successful `BUILD_AND_DEPLOY` |
 | created_at | TIMESTAMPTZ NOT NULL DEFAULT now() | |
@@ -170,8 +180,11 @@ automatic now, no manual entry.
 - **No audit trail beyond `initiated_by`/`started_at`** — consistent with the rest of this app not
   having one yet (`admin-customers.md` flags the same gap for revoke/extend).
 - **No hard-delete/purge** of `poc_versions`/`poc_deployments` rows.
-- **Major version never bumps automatically, and there's no manual control for it either** — every
+- **Major version never bumps automatically, and there is no manual control for it either** — every
   version is `1.x.x` for now. Revisit if a POC's history needs a real "breaking change" marker.
+  Resolved by `poc-tag-driven-deployment.md` in the only way that matters: once the repository's tags
+  are the source of the number, a major bump is just a tag someone pushes, and this platform neither
+  needs nor gets a control for it.
 - **Trigger ordering is not transactionally guaranteed** — the persist calls happen before the
   trigger call within the same `@Transactional` method, not strictly after commit. Harmless with
   today's synchronous no-op stub; worth revisiting (e.g. firing the trigger from an
@@ -179,6 +192,12 @@ automatic now, no manual entry.
 
 ## Changelog
 
+- 2026-09-09 — Version numbering here is superseded by `poc-tag-driven-deployment.md`, which makes
+  the repository's tags the source of truth. Reason: numbering allocated from this platform's own
+  rows never consulted git, so any repository with pre-existing tags was undeployable — the pipeline
+  asked GitHub to create a name already used for a different commit. The passages affected are
+  marked in place rather than rewritten, since they still describe the shipped code and schema; that
+  spec carries the replacement design and this one is not duplicating it.
 - 2026-09-08 — `poc_versions.id`, `poc_deployments.poc_id`/`poc_version_id`, and `pocs.active_version_id`
   moved from `BIGINT` to `UUID` (see `docs/specs/poc-catalog.md`'s changelog for the full scope of
   that change, which also touched `pocs.id` and `user_files.id`). Migration history was consolidated
