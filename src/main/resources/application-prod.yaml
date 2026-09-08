@@ -1,0 +1,13 @@
+
+JWT_PRIVATE_KEY_PATH: file:/mnt/secrets/jwt/private-key.pem
+JWT_PUBLIC_KEY_PATH: file:/mnt/secrets/jwt/public-key.pem
+
+MAIL_FROM_NAME: Sails Self Service
+MAIL_FROM_ADDRESS: no.reply.sails.poc@gmail.com
+
+FILE_STORAGE: gcs
+FILE_STORAGE_BUCKET: sails-agenthub-poc-files
+
+PIPELINE_EXECUTOR: cloud-build
+BUILD_SERVICE_ACCOUNT: self-service-builder
+PLATFORM_API_URL: https://self-service-api-471182745065
