@@ -7,6 +7,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sails.ai.selfserviceapi.file.controller.PocFilesController;
+import com.sails.ai.selfserviceapi.poc.controller.PocController;
+import com.sails.ai.selfserviceapi.poc.controller.PocDeploymentController;
+import com.sails.ai.selfserviceapi.poc.controller.PocLaunchController;
+import com.sails.ai.selfserviceapi.poc.service.PocService;
+import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
+import com.sails.ai.selfserviceapi.poc.service.PocLaunchService;
+import com.sails.ai.selfserviceapi.poc.service.PocDeploymentResponseMapper;
+import com.sails.ai.selfserviceapi.poc.config.DeploymentWebhookProperties;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import com.sails.ai.selfserviceapi.file.controller.PortalFilesController;
 import com.sails.ai.selfserviceapi.file.service.FileService;
 import com.sails.ai.selfserviceapi.security.JwtKeySet;
@@ -48,7 +60,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * different codes for two different failures. {@code /pocs/{id}/files} is served for real, since
  * proving it stays on the portal's chain needs a route that actually responds.
  */
-@WebMvcTest(controllers = {JwksController.class, PocFilesController.class, PortalFilesController.class})
+@WebMvcTest(controllers = {JwksController.class, PocFilesController.class, PortalFilesController.class,
+        PocController.class, PocDeploymentController.class, PocLaunchController.class})
 @Import({SecurityConfig.class, CorsConfig.class, SecurityConfigTest.TestKeys.class})
 class SecurityConfigTest {
 
@@ -60,6 +73,29 @@ class SecurityConfigTest {
 
     @MockitoBean
     private FileService fileService;
+
+    @MockitoBean private PocService pocService;
+    @MockitoBean private PocDeploymentService deployments;
+    @MockitoBean private PocLaunchService launches;
+    @MockitoBean private PocDeploymentResponseMapper deploymentMapper;
+    @MockitoBean private DeploymentWebhookProperties webhookProperties;
+    @MockitoBean private GitHubService github;
+
+    @Test
+    void employeesCanLaunchWithoutTrialsButCannotManagePocs() throws Exception {
+        String employeeToken = baseToken().claim("accountType", "INTERNAL").claim("roles", List.of("USER")).compact();
+        when(launches.launch(any(), any())).thenReturn(new PocLaunchService.PocLaunch("poc-token", 900, "https://example.com", POC_ID, "contract-agent"));
+        mockMvc.perform(post("/pocs/contract-agent/launch").header("Authorization", "Bearer " + employeeToken)).andExpect(status().isOk());
+        String body = """
+                {"name":"Example", "description":"Example", "slug":"example", "githubUrl":"https://github.com/sails/example"}
+                """;
+        mockMvc.perform(post("/pocs").header("Authorization", "Bearer " + employeeToken)
+                .contentType("application/json").content(body)).andExpect(status().isForbidden());
+        mockMvc.perform(put("/pocs/" + POC_ID).header("Authorization", "Bearer " + employeeToken)
+                .contentType("application/json").content(body)).andExpect(status().isForbidden());
+        mockMvc.perform(delete("/pocs/" + POC_ID).header("Authorization", "Bearer " + employeeToken)).andExpect(status().isForbidden());
+        mockMvc.perform(post("/pocs/" + POC_ID + "/deploy").header("Authorization", "Bearer " + employeeToken)).andExpect(status().isForbidden());
+    }
 
     @Test
     void jwksIsReachableWithoutAToken() throws Exception {

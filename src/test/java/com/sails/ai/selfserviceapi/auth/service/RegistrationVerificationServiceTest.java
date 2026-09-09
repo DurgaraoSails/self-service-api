@@ -69,6 +69,16 @@ class RegistrationVerificationServiceTest {
     }
 
     @Test
+    void oldCompanyRegistrationLinkCannotBypassMicrosoft() {
+        RegistrationVerificationToken token = new RegistrationVerificationToken();
+        token.setUserId("employee"); token.setExpiresAt(Instant.now().plusSeconds(300));
+        when(tokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(token));
+        when(userService.getById("employee")).thenReturn(pendingUser("jane@sailssoftware.com"));
+        assertThatThrownBy(() -> service.verify("old-link")).isInstanceOf(ApiException.class).hasMessageContaining("Microsoft");
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
     void requestVerificationEmailsALinkContainingTheRawTokenAndReturnsTheTtlInSeconds() {
         User user = pendingUser("jane.doe@example.com");
         when(userService.getEligibleForOtpByEmail("jane.doe@example.com")).thenReturn(user);

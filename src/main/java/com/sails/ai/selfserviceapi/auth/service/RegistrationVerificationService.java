@@ -97,6 +97,7 @@ public class RegistrationVerificationService {
         tokenRepository.save(token);
 
         User user = userService.getById(token.getUserId());
+        com.sails.ai.selfserviceapi.auth.microsoft.EmployeeAccess.requireExternal(user);
         Instant now = Instant.now();
         if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
             user.setStatus(UserStatus.ACTIVE);

@@ -1,0 +1,35 @@
+MicrosoftStartRequest:
+  type: object
+  required: [email, codeChallenge]
+  properties:
+    email:
+      type: string
+      format: email
+      maxLength: 255
+    codeChallenge:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{43}$'
+
+MicrosoftStartResponse:
+  type: object
+  required: [authorizationUrl, state]
+  properties:
+    authorizationUrl:
+      type: string
+    state:
+      type: string
+
+MicrosoftCompleteRequest:
+  type: object
+  required: [code, state, codeVerifier]
+  properties:
+    code:
+      type: string
+      minLength: 1
+      maxLength: 8192
+    state:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{43}$'
+    codeVerifier:
+      type: string
+      pattern: '^[A-Za-z0-9._~-]{43,128}$'
