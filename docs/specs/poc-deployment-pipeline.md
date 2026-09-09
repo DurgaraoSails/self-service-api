@@ -133,6 +133,24 @@ All new/changed endpoints live under `/pocs`, same `PocApi`-generating tag as `p
 
 ## Changelog
 
+- 2026-09-09 — **Review follow-ups on the Cloud-Build-only cutover.** `getBranchHeadSha` puts the
+  branch in the URI template instead of a variable, so a slashed name keeps its slash rather than
+  being encoded to `%2F` and 404ing as a branch that does not exist; the pinned-branch path now
+  reuses that method instead of holding a second copy of the same call; `getDefaultBranch` and
+  `requirePushAccess` build their repository read in one place. The two still make a call each,
+  deliberately — one runs synchronously before the deployment row exists and the other inside the
+  async pipeline, so there is no single response to share without moving one into the other's phase.
+
+  `parseRepoUrl` restricts the owner and name to GitHub's own charset rather than "anything but a
+  slash", and `BuildService.cloneStep` quotes the tag and URL it interpolates. Both guard the same
+  thing from opposite ends: those values reach a `bash -c` command inside Cloud Build, and until now
+  the only reason a metacharacter could not get there was that `requirePushAccess` happens to 404
+  first on a bogus owner.
+
+  `PipelineProperties.isCloudBuild()` is deleted — nothing but its own test called it once the local
+  executor was gone. `PipelineExecutorWiringTest` registers both executors and asserts on
+  `PipelineExecutor` rather than a concrete class, so it can now fail on the case it was written
+  for: a condition that leaves `PipelineRunner` with no bean to inject.
 - 2026-09-09 — **Two follow-ups to the Cloud-Build-only cutover, both cases where a configuration
   the app accepts can no longer work.** First, `PipelineProperties.isSkip()` now treats an absent
   `pipeline.executor` as skip. `SkippingPipelineExecutor` claims that case via `matchIfMissing`, but

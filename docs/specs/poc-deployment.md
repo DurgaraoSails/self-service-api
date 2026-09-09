@@ -192,6 +192,28 @@ automatic now, no manual entry.
 
 ## Changelog
 
+- 2026-09-09 — **The branch a version is cut from is now a property of the POC.** `pocs` gains
+  `deploy_branch` (migration `V12`), settable from the admin form via `deployBranch` on
+  `CreatePocRequest`/`UpdatePocRequest` and readable on `PocResponse`. `GitHubService` resolves the
+  commit to tag in three steps, most specific first: the POC's own `deployBranch`, then
+  `pipeline.deploy-branch` as a platform-wide fallback for POCs that name none, then the
+  repository's own default branch. Null and blank are the same stored value — both mean "follow the
+  default branch" — so every POC predating the column keeps deploying exactly as it did.
+
+  This replaces a platform-wide pin as the primary mechanism. Which branch a repository releases
+  from is a fact about that repository: `pipeline.deploy-branch=main` was correct for the POCs whose
+  default already was `main` and made every other POC undeployable, with no per-POC override and no
+  remedy short of renaming branches in repositories this platform does not own. The pin survives for
+  the case it is actually good at — a deployment where every unconfigured POC must release from one
+  branch name — and is now unset in both `application-prod.yaml` and `application-local.yaml`.
+
+  A branch name is validated where it is supplied rather than where it is used: `GitBranchNames`
+  holds git's ref-name rules, `PocService` returns `400 INVALID_DEPLOY_BRANCH` while the admin who
+  typed it is still there, and `PipelineProperties` applies the same rules to the pin at startup.
+  Without that, a bad name surfaces as a failed deployment row minutes or days later. The rules also
+  cover this system's own hazard: the name is concatenated into the GitHub URI path (a branch passed
+  as a URI variable has its "/" encoded to %2F, so `release/2024` would 404 as though it did not
+  exist), which makes ".." and braces unsafe in a way plain git does not care about.
 - 2026-09-09 — Version numbering here is superseded by `poc-tag-driven-deployment.md`, which makes
   the repository's tags the source of truth. Reason: numbering allocated from this platform's own
   rows never consulted git, so any repository with pre-existing tags was undeployable — the pipeline
