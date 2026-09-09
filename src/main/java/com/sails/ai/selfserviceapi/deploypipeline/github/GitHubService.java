@@ -3,7 +3,9 @@ package com.sails.ai.selfserviceapi.deploypipeline.github;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,8 +27,24 @@ public class GitHubService {
     private static final Logger log = LoggerFactory.getLogger(GitHubService.class);
 
     // github.com/{owner}/{repo}, with or without a trailing .git or slash, plus the SSH form.
+    //
+    // Both groups are restricted to what GitHub actually allows in a login and a repository name,
+    // rather than "anything but a slash". A POC's githubUrl is operator-supplied, and the owner and
+    // name parsed out of it are interpolated into the Cloud Build clone step's shell command — a
+    // permissive class here is the difference between a rejected URL and a metacharacter reaching
+    // bash. Every real repository URL the looser form accepted still parses: dots stay out of the
+    // name group, so a trailing ".git" cannot be swallowed by it.
     private static final Pattern REPO_URL_PATTERN =
-            Pattern.compile("github\\.com[/:]([^/]+)/([^/.]+)(\\.git)?/?$");
+            Pattern.compile("github\\.com[/:]([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)"
+                    + "/([A-Za-z0-9_-]+)(\\.git)?/?$");
+
+    /**
+     * GitHub's own maximum for this endpoint, and the cap on how many pages of it to read. 500
+     * branches is far past what any POC repository has; the point of the cap is that one
+     * pathological repository cannot make an admin opening a dropdown wait on fifty round trips.
+     */
+    private static final int BRANCH_PAGE_SIZE = 100;
+    private static final int MAX_BRANCH_PAGES = 5;
 
     private final RestClient gitHubRestClient;
     private final PipelineProperties properties;
@@ -49,45 +67,126 @@ public class GitHubService {
 
     /** Never assumes "main" — repositories differ, and a wrong guess fails confusingly. */
     public String getDefaultBranch(GitHubRepoRef repo) {
-        return get("/repos/{owner}/{repo}", RepoInfo.class, repo.owner(), repo.name()).defaultBranch();
+        return readRepo(repo).defaultBranch();
     }
 
+    /**
+     * One place builds the repository read, for both the callers that want its default branch and
+     * the one that wants its permissions.
+     *
+     * <p>They still make a call each, and deliberately: {@code requirePushAccess} runs in the async
+     * pipeline while the branch is resolved synchronously before the deployment row exists, so
+     * there is no single response the two could share without moving one of them into the other's
+     * phase. Sharing the request shape is what is available here, and it is the half that would
+     * otherwise drift.
+     */
+    private RepoInfo readRepo(GitHubRepoRef repo) {
+        return get("/repos/{owner}/{repo}", RepoInfo.class, repo.owner(), repo.name());
+    }
+
+    /**
+     * The branch is concatenated into the URI template rather than passed as a template variable,
+     * and that is the whole point: a variable's {@code /} is encoded to {@code %2F}, which matches
+     * no ref at all, so every slashed branch name ({@code release/2024}) would 404 as though it did
+     * not exist. As template text the slash survives, while anything a path segment may not carry
+     * is still encoded. {@code PipelineProperties} rejects a configured branch that could abuse
+     * that position, and a default branch read back from GitHub is already a valid ref name.
+     */
     public String getBranchHeadSha(GitHubRepoRef repo, String branch) {
-        return get("/repos/{owner}/{repo}/git/ref/heads/{branch}", GitRefResponse.class,
-                repo.owner(), repo.name(), branch).object().sha();
+        return get("/repos/{owner}/{repo}/git/ref/heads/" + branch, GitRefResponse.class,
+                repo.owner(), repo.name()).object().sha();
     }
 
     /**
      * The commit a new version is cut from, and therefore the commit the release tag will point at.
      *
-     * <p>{@code pipeline.deploy-branch} when it is set, otherwise the repository's own default
-     * branch. The default branch is the more forgiving behaviour — repositories disagree about
-     * whether that is {@code main}, {@code master} or something else — but a platform that must cut
-     * every release from one named branch can pin it, and then a repository lacking that branch is
-     * a configuration error worth naming rather than a 404 to decipher.
+     * <p>Three sources, most specific first:
+     *
+     * <ol>
+     *   <li>{@code pocDeployBranch} — the branch on the POC itself, set in the admin form. This is
+     *       the one that should normally decide it: which branch a repository releases from is a
+     *       fact about that repository, and one POC releasing from {@code main} says nothing about
+     *       the next.</li>
+     *   <li>{@code pipeline.deploy-branch} — a platform-wide pin, for a deployment that must cut
+     *       every release from one branch name regardless of what each repository prefers. Unset by
+     *       default; it applies only to POCs that named no branch of their own.</li>
+     *   <li>The repository's own default branch, whatever GitHub reports it to be. The forgiving
+     *       option, and the behaviour every POC had before either setting existed.</li>
+     * </ol>
+     *
+     * <p>A branch that was asked for by name and does not exist is a configuration error worth
+     * naming — the message says which of the two settings chose it, because the fix is in a
+     * different place for each.
      */
-    public String getDeployBranchHeadSha(GitHubRepoRef repo) {
-        if (!properties.hasDeployBranch()) {
+    public String getDeployBranchHeadSha(GitHubRepoRef repo, String pocDeployBranch) {
+        String branch;
+        String remedy;
+        if (pocDeployBranch != null && !pocDeployBranch.isBlank()) {
+            branch = pocDeployBranch.trim();
+            remedy = "This POC's deployBranch asks for that branch, so create it, point the POC at a branch "
+                    + "that exists, or clear deployBranch to deploy from the repository's own default branch.";
+        } else if (properties.hasDeployBranch()) {
+            branch = properties.deployBranch();
+            remedy = "pipeline.deploy-branch pins every POC that names no branch of its own to that branch, so "
+                    + "create it, give this POC its own deployBranch, or clear pipeline.deploy-branch to deploy "
+                    + "each repository from its own default branch.";
+        } else {
             return getBranchHeadSha(repo, getDefaultBranch(repo));
         }
 
-        requireToken();
-        String branch = properties.deployBranch();
         try {
-            return gitHubRestClient.get()
-                    .uri("/repos/{owner}/{repo}/git/ref/heads/{branch}", repo.owner(), repo.name(), branch)
-                    .retrieve()
-                    .body(GitRefResponse.class)
-                    .object().sha();
-        } catch (RestClientResponseException e) {
-            if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
-                throw new GitHubApiException("Branch '" + branch + "' does not exist in " + repo
-                        + ". pipeline.deploy-branch pins every POC to that branch, so this repository cannot be "
-                        + "deployed until it has one — create the branch, or clear pipeline.deploy-branch to "
-                        + "deploy each repository from its own default branch instead.", e);
+            return getBranchHeadSha(repo, branch);
+        } catch (GitHubApiException e) {
+            if (!isNotFound(e)) {
+                throw e;
             }
-            throw wrap(e, "read branch " + branch + " of " + repo);
+            throw new GitHubApiException(
+                    "Branch '" + branch + "' does not exist in " + repo + ". " + remedy, e);
         }
+    }
+
+    /**
+     * A 404 that {@link #get} has already wrapped. Only the pinned-branch path needs to tell that
+     * case apart from any other GitHub failure, and unwrapping it there is worth keeping one
+     * implementation of "read a branch's head" instead of a second copy that can drift from it.
+     */
+    private static boolean isNotFound(GitHubApiException e) {
+        return e.getCause() instanceof RestClientResponseException cause
+                && cause.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Every branch in the repository, for the admin form's deploy-branch picker. Alphabetical, as
+     * GitHub returns them — which branch is the default is a separate question, answered by
+     * {@link #getDefaultBranch}.
+     *
+     * <p>Paged rather than assumed to fit: the endpoint returns at most 100 at a time, so a
+     * repository with more would otherwise silently lose the branches past the first hundred from
+     * the only UI that offers a choice. The read stops early on a short page (the normal case, one
+     * call) and gives up at {@link #MAX_BRANCH_PAGES}, reporting {@code truncated} so the caller can
+     * say so rather than present a partial list as complete.
+     */
+    public GitHubBranches listBranches(GitHubRepoRef repo) {
+        List<String> names = new ArrayList<>();
+
+        for (int page = 1; page <= MAX_BRANCH_PAGES; page++) {
+            BranchRef[] batch = get("/repos/{owner}/{repo}/branches?per_page={perPage}&page={page}",
+                    BranchRef[].class, repo.owner(), repo.name(), BRANCH_PAGE_SIZE, page);
+
+            if (batch == null || batch.length == 0) {
+                return new GitHubBranches(names, false);
+            }
+            for (BranchRef branch : batch) {
+                names.add(branch.name());
+            }
+            // A short page is the last page. A full one on the final iteration means there may be
+            // more we chose not to read — the only case that is genuinely truncated.
+            if (batch.length < BRANCH_PAGE_SIZE) {
+                return new GitHubBranches(names, false);
+            }
+        }
+
+        return new GitHubBranches(names, true);
     }
 
     /**
@@ -173,24 +272,19 @@ public class GitHubService {
      * the same thing.
      */
     public RepoAccess checkPushAccess(GitHubRepoRef repo) {
-        requireToken();
-
         RepoInfo info;
         try {
-            info = gitHubRestClient.get()
-                    .uri("/repos/{owner}/{repo}", repo.owner(), repo.name())
-                    .retrieve()
-                    .body(RepoInfo.class);
-        } catch (RestClientResponseException e) {
-            if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
-                // 404 rather than 403 is also what GitHub returns for a private repo the token
-                // cannot see — it does not confirm existence to a caller who may not look.
-                // Logged because returning an enum drops GitHub's own response body, and that body
-                // is the only thing that separates "wrong URL" from "token cannot see it".
-                log.debug("GitHub reported 404 for {}: {}", repo, e.getResponseBodyAsString());
-                return RepoAccess.NOT_FOUND;
+            info = readRepo(repo);
+        } catch (GitHubApiException e) {
+            if (!isNotFound(e)) {
+                throw e;
             }
-            throw wrap(e, "read repository " + repo);
+            // 404 rather than 403 is also what GitHub returns for a private repo the token cannot
+            // see — it does not confirm existence to a caller who may not look. Logged because
+            // returning an enum drops GitHub's own response body, and that body is the only thing
+            // separating "wrong URL" from "the token cannot see it".
+            log.debug("GitHub reported 404 for {}: {}", repo, e.getMessage());
+            return RepoAccess.NOT_FOUND;
         }
 
         // Before the push check, not after: archiving freezes a repository read-only for everyone,
@@ -300,6 +394,9 @@ public class GitHubService {
      * (a repo that could not be read would have 404'd) and admin is more than a tag requires.
      */
     private record Permissions(boolean push) {
+    }
+
+    private record BranchRef(String name) {
     }
 
     private record GitRefResponse(String ref, GitObject object) {

@@ -1,7 +1,9 @@
 package com.sails.ai.selfserviceapi.poc.service;
 
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitBranchNames;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
+import com.sails.ai.selfserviceapi.poc.exception.InvalidDeployBranchException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotLaunchableException;
 import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
@@ -150,6 +152,7 @@ public class PocService {
         poc.setIconUrl(fields.iconUrl());
         poc.setAppUrl(fields.appUrl());
         poc.setGithubUrl(fields.githubUrl());
+        poc.setDeployBranch(normalizeDeployBranch(fields.deployBranch()));
         poc.setOwner(fields.owner());
         poc.setCategory(fields.category());
         poc.setTechnologies(fields.technologies() != null ? fields.technologies() : new ArrayList<>());
@@ -157,5 +160,26 @@ public class PocService {
         poc.setVisibilityStatus(fields.visibilityStatus() != null ? fields.visibilityStatus() : DEFAULT_STATUS);
         poc.setDetails(fields.details());
         poc.setGuideSteps(fields.guideSteps() != null ? fields.guideSteps() : new ArrayList<>());
+    }
+
+    /**
+     * Blank collapses to null so "cleared in the form" and "never set" are the same stored value —
+     * both mean "follow the repository's default branch", and a column holding "" would read as a
+     * branch nobody can have. A real value is checked against git's ref-name rules now, while the
+     * admin who typed it is here to see the 400: the branch is not used until a deploy runs
+     * asynchronously, where the only way to report it would be a failed deployment row.
+     */
+    private String normalizeDeployBranch(String deployBranch) {
+        if (deployBranch == null || deployBranch.isBlank()) {
+            return null;
+        }
+        String trimmed = deployBranch.trim();
+        if (!GitBranchNames.isValid(trimmed)) {
+            throw new InvalidDeployBranchException("deployBranch is not a usable git branch name: '" + trimmed
+                    + "'. Expected something like 'main' or 'release/2024' — no spaces, no '..', and none of the "
+                    + "characters git forbids in a ref name. Leave it empty to deploy from the repository's own "
+                    + "default branch.");
+        }
+        return trimmed;
     }
 }

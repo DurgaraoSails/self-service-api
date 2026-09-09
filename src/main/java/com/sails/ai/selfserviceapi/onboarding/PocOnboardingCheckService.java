@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.onboarding;
 
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitBranchNames;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubApiException;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
@@ -45,7 +46,13 @@ public class PocOnboardingCheckService {
         this.pocRepository = pocRepository;
     }
 
-    public OnboardingCheckResult check(String githubUrl, String slug) {
+    /**
+     * @param deployBranch the branch to check, or null/blank for the repository's own default —
+     *                     the same resolution a POC with no branch configured would get. It matters
+     *                     which: poc.yaml and the Dockerfiles it names are read at that branch's
+     *                     head, so a ready default branch says nothing about a feature branch.
+     */
+    public OnboardingCheckResult check(String githubUrl, String deployBranch, String slug) {
         List<OnboardingFinding> findings = new ArrayList<>();
 
         GitHubRepoRef repo;
@@ -70,9 +77,24 @@ public class PocOnboardingCheckService {
             return new OnboardingCheckResult(repo.toString(), false, findings);
         }
 
+        // Checked before it reaches GitHub: the name is concatenated into the URI path there, so
+        // ".." would climb out of the repository being asked about. A finding rather than an
+        // exception because that is this endpoint's whole contract — it reports problems, and a
+        // mistyped branch is one more thing the team can fix without asking anyone.
+        String branch = deployBranch == null || deployBranch.isBlank() ? null : deployBranch.trim();
+        if (branch != null && !GitBranchNames.isValid(branch)) {
+            findings.add(OnboardingFinding.error(PocOnboardingCheckId.REPO_ACCESS,
+                    "That is not a usable git branch name",
+                    "'" + branch + "' is not a name git accepts as a ref.",
+                    "Use something like main or release/2024 — no spaces, no '..'."));
+            return new OnboardingCheckResult(repo.toString(), false, findings);
+        }
+
         String commitSha;
         try {
-            commitSha = gitHubService.getDeployBranchHeadSha(repo);
+            // null resolves the way an unconfigured POC would: pipeline.deploy-branch if one is
+            // pinned, otherwise the repository's own default branch.
+            commitSha = gitHubService.getDeployBranchHeadSha(repo, branch);
         } catch (GitHubApiException e) {
             findings.add(OnboardingFinding.error(PocOnboardingCheckId.REPO_ACCESS,
                     "Could not read the branch this POC would deploy from",

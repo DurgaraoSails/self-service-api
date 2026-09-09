@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.deploypipeline.config;
 
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitBranchNames;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -23,9 +24,12 @@ public record PipelineProperties(
         String executor,
 
         /**
-         * cloud-build only. Identity the build runs as. Blank runs it as Cloud Build's own
-         * default service account — useful while self-service-builder holds none of its intended
-         * IAM bindings yet.
+         * cloud-build only, and required there. The identity the build runs as, which is
+         * load-bearing since the clone step reads its token from Secret Manager: only
+         * self-service-builder holds secretAccessor on {@code github-token-<env>}, so blank —
+         * meaning Cloud Build's own default service account — cannot clone anything at all. The
+         * compact constructor rejects that combination rather than letting every build fail
+         * identically at its first step.
          */
         String buildServiceAccount,
 
@@ -96,7 +100,9 @@ public record PipelineProperties(
     private static final String SKIP = "skip";
 
     /**
-     * Rejects an executor this app cannot honour, at startup rather than at the first deploy.
+     * Rejects a pipeline configuration this app cannot honour, at startup rather than at the first
+     * deploy. Both checks here guard the same failure shape: a value the app accepts happily and
+     * then cannot act on, discovered only once someone is waiting on a deployment.
      *
      * <p>Spring picks the executor bean with {@code @ConditionalOnProperty}, which has no way to
      * express "fail on anything else" — an unrecognised value simply matches no condition. Since
@@ -104,6 +110,17 @@ public record PipelineProperties(
      * {@code PIPELINE_EXECUTOR=local} left over from before that mode was removed would otherwise
      * start cleanly and quietly skip every deploy, reporting SKIPPED for work an operator believes
      * is running. Failing here turns that into one unmissable line at boot.
+     *
+     * <p>The deploy branch is checked for shape rather than existence — whether a given repository
+     * has it is a per-POC question answered at deploy time, but "a value git would never accept as
+     * a ref name" is answerable here, and worth answering because the name is concatenated into the
+     * GitHub URI path (see {@code GitHubService.getBranchHeadSha}).
+     *
+     * <p>The build service account became mandatory under cloud-build when {@code BuildService}
+     * started reading the clone token from Secret Manager unconditionally. Blank is not a weaker
+     * fallback there, it is a dead end: Cloud Build's own default service account holds no
+     * secretAccessor grant on the secret, so every build fails at its first step with a Cloud Build
+     * error that names the secret rather than the property that was left unset.
      */
     public PipelineProperties {
         if (executor != null && !CLOUD_BUILD.equalsIgnoreCase(executor) && !SKIP.equalsIgnoreCase(executor)) {
@@ -111,14 +128,31 @@ public record PipelineProperties(
                     + "', but was '" + executor + "'. The 'local' executor was removed — every build now runs"
                     + " in Cloud Build.");
         }
+        if (CLOUD_BUILD.equalsIgnoreCase(executor) && (buildServiceAccount == null || buildServiceAccount.isBlank())) {
+            throw new IllegalArgumentException("pipeline.build-service-account must be set when pipeline.executor"
+                    + " is '" + CLOUD_BUILD + "'. Blank runs every build as Cloud Build's own default service"
+                    + " account, which holds no secretAccessor grant on the github-token secret, so every clone"
+                    + " step would fail resolving GITHUB_TOKEN. Set it to the account that does hold that grant"
+                    + " (self-service-builder, per self-service-terraform).");
+        }
+        if (deployBranch != null && !deployBranch.isBlank()) {
+            GitBranchNames.requireValid(deployBranch, "pipeline.deploy-branch");
+        }
     }
 
-    public boolean isCloudBuild() {
-        return CLOUD_BUILD.equalsIgnoreCase(executor);
-    }
-
+    /**
+     * Absent counts as skip. {@code SkippingPipelineExecutor} claims that case with
+     * {@code matchIfMissing}, and this is the other half of the same decision — if the two
+     * disagree the app starts, {@code PocDeploymentService} and {@code PipelineRunner} both take
+     * the real deploy path, a release tag is written to the POC's repository, and only then does
+     * the skipping executor throw, leaving a tag that blocks reusing that version label.
+     *
+     * <p>Blank is not handled here because it never gets this far: the compact constructor rejects
+     * it, which is the better outcome — a property that is present but empty is a mistake worth
+     * naming at boot rather than quietly reading as "don't deploy".
+     */
     public boolean isSkip() {
-        return SKIP.equalsIgnoreCase(executor);
+        return executor == null || SKIP.equalsIgnoreCase(executor);
     }
 
     /** Blank means "follow each repository's own default branch" — see {@link #deployBranch}. */

@@ -912,6 +912,49 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/branches:
+    get:
+      summary: List the branches of a repository, for the deploy-branch picker (admin only)
+      description: >
+        Keyed on the repository URL rather than a POC id: the create form needs this before a POC
+        exists, and the settings page can pass the URL of the POC it already loaded. Proxies GitHub
+        using the platform's own token, so it answers for any repository that token can see.
+      operationId: getPocBranches
+      tags:
+        - Poc
+      parameters:
+        - name: githubUrl
+          in: query
+          required: true
+          description: The repository to read branches from, in the same form as a POC's githubUrl.
+          schema:
+            type: string
+            maxLength: 500
+          example: "https://github.com/example-org/contract-agent"
+      responses:
+        '200':
+          description: Branches
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc.yaml#/PocBranchesResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '502':
+          description: >
+            GitHub could not be reached, or the repository is not visible to the configured token -
+            a typo'd URL and a private repository the token cannot see are indistinguishable here.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/{id}/versions:
     get:
       summary: List every version ever built for a POC, newest first (admin only)

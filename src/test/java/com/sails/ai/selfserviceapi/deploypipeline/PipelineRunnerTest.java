@@ -70,6 +70,27 @@ class PipelineRunnerTest {
                 org.mockito.ArgumentMatchers.contains("cannot push to"));
     }
 
+    // --- an unconfigured pipeline must not reach GitHub at all ------------------------------
+
+    /**
+     * SkippingPipelineExecutor claims an absent pipeline.executor via matchIfMissing, so an app
+     * booted with no pipeline configuration wires the executor that only throws. If isSkip() did
+     * not agree, this method would create a real release tag on the POC's repository and only then
+     * fail in the executor — leaving a tag nobody asked for that blocks reusing that version label.
+     */
+    @Test
+    void writesNoTagWhenNoExecutorIsConfiguredAtAll() {
+        PipelineRunner unconfigured = new PipelineRunner(gitHubService, executor, pocDeploymentService,
+                new PipelineProperties(null, null, "ghp_token", false, true,
+                        Duration.ofMinutes(20), Duration.ofSeconds(10), null));
+
+        unconfigured.runBuildAndDeploy(DEPLOYMENT_ID, POC_ID, "their-poc", GITHUB_URL, "1.0.0", "abc123", manifest());
+
+        verifyNoInteractions(gitHubService);
+        verifyNoInteractions(executor);
+        verify(pocDeploymentService).reportStatus(eq(DEPLOYMENT_ID), eq("SKIPPED"), any(), any(), any(), any(), any());
+    }
+
     private static PocManifest manifest() {
         return new PocManifest(
                 List.of(new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of())),

@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sails.ai.selfserviceapi.common.exception.GlobalExceptionHandler;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
@@ -42,6 +43,10 @@ class PocControllerValidationTest {
 
     @MockitoBean
     private PocService pocService;
+
+    /** Only here to satisfy PocController's constructor — the branch picker is not what this tests. */
+    @MockitoBean
+    private GitHubService gitHubService;
 
     @MockitoBean
     private PocDeploymentService pocDeploymentService;

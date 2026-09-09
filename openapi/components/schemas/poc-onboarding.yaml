@@ -12,6 +12,17 @@ PocOnboardingCheckRequest:
       description: HTTPS or SSH GitHub URL, with or without a trailing .git
       example: "https://github.com/acme/contract-agent"
 
+    deployBranch:
+      type: string
+      maxLength: 255
+      nullable: true
+      description: >
+        The branch the team intends to deploy from. Omitted checks the repository's own default
+        branch, which is what a POC with no branch configured would build. Supply it to check the
+        branch you will actually deploy - poc.yaml and the Dockerfiles it names are read at that
+        branch's head, and a repo whose default branch is ready says nothing about a feature branch.
+      example: "main"
+
     slug:
       type: string
       maxLength: 100

@@ -172,6 +172,11 @@ public class BuildService {
      *       {@code remote.origin.url}, and {@code /workspace} is shared with every later step — so
      *       a token in the URL would outlive this step, and git could echo it into the build log
      *       on a clone failure.</li>
+     *   <li>The tag and the repository URL are quoted. {@code GitHubService.parseRepoUrl} already
+     *       restricts an owner and name to GitHub's own charset, and a version label is three
+     *       numbers, so neither can carry a metacharacter today — the quotes are what keeps that
+     *       true if either source is ever loosened, since this is a shell command and not an argv
+     *       list.</li>
      *   <li>{@code .git} is deleted immediately. A manifest may set {@code context: "."} (the
      *       default for a repo with no poc.yaml), which makes the whole checkout the docker build
      *       context — a {@code COPY . .} with no .dockerignore would otherwise bake git metadata
@@ -185,7 +190,7 @@ public class BuildService {
                 set -e
                 AUTH=$$(printf 'x-access-token:%%s' "$$GITHUB_TOKEN" | base64 -w0)
                 git -c http.extraHeader="Authorization: Basic $$AUTH" \
-                    clone --branch %s --depth 1 %s src
+                    clone --branch "%s" --depth 1 "%s" src
                 rm -rf src/.git
                 """.formatted(versionLabel, repoUrl);
 
@@ -244,8 +249,10 @@ public class BuildService {
     }
 
     /**
-     * Blank means "run as Cloud Build's own default service account". That is what a local
-     * account without an iam.serviceAccountUser binding on self-service-builder must use.
+     * Always a custom account in practice: {@code PipelineProperties} refuses to start under
+     * cloud-build without one, because Cloud Build's own default service account cannot read the
+     * github-token secret {@link #availableSecrets()} requires. The blank branch survives only for
+     * the skip executor, which never submits a build at all.
      */
     private String buildServiceAccount() {
         return properties.usesCustomBuildServiceAccount()

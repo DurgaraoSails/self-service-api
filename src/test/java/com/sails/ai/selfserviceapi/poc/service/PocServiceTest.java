@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.exception.InvalidDeployBranchException;
 import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotLaunchableException;
@@ -191,6 +192,62 @@ class PocServiceTest {
         verify(pocRepository, Mockito.times(1)).save(any(Poc.class));
     }
 
+    // --- deployBranch ------------------------------------------------------------------------
+
+    /**
+     * Which branch a repository releases from is a fact about that repository, so it lives on the
+     * POC rather than in platform config. Null keeps the behaviour every POC had before the field
+     * existed: follow whatever GitHub calls the default branch.
+     */
+    @Test
+    void storesThePocsOwnDeployBranch() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(pocService.create(fullFields()).getDeployBranch()).isEqualTo("release/2024");
+    }
+
+    /**
+     * Blank and absent have to land on the same stored value, or "cleared in the admin form" would
+     * persist an empty string — a branch nobody can have, and not the null that means "default".
+     */
+    @Test
+    void treatsABlankDeployBranchAsUnset() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(pocService.create(fieldsDeployingFrom("   ")).getDeployBranch()).isNull();
+        assertThat(pocService.create(fieldsDeployingFrom(null)).getDeployBranch()).isNull();
+    }
+
+    @Test
+    void trimsTheDeployBranchBeforeStoringIt() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(pocService.create(fieldsDeployingFrom("  main  ")).getDeployBranch()).isEqualTo("main");
+    }
+
+    /**
+     * Rejected at the request, not at the deploy. The branch is read minutes or days later by an
+     * async pipeline, where the only way to report a bad value would be a failed deployment row
+     * long after whoever typed it has gone.
+     */
+    @Test
+    void rejectsADeployBranchThatIsNotAUsableRefName() {
+        assertThatThrownBy(() -> pocService.create(fieldsDeployingFrom("../../other/repo")))
+                .isInstanceOf(InvalidDeployBranchException.class)
+                .hasMessageContaining("deployBranch");
+
+        assertThatThrownBy(() -> pocService.create(fieldsDeployingFrom("my branch")))
+                .isInstanceOf(InvalidDeployBranchException.class)
+                .hasMessageContaining("deployBranch");
+
+        verify(pocRepository, Mockito.never()).save(any(Poc.class));
+    }
+
+    private static PocFields fieldsDeployingFrom(String deployBranch) {
+        return new PocFields("Contract Agent", "Review & generate contracts.", null, null, null, null,
+                deployBranch, null, null, null, null, null, null, null);
+    }
+
     private static PocFields fullFields() {
         return new PocFields(
                 "RAG Assistant",
@@ -199,6 +256,7 @@ class PocServiceTest {
                 "https://cdn.example.com/icon.svg",
                 "https://rag-assistant.example.com",
                 "https://github.com/example-org/rag-assistant",
+                "release/2024",
                 "AI Team",
                 "Healthcare",
                 List.of("Python", "FastAPI", "PostgreSQL", "LLM"),
@@ -235,7 +293,7 @@ class PocServiceTest {
 
         Poc created = pocService.create(new PocFields(
                 "Contract Agent", "Review & generate contracts.", null, null, null, null,
-                null, null, null, null, null, null, null
+                null, null, null, null, null, null, null, null
         ));
 
         assertThat(created.getVisibilityStatus()).isEqualTo("ACTIVE");
@@ -256,6 +314,7 @@ class PocServiceTest {
                 "https://cdn.example.com/new-icon.svg",
                 "https://renamed.example.com",
                 "https://github.com/example-org/renamed",
+                "main",
                 "Platform Team",
                 "RAG",
                 List.of("Java", "Spring Boot"),
@@ -270,6 +329,7 @@ class PocServiceTest {
         assertThat(updated.getIconUrl()).isEqualTo("https://cdn.example.com/new-icon.svg");
         assertThat(updated.getAppUrl()).isEqualTo("https://renamed.example.com");
         assertThat(updated.getGithubUrl()).isEqualTo("https://github.com/example-org/renamed");
+        assertThat(updated.getDeployBranch()).isEqualTo("main");
         assertThat(updated.getOwner()).isEqualTo("Platform Team");
         assertThat(updated.getCategory()).isEqualTo("RAG");
         assertThat(updated.getTechnologies()).containsExactly("Java", "Spring Boot");
@@ -284,7 +344,7 @@ class PocServiceTest {
         when(pocRepository.findById(ID_99)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> pocService.update(ID_99, new PocFields(
-                "n", "d", null, null, null, null, null, null, null, null, null, null, null)))
+                "n", "d", null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(PocNotFoundException.class);
     }
 

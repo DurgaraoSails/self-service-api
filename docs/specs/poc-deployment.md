@@ -192,6 +192,44 @@ automatic now, no manual entry.
 
 ## Changelog
 
+- 2026-09-09 — **The deploy branch is chosen from the repository's real branches, not typed.**
+  `GET /pocs/branches?githubUrl=` (admin only) proxies GitHub's branch list with the platform's own
+  token and returns the names plus the repository's `defaultBranch`, so the admin form's empty
+  choice can name the branch it actually resolves to. Keyed on the repository URL rather than a POC
+  id because the create form needs it before a POC exists; the settings page passes the URL of the
+  POC it already loaded, so one endpoint serves both. Read live on each request — there is nothing
+  cached to go stale, and a branch pushed a minute ago should be selectable.
+
+  The read is paged (`per_page=100`, up to 5 pages) rather than assumed to fit one response, since a
+  repository with more branches would otherwise lose everything past the first hundred from the only
+  UI that offers a choice. Past the cap the response says `truncated`, and the form keeps manual
+  entry reachable — as it also does when the branch list cannot be read at all, which a typo'd URL
+  and a repository the token cannot see both look like. A branch already stored on a POC stays in
+  the options even when GitHub no longer lists it, so opening the form on such a POC cannot quietly
+  reset it to the repository default on the next save.
+
+- 2026-09-09 — **The branch a version is cut from is now a property of the POC.** `pocs` gains
+  `deploy_branch` (migration `V12`), settable from the admin form via `deployBranch` on
+  `CreatePocRequest`/`UpdatePocRequest` and readable on `PocResponse`. `GitHubService` resolves the
+  commit to tag in three steps, most specific first: the POC's own `deployBranch`, then
+  `pipeline.deploy-branch` as a platform-wide fallback for POCs that name none, then the
+  repository's own default branch. Null and blank are the same stored value — both mean "follow the
+  default branch" — so every POC predating the column keeps deploying exactly as it did.
+
+  This replaces a platform-wide pin as the primary mechanism. Which branch a repository releases
+  from is a fact about that repository: `pipeline.deploy-branch=main` was correct for the POCs whose
+  default already was `main` and made every other POC undeployable, with no per-POC override and no
+  remedy short of renaming branches in repositories this platform does not own. The pin survives for
+  the case it is actually good at — a deployment where every unconfigured POC must release from one
+  branch name — and is now unset in both `application-prod.yaml` and `application-local.yaml`.
+
+  A branch name is validated where it is supplied rather than where it is used: `GitBranchNames`
+  holds git's ref-name rules, `PocService` returns `400 INVALID_DEPLOY_BRANCH` while the admin who
+  typed it is still there, and `PipelineProperties` applies the same rules to the pin at startup.
+  Without that, a bad name surfaces as a failed deployment row minutes or days later. The rules also
+  cover this system's own hazard: the name is concatenated into the GitHub URI path (a branch passed
+  as a URI variable has its "/" encoded to %2F, so `release/2024` would 404 as though it did not
+  exist), which makes ".." and braces unsafe in a way plain git does not care about.
 - 2026-09-09 — Version numbering here is superseded by `poc-tag-driven-deployment.md`, which makes
   the repository's tags the source of truth. Reason: numbering allocated from this platform's own
   rows never consulted git, so any repository with pre-existing tags was undeployable — the pipeline
