@@ -3,7 +3,9 @@ package com.sails.ai.selfserviceapi.deploypipeline.github;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,6 +37,14 @@ public class GitHubService {
     private static final Pattern REPO_URL_PATTERN =
             Pattern.compile("github\\.com[/:]([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)"
                     + "/([A-Za-z0-9_-]+)(\\.git)?/?$");
+
+    /**
+     * GitHub's own maximum for this endpoint, and the cap on how many pages of it to read. 500
+     * branches is far past what any POC repository has; the point of the cap is that one
+     * pathological repository cannot make an admin opening a dropdown wait on fifty round trips.
+     */
+    private static final int BRANCH_PAGE_SIZE = 100;
+    private static final int MAX_BRANCH_PAGES = 5;
 
     private final RestClient gitHubRestClient;
     private final PipelineProperties properties;
@@ -143,6 +153,40 @@ public class GitHubService {
     private static boolean isNotFound(GitHubApiException e) {
         return e.getCause() instanceof RestClientResponseException cause
                 && cause.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Every branch in the repository, for the admin form's deploy-branch picker. Alphabetical, as
+     * GitHub returns them — which branch is the default is a separate question, answered by
+     * {@link #getDefaultBranch}.
+     *
+     * <p>Paged rather than assumed to fit: the endpoint returns at most 100 at a time, so a
+     * repository with more would otherwise silently lose the branches past the first hundred from
+     * the only UI that offers a choice. The read stops early on a short page (the normal case, one
+     * call) and gives up at {@link #MAX_BRANCH_PAGES}, reporting {@code truncated} so the caller can
+     * say so rather than present a partial list as complete.
+     */
+    public GitHubBranches listBranches(GitHubRepoRef repo) {
+        List<String> names = new ArrayList<>();
+
+        for (int page = 1; page <= MAX_BRANCH_PAGES; page++) {
+            BranchRef[] batch = get("/repos/{owner}/{repo}/branches?per_page={perPage}&page={page}",
+                    BranchRef[].class, repo.owner(), repo.name(), BRANCH_PAGE_SIZE, page);
+
+            if (batch == null || batch.length == 0) {
+                return new GitHubBranches(names, false);
+            }
+            for (BranchRef branch : batch) {
+                names.add(branch.name());
+            }
+            // A short page is the last page. A full one on the final iteration means there may be
+            // more we chose not to read — the only case that is genuinely truncated.
+            if (batch.length < BRANCH_PAGE_SIZE) {
+                return new GitHubBranches(names, false);
+            }
+        }
+
+        return new GitHubBranches(names, true);
     }
 
     /**
@@ -350,6 +394,9 @@ public class GitHubService {
      * (a repo that could not be read would have 404'd) and admin is more than a tag requires.
      */
     private record Permissions(boolean push) {
+    }
+
+    private record BranchRef(String name) {
     }
 
     private record GitRefResponse(String ref, GitObject object) {

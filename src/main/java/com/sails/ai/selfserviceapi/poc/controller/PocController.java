@@ -1,7 +1,11 @@
 package com.sails.ai.selfserviceapi.poc.controller;
 
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubBranches;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.generated.api.PocApi;
 import com.sails.ai.selfserviceapi.generated.model.CreatePocRequest;
+import com.sails.ai.selfserviceapi.generated.model.PocBranchesResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocCategoryResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocSummaryResponse;
@@ -26,10 +30,28 @@ public class PocController implements PocApi {
 
     private final PocService pocService;
     private final PocDeploymentService pocDeploymentService;
+    private final GitHubService gitHubService;
 
-    public PocController(PocService pocService, PocDeploymentService pocDeploymentService) {
+    public PocController(PocService pocService, PocDeploymentService pocDeploymentService,
+                          GitHubService gitHubService) {
         this.pocService = pocService;
         this.pocDeploymentService = pocDeploymentService;
+        this.gitHubService = gitHubService;
+    }
+
+    /**
+     * Keyed on the repository URL rather than a POC id because the create form needs this before a
+     * POC exists — the admin types a GitHub URL and then picks a branch from it. The settings page
+     * passes the URL of the POC it already loaded, so one endpoint serves both.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PocBranchesResponse> getPocBranches(String githubUrl) {
+        GitHubRepoRef repo = gitHubService.parseRepoUrl(githubUrl);
+        GitHubBranches branches = gitHubService.listBranches(repo);
+        return ResponseEntity.ok(new PocBranchesResponse(branches.names())
+                .defaultBranch(gitHubService.getDefaultBranch(repo))
+                .truncated(branches.truncated()));
     }
 
     @Override

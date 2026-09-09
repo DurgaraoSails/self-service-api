@@ -112,6 +112,37 @@ PocSummaryResponse:
       example: null
 
 
+PocBranchesResponse:
+  type: object
+  description: >
+    The branches of a POC's repository, for the admin form's deploy-branch picker. Read live from
+    GitHub on each request - there is nothing stored to go stale, and a branch created a minute ago
+    should be selectable.
+  required:
+    - branches
+  properties:
+    branches:
+      type: array
+      description: Branch names, alphabetical, as GitHub returns them.
+      items:
+        type: string
+      example: ["develop", "main", "release/2024"]
+
+    defaultBranch:
+      type: string
+      nullable: true
+      description: >
+        The repository's own default branch - what a POC with no deployBranch deploys from. Returned
+        so the form can label the empty choice rather than just calling it "default".
+      example: "main"
+
+    truncated:
+      type: boolean
+      description: >
+        The repository has more branches than were read (the API caps the read at 500). The form
+        keeps manual entry available when this is true, so a branch past the cap is still reachable.
+      example: false
+
 PocCategoryResponse:
   type: object
   description: A category POCs can be classified under, for the admin add/edit form's dropdown.

@@ -353,6 +353,93 @@ class GitHubServiceTest {
         server.verify();
     }
 
+    // --- listing branches for the deploy-branch picker ---------------------------------------
+
+    private static String branchPage(int count, int startingAt) {
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                json.append(',');
+            }
+            json.append("{\"name\":\"branch-").append(startingAt + i).append("\"}");
+        }
+        return json.append(']').toString();
+    }
+
+    private static String branchesUrl(int page) {
+        return BASE + "/repos/DurgaraoSails/dummy-poc/branches?per_page=100&page=" + page;
+    }
+
+    /** The ordinary repository: one call, a short page, done. */
+    @Test
+    void readsEveryBranchInASingleCallWhenTheyFitOnOnePage() {
+        server.expect(requestTo(branchesUrl(1))).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(
+                        "[{\"name\":\"develop\"},{\"name\":\"main\"},{\"name\":\"release/2024\"}]",
+                        MediaType.APPLICATION_JSON));
+
+        GitHubBranches branches = gitHubService.listBranches(REPO);
+
+        org.assertj.core.api.Assertions.assertThat(branches.names())
+                .containsExactly("develop", "main", "release/2024");
+        org.assertj.core.api.Assertions.assertThat(branches.truncated()).isFalse();
+
+        server.verify();
+    }
+
+    /**
+     * GitHub returns at most 100 at a time, so a repository with more would silently lose every
+     * branch past the first hundred from the only UI that offers a choice.
+     */
+    @Test
+    void keepsPagingWhileEachPageComesBackFull() {
+        server.expect(requestTo(branchesUrl(1))).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(branchPage(100, 1), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(branchesUrl(2))).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(branchPage(7, 101), MediaType.APPLICATION_JSON));
+
+        GitHubBranches branches = gitHubService.listBranches(REPO);
+
+        org.assertj.core.api.Assertions.assertThat(branches.names()).hasSize(107);
+        org.assertj.core.api.Assertions.assertThat(branches.names().get(106)).isEqualTo("branch-107");
+        org.assertj.core.api.Assertions.assertThat(branches.truncated()).isFalse();
+
+        server.verify();
+    }
+
+    /**
+     * A repository big enough to hit the page cap reports truncated, so the form can keep manual
+     * entry open rather than presenting a partial list as if it were the whole choice.
+     */
+    @Test
+    void stopsAtThePageCapAndSaysTheListIsIncomplete() {
+        for (int page = 1; page <= 5; page++) {
+            server.expect(requestTo(branchesUrl(page))).andExpect(method(HttpMethod.GET))
+                    .andRespond(withSuccess(branchPage(100, 1 + (page - 1) * 100), MediaType.APPLICATION_JSON));
+        }
+
+        GitHubBranches branches = gitHubService.listBranches(REPO);
+
+        org.assertj.core.api.Assertions.assertThat(branches.names()).hasSize(500);
+        org.assertj.core.api.Assertions.assertThat(branches.truncated()).isTrue();
+
+        server.verify();
+    }
+
+    /** A repository with no branches at all is empty, not truncated. */
+    @Test
+    void reportsAnEmptyRepositoryAsEmptyRatherThanTruncated() {
+        server.expect(requestTo(branchesUrl(1))).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        GitHubBranches branches = gitHubService.listBranches(REPO);
+
+        org.assertj.core.api.Assertions.assertThat(branches.names()).isEmpty();
+        org.assertj.core.api.Assertions.assertThat(branches.truncated()).isFalse();
+
+        server.verify();
+    }
+
     // --- what parseRepoUrl accepts ----------------------------------------------------------
 
     /**
