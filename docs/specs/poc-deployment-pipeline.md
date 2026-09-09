@@ -133,6 +133,19 @@ All new/changed endpoints live under `/pocs`, same `PocApi`-generating tag as `p
 
 ## Changelog
 
+- 2026-09-09 — **Two follow-ups to the Cloud-Build-only cutover, both cases where a configuration
+  the app accepts can no longer work.** First, `PipelineProperties.isSkip()` now treats an absent
+  `pipeline.executor` as skip. `SkippingPipelineExecutor` claims that case via `matchIfMissing`, but
+  `isSkip()` compared against `"skip"` only, so with the property unset the two disagreed: the
+  context started, `PocDeploymentService` and `PipelineRunner` both took the real deploy path, a
+  release tag was written to the POC's repository, and only then did the skipping executor throw —
+  leaving a stray tag that blocks reusing that version label. Second, `pipeline.build-service-account`
+  is now required when `pipeline.executor=cloud-build`. Sourcing the clone token from Secret Manager
+  unconditionally made the build's identity load-bearing: only `self-service-builder` holds
+  `secretAccessor` on `github-token-<env>`, so a blank account runs the build as Cloud Build's own
+  default and every clone fails resolving `GITHUB_TOKEN`. That was already true and already written
+  down in `application.yaml`'s comment — it is now a startup failure naming the property, the same
+  treatment `pipeline.executor` got.
 - 2026-09-08 — **Cloud Build is now the only executor.** The `local` executor and its
   `ProcessRunner`/`LocalBuildException` support were deleted, along with `pipeline.workspace-dir`
   and `pipeline.command-timeout`, which existed only for it. It had already drifted from the path
