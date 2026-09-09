@@ -8,4 +8,9 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 public interface UserRepository extends JpaRepository<User, String>, JpaSpecificationExecutor<User> {
 
     Optional<User> findByEmail(String email);
+
+    @org.springframework.data.jpa.repository.Query("select u from User u where lower(trim(u.email)) = :email")
+    java.util.List<User> findByNormalizedEmail(@org.springframework.data.repository.query.Param("email") String email);
+
+    Optional<User> findByMicrosoftTenantIdAndMicrosoftObjectId(String tenantId, String objectId);
 }

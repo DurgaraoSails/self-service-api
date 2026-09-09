@@ -1,5 +1,10 @@
 package com.sails.ai.selfserviceapi.auth.service;
 
+import com.sails.ai.selfserviceapi.auth.microsoft.EmployeeAccess;
+import com.sails.ai.selfserviceapi.common.exception.ApiException;
+import com.sails.ai.selfserviceapi.user.entity.UserStatus;
+import org.springframework.http.HttpStatus;
+
 import com.sails.ai.selfserviceapi.auth.entity.RefreshToken;
 import com.sails.ai.selfserviceapi.security.JwtService;
 import com.sails.ai.selfserviceapi.user.entity.User;
@@ -28,7 +33,16 @@ public class AuthService {
      */
     @Transactional
     public LoginResult issueTokensForVerifiedEmail(String email) {
+        EmployeeAccess.requireExternal(email);
         User user = userService.getActiveByEmail(email);
+        EmployeeAccess.requireExternal(user);
+        return issueTokensForAuthenticatedUser(user);
+    }
+
+    /** Internal seam; callers must authenticate the identity before invoking this method. */
+    @Transactional
+    public LoginResult issueTokensForAuthenticatedUser(User user) {
+        requireActive(user);
         boolean firstLogin = user.isFirstLogin();
         userService.clearFirstLoginFlag(user);
         return new LoginResult(user, buildPair(user), firstLogin);
@@ -38,6 +52,7 @@ public class AuthService {
     public TokenPair refresh(String rawRefreshToken) {
         RefreshToken oldToken = refreshTokenService.validateAndConsume(rawRefreshToken);
         User user = userService.getById(oldToken.getUserId());
+        requireActive(user);
 
         RefreshTokenService.Issued issued = refreshTokenService.issue(user);
         refreshTokenService.rotate(oldToken, issued.entity());
@@ -63,5 +78,11 @@ public class AuthService {
                 "Bearer",
                 jwtService.accessTokenTtlSeconds()
         );
+    }
+
+    private void requireActive(User user) {
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_INACTIVE", "This account cannot sign in.");
+        }
     }
 }

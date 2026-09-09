@@ -19,6 +19,7 @@ public final class CustomerResponseMapper {
                 user.getCompanyName(), UserStatus.valueOf(user.getStatus().name()), user.getRoles(),
                 toUtcOffset(user.getCreatedAt()))
                 .jobTitle(user.getJobTitle())
+                .accountType(com.sails.ai.selfserviceapi.generated.model.AccountType.valueOf(user.getAccountType().name()))
                 .country(user.getCountry())
                 .trialStartDate(toUtcOffset(user.getTrialStartDate()))
                 .trialEndDate(toUtcOffset(user.getTrialEndDate()))

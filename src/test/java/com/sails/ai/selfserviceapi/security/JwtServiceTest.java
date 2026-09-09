@@ -53,6 +53,21 @@ class JwtServiceTest {
     }
 
     @Test
+    void employeeTokensNeverCarryATrialOrGainAdminPrivileges() {
+        User employee = baseUser();
+        employee.setAccountType(com.sails.ai.selfserviceapi.user.entity.AccountType.INTERNAL);
+        employee.setRoles(List.of("USER"));
+        employee.setTrialEndDate(Instant.now().minusSeconds(60));
+        Claims portal = parse(jwtService.issueAccessToken(employee));
+        Claims poc = parse(jwtService.issuePocToken(employee, poc()));
+        assertThat(portal.get("accountType")).isEqualTo("INTERNAL");
+        assertThat(portal.get("trialEndDate")).isNull();
+        assertThat(portal.get("roles", List.class)).containsExactly("USER");
+        assertThat(poc.get("trialEndDate")).isNull();
+        assertThat(poc.get("roles")).isNull();
+    }
+
+    @Test
     void omitsTrialEndDateClaimWhenUserHasNoTrialEndDate() {
         User user = baseUser();
         user.setTrialEndDate(null);

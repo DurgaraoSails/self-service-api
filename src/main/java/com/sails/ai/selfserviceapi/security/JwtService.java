@@ -34,6 +34,7 @@ public class JwtService {
                 .subject(user.getId())
                 .claim("email", user.getEmail())
                 .claim("roles", user.getRoles())
+                .claim("accountType", user.getAccountType().name())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiry))
                 .id(UUID.randomUUID().toString());
@@ -42,7 +43,7 @@ public class JwtService {
             builder.claim("tenantId", user.getTenantId());
         }
 
-        if (user.getTrialEndDate() != null) {
+        if (user.getAccountType() != com.sails.ai.selfserviceapi.user.entity.AccountType.INTERNAL && user.getTrialEndDate() != null) {
             builder.claim("trialEndDate", user.getTrialEndDate().getEpochSecond());
         }
 
@@ -83,7 +84,7 @@ public class JwtService {
                 .expiration(Date.from(expiry))
                 .id(UUID.randomUUID().toString());
 
-        if (user.getTrialEndDate() != null) {
+        if (user.getAccountType() != com.sails.ai.selfserviceapi.user.entity.AccountType.INTERNAL && user.getTrialEndDate() != null) {
             builder.claim("trialEndDate", user.getTrialEndDate().getEpochSecond());
         }
 

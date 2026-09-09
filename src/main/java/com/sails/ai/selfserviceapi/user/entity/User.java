@@ -63,6 +63,16 @@ public class User {
     @Column(name = "tenant_id", length = 100)
     private String tenantId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_type", nullable = false, length = 20)
+    private AccountType accountType = AccountType.EXTERNAL;
+
+    @Column(name = "microsoft_tenant_id", length = 36)
+    private String microsoftTenantId;
+
+    @Column(name = "microsoft_object_id", length = 36)
+    private String microsoftObjectId;
+
     @Column(name = "trial_start_date")
     private Instant trialStartDate;
 
