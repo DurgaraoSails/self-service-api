@@ -4,6 +4,8 @@ Contract snapshot: 8 September 2026. Portal bridge protocol: **v1**.
 
 Give this entire file to the developer or coding agent working in the POC repository. It contains the integration requirements; access to the platform repositories is helpful but is not required to understand the wire contract. Example domains and tokens are placeholders, not working credentials.
 
+This is the **full** contract, including the POC-scoped JWT and the portal bridge. A team that only wants its POC hosted and launchable — no authentication, no bridge, no file or database integration — has a shorter path: the in-portal onboarding guide at `/docs/host-poc`, specified in `docs/specs/poc-onboarding-check.md` (the readiness checker) and in `self-service-portal` at `docs/specs/poc-onboarding-guide-page.md` (the guide itself). Start there, and come back to this file when the POC needs to know who its user is.
+
 ## 1. Instructions to the implementing coding agent
 
 Adapt the existing POC to the SAILS self-service platform. Implement the changes in the POC repository, preserving its business functionality and existing framework unless a change is necessary for integration. Do not stop at a plan or at adding frontend token decoding: complete frontend, backend, runtime configuration, container packaging, and relevant tests.

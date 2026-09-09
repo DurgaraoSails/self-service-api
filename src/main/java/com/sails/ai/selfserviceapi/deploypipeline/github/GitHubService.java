@@ -156,6 +156,23 @@ public class GitHubService {
      * what a later reader deletes as a redundant round trip.
      */
     public void requirePushAccess(GitHubRepoRef repo) {
+        RepoAccess access = checkPushAccess(repo);
+        if (access != RepoAccess.OK) {
+            throw new GitHubApiException(access.describe(repo));
+        }
+    }
+
+    /**
+     * The same three preconditions {@link #requirePushAccess} enforces, reported instead of
+     * thrown, so the onboarding checker can list every problem with a repository in one pass
+     * rather than surfacing whichever one happened to throw first.
+     *
+     * <p>Split out rather than duplicated deliberately: a second implementation of "can we deploy
+     * this repo" is exactly how a self-service checker starts telling teams their repo is fine
+     * while the pipeline refuses it. The messages live on {@link RepoAccess}, so both callers say
+     * the same thing.
+     */
+    public RepoAccess checkPushAccess(GitHubRepoRef repo) {
         requireToken();
 
         RepoInfo info;
@@ -168,9 +185,10 @@ public class GitHubService {
             if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
                 // 404 rather than 403 is also what GitHub returns for a private repo the token
                 // cannot see — it does not confirm existence to a caller who may not look.
-                throw new GitHubApiException("GitHub repository " + repo + " was not found, or is not visible to the "
-                        + "configured token. Check the POC's GitHub URL for a typo, and that the token has access "
-                        + "if the repository is private.", e);
+                // Logged because returning an enum drops GitHub's own response body, and that body
+                // is the only thing that separates "wrong URL" from "token cannot see it".
+                log.debug("GitHub reported 404 for {}: {}", repo, e.getResponseBodyAsString());
+                return RepoAccess.NOT_FOUND;
             }
             throw wrap(e, "read repository " + repo);
         }
@@ -179,15 +197,40 @@ public class GitHubService {
         // so it still reports push: true while rejecting every write. Reporting it as a permission
         // problem would send an admin to change a role that was never the cause.
         if (info != null && Boolean.TRUE.equals(info.archived())) {
-            throw new GitHubApiException("GitHub repository " + repo + " is archived, so it is read-only and no "
-                    + "release tag can be created on it. Unarchive it, or point this POC at an active repository.");
+            return RepoAccess.ARCHIVED;
         }
 
         if (info == null || info.permissions() == null || !info.permissions().push()) {
-            throw new GitHubApiException("The configured GitHub token cannot push to " + repo + ", so it cannot "
-                    + "create the release tag this deploy needs. Note that a public repository is readable by "
-                    + "anyone but still only writable by its collaborators — point this POC at a repository the "
-                    + "token has write access to, or configure a token that does.");
+            return RepoAccess.NO_PUSH;
+        }
+
+        return RepoAccess.OK;
+    }
+
+    /** Why a repository can or cannot be deployed, with the one message both callers use. */
+    public enum RepoAccess {
+
+        OK,
+
+        NOT_FOUND,
+
+        ARCHIVED,
+
+        NO_PUSH;
+
+        public String describe(GitHubRepoRef repo) {
+            return switch (this) {
+                case OK -> "GitHub repository " + repo + " is reachable and writable.";
+                case NOT_FOUND -> "GitHub repository " + repo + " was not found, or is not visible to the "
+                        + "configured token. Check the POC's GitHub URL for a typo, and that the token has access "
+                        + "if the repository is private.";
+                case ARCHIVED -> "GitHub repository " + repo + " is archived, so it is read-only and no "
+                        + "release tag can be created on it. Unarchive it, or point this POC at an active repository.";
+                case NO_PUSH -> "The configured GitHub token cannot push to " + repo + ", so it cannot "
+                        + "create the release tag this deploy needs. Note that a public repository is readable by "
+                        + "anyone but still only writable by its collaborators — point this POC at a repository the "
+                        + "token has write access to, or configure a token that does.";
+            };
         }
     }
 
