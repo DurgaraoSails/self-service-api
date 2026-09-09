@@ -39,7 +39,9 @@ public class PocOnboardingController implements OnboardingApi {
         }
 
         OnboardingCheckResult result = checkService.check(
-                pocOnboardingCheckRequest.getGithubUrl(), pocOnboardingCheckRequest.getSlug());
+                pocOnboardingCheckRequest.getGithubUrl(),
+                pocOnboardingCheckRequest.getDeployBranch(),
+                pocOnboardingCheckRequest.getSlug());
 
         return ResponseEntity.ok(toResponse(result));
     }
