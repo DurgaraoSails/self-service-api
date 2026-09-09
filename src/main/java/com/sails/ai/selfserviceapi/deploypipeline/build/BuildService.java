@@ -244,8 +244,10 @@ public class BuildService {
     }
 
     /**
-     * Blank means "run as Cloud Build's own default service account". That is what a local
-     * account without an iam.serviceAccountUser binding on self-service-builder must use.
+     * Always a custom account in practice: {@code PipelineProperties} refuses to start under
+     * cloud-build without one, because Cloud Build's own default service account cannot read the
+     * github-token secret {@link #availableSecrets()} requires. The blank branch survives only for
+     * the skip executor, which never submits a build at all.
      */
     private String buildServiceAccount() {
         return properties.usesCustomBuildServiceAccount()

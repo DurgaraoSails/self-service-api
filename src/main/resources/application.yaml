@@ -132,8 +132,10 @@ gcp:
 
 pipeline:
   # 'cloud-build' submits every build and deploy to Cloud Build; 'skip' does none of it and reports
-  # each request SKIPPED, for running the app with no GCP account at all. Nothing else is accepted —
-  # a leftover 'local' (that executor was removed) fails at startup rather than silently skipping.
+  # each request SKIPPED, for running the app with no GCP account at all. Unset is also skip (the
+  # skipping executor claims that case, and isSkip() agrees with it). Nothing else is accepted — a
+  # leftover 'local' (that executor was removed), or a present-but-empty value, fails at startup
+  # rather than silently skipping.
   executor: ${PIPELINE_EXECUTOR:skip}
 
   # This app's own GitHub credential, for REST API calls only: read a branch head, read poc.yaml,
@@ -144,9 +146,11 @@ pipeline:
   # locally.
   github-token: ${GITHUB_TOKEN:}
 
-  # Identity the build runs as. Must be the account holding secretAccessor on the github-token
-  # secret (self-service-builder, per self-service-terraform) — blank would run builds as Cloud
-  # Build's own default service account, which holds no such grant, and every clone would fail.
+  # Identity the build runs as. Required under cloud-build, and must be the account holding
+  # secretAccessor on the github-token secret (self-service-builder, per self-service-terraform):
+  # blank would run builds as Cloud Build's own default service account, which holds no such grant,
+  # and every clone would fail. Blank is therefore refused at startup under cloud-build; it stays
+  # the default here only because 'skip' submits no builds and needs no account.
   build-service-account: ${BUILD_SERVICE_ACCOUNT:}
   grant-api-invoker: ${BUILD_GRANT_API_INVOKER:false}
   allow-unauthenticated: ${BUILD_ALLOW_UNAUTHENTICATED:true}

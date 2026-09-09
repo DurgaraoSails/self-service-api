@@ -38,7 +38,7 @@ class GitHubServiceTest {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
         server = MockRestServiceServer.bindTo(builder).build();
         PipelineProperties properties = new PipelineProperties(
-                "cloud-build", "", "ghp_test", false, false, Duration.ofMinutes(20), Duration.ofSeconds(10), null);
+                "cloud-build", "self-service-builder", "ghp_test", false, false, Duration.ofMinutes(20), Duration.ofSeconds(10), null);
         gitHubService = new GitHubService(builder.build(), properties);
     }
 
@@ -110,7 +110,7 @@ class GitHubServiceTest {
                 .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
                 .build();
         PipelineProperties noToken = new PipelineProperties(
-                "cloud-build", "", "", false, false, Duration.ofMinutes(20), Duration.ofSeconds(10), null);
+                "cloud-build", "self-service-builder", "", false, false, Duration.ofMinutes(20), Duration.ofSeconds(10), null);
 
         assertThatThrownBy(() -> new GitHubService(client, noToken).getDefaultBranch(REPO))
                 .isInstanceOf(GitHubApiException.class)
@@ -135,7 +135,7 @@ class GitHubServiceTest {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
         server = MockRestServiceServer.bindTo(builder).build();
         return new GitHubService(builder.build(), new PipelineProperties(
-                "cloud-build", "", "ghp_test", false, false,
+                "cloud-build", "self-service-builder", "ghp_test", false, false,
                 Duration.ofMinutes(20), Duration.ofSeconds(10), deployBranch));
     }
 
