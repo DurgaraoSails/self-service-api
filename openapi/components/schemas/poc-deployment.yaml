@@ -429,18 +429,29 @@ PocRepoTagResponse:
   type: object
   required:
     - tagName
-    - commitSha
     - isCurrent
+    - inRepository
   properties:
     tagName:
       type: string
       example: "1.0.7"
     commitSha:
       type: string
+      nullable: true
+      description: >
+        Null only for a version that was created but never recorded a commit — i.e. one whose build
+        never reported success. Always set for a tag read from the repository.
       example: "a3f9c2b1e4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9"
     isCurrent:
       type: boolean
       description: This tag's commit equals the deploy branch's head at the last refresh.
+    inRepository:
+      type: boolean
+      description: >
+        True for a tag read from the repository at the last refresh; false for one present only
+        because this POC has a version for it — the tag has since been deleted from GitHub, or has
+        fallen outside the few most recent that are stored. Such a version is still deployable from
+        its existing image, but cannot be rebuilt, and the UI marks it as such.
 
 
 PocDeploymentOverviewResponse:

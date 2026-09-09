@@ -127,13 +127,14 @@ public class PocDeploymentController implements DeploymentApi {
     private List<PocRepoTagResponse> mergeTags(List<PocRepoTag> repoTags, List<PocVersion> versions, String headCommitSha) {
         Map<String, PocRepoTagResponse> byName = new LinkedHashMap<>();
         for (PocRepoTag tag : repoTags) {
-            byName.put(tag.getTagName(), new PocRepoTagResponse(tag.getTagName(), tag.getCommitSha(), tag.isCurrent()));
+            byName.put(tag.getTagName(), new PocRepoTagResponse(tag.getTagName(), tag.isCurrent(), true)
+                    .commitSha(tag.getCommitSha()));
         }
         for (PocVersion version : versions) {
             byName.computeIfAbsent(version.getVersionLabel(), name -> {
                 String sha = version.getCommitSha();
                 boolean current = sha != null && sha.equals(headCommitSha);
-                return new PocRepoTagResponse(name, sha, current);
+                return new PocRepoTagResponse(name, current, false).commitSha(sha);
             });
         }
         return new ArrayList<>(byName.values());
@@ -151,16 +152,24 @@ public class PocDeploymentController implements DeploymentApi {
     }
 
     /**
-     * 404s on a missing POC before scheduling anything — {@code pocService.getById} throws for
-     * that. The actual GitHub read then runs off this request's thread: this always returns 202
-     * before it necessarily completes.
+     * Reads GitHub on this request's thread and only answers once the snapshot is written, so the
+     * caller's next read of {@code deployment-overview} is guaranteed to see it.
+     *
+     * <p>Deliberately synchronous, unlike the refreshes triggered by POC creation and by a finished
+     * deploy. Those are side-effects of something else the admin was doing, so making them wait
+     * would be gratuitous. This one *is* the thing the admin asked for: dispatching it to the async
+     * pool and answering 202 meant the refetch that follows raced the GitHub read and almost always
+     * won, leaving the page showing the same "last refreshed" value it had before — a button that
+     * visibly did nothing. Four GitHub calls is a second or so, which is what the spinner is for.
+     *
+     * <p>404s on a missing POC before doing any of that — {@code pocService.getById} throws.
      */
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> refreshPocRepoStatus(UUID id) {
         Poc poc = pocService.getById(id);
-        pocRepoStatusService.refresh(poc.getId());
-        return ResponseEntity.status(HttpStatus.ACCEPTED).build();
+        pocRepoStatusService.refreshNow(poc);
+        return ResponseEntity.noContent().build();
     }
 
     @Override

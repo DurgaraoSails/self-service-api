@@ -929,10 +929,13 @@ paths:
     post:
       summary: Re-read this POC's repository state from GitHub (admin only)
       description: >
-        Refreshes asynchronously — returns immediately, before GitHub has necessarily been read.
-        Poll GET /pocs/{id}/deployment-overview and watch refreshedAt to see the result. The one
-        endpoint this platform calls to read a repository outside of a build; see
-        docs/specs/poc-tag-driven-deployment.md, "The snapshot, and why it is not a cache."
+        Reads GitHub and writes the snapshot before answering, so a GET
+        /pocs/{id}/deployment-overview issued afterwards is guaranteed to see the new state. Takes
+        as long as four GitHub calls — show progress rather than blocking the page. The refreshes
+        triggered by POC creation and by a finished deploy are asynchronous instead; only this one,
+        which an admin explicitly asked for, waits. The one endpoint this platform calls to read a
+        repository outside of a build; see docs/specs/poc-tag-driven-deployment.md, "The snapshot,
+        and why it is not a cache."
       operationId: refreshPocRepoStatus
       tags:
         - Deployment
@@ -944,8 +947,8 @@ paths:
             type: string
             format: uuid
       responses:
-        '202':
-          description: Refresh triggered
+        '204':
+          description: Repository re-read and the snapshot updated
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
         '403':
