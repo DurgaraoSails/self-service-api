@@ -24,7 +24,7 @@ public class InProcessDeploymentTrigger implements DeploymentTrigger {
     @Override
     public void buildAndDeploy(BuildAndDeployRequest request) {
         pipelineRunner.runBuildAndDeploy(request.deploymentId(), request.pocId(), request.pocSlug(), request.githubUrl(),
-                request.versionLabel(), request.commitSha(), request.manifest());
+                request.versionLabel(), request.commitSha(), request.manifest(), request.createTag());
     }
 
     @Override

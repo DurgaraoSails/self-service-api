@@ -9,6 +9,7 @@ import com.sails.ai.selfserviceapi.common.exception.GlobalExceptionHandler;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
+import com.sails.ai.selfserviceapi.poc.service.PocRepoStatusService;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,10 @@ class PocControllerValidationTest {
 
     @MockitoBean
     private PocDeploymentService pocDeploymentService;
+
+    /** Only here to satisfy PocController's constructor — none of these tests create a POC with a githubUrl. */
+    @MockitoBean
+    private PocRepoStatusService pocRepoStatusService;
 
     @Test
     void rejectsCreateWithoutASlug() throws Exception {

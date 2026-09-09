@@ -13,6 +13,7 @@ import com.sails.ai.selfserviceapi.generated.model.UpdatePocRequest;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
 import com.sails.ai.selfserviceapi.poc.service.PocFields;
+import com.sails.ai.selfserviceapi.poc.service.PocRepoStatusService;
 import com.sails.ai.selfserviceapi.poc.service.PocResponseMapper;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
@@ -30,12 +31,14 @@ public class PocController implements PocApi {
 
     private final PocService pocService;
     private final PocDeploymentService pocDeploymentService;
+    private final PocRepoStatusService pocRepoStatusService;
     private final GitHubService gitHubService;
 
     public PocController(PocService pocService, PocDeploymentService pocDeploymentService,
-                          GitHubService gitHubService) {
+                          PocRepoStatusService pocRepoStatusService, GitHubService gitHubService) {
         this.pocService = pocService;
         this.pocDeploymentService = pocDeploymentService;
+        this.pocRepoStatusService = pocRepoStatusService;
         this.gitHubService = gitHubService;
     }
 
@@ -107,6 +110,12 @@ public class PocController implements PocApi {
                 createPocRequest.getGuideSteps()
         );
         Poc poc = pocService.create(fields);
+        // Fired after create() returns, i.e. after its own transaction has committed — triggering
+        // this from inside that transaction would let the async refresh's read of this POC race
+        // the still-uncommitted insert and silently see nothing.
+        if (poc.getGithubUrl() != null && !poc.getGithubUrl().isBlank()) {
+            pocRepoStatusService.refresh(poc.getId());
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponseWithDeploymentInfo(poc));
     }
 

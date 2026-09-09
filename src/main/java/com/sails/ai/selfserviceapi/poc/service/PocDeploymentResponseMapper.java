@@ -34,8 +34,12 @@ public class PocDeploymentResponseMapper {
 
     public PocVersionResponse toVersionResponse(PocVersion version, boolean isActive, List<PocVersionContainer> containers) {
         PocVersionResponse response = new PocVersionResponse(version.getId(), version.getPocId(), version.getVersionLabel(),
-                version.getMajor(), version.getMinor(), version.getPatch(), isActive, toUtcOffset(version.getCreatedAt()))
-                .containerImage(version.getContainerImage());
+                isActive, toUtcOffset(version.getCreatedAt()))
+                .major(version.getMajor())
+                .minor(version.getMinor())
+                .patch(version.getPatch())
+                .containerImage(version.getContainerImage())
+                .imageAvailable(version.getImageAvailable());
         if (containers != null && !containers.isEmpty()) {
             response.containers(containers.stream().map(this::toVersionContainerResponse).toList());
         }

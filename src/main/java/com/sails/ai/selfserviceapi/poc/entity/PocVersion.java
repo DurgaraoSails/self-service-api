@@ -26,20 +26,37 @@ public class PocVersion {
     @Column(name = "poc_id", nullable = false, updatable = false)
     private UUID pocId;
 
-    @Column(name = "major", nullable = false, updatable = false)
-    private int major;
+    /**
+     * Populated only when {@link #versionLabel} parses as semver, and used only for ordering — a
+     * tag like {@code release-2024} or {@code latest} has no major/minor/patch to store. Boxed
+     * rather than primitive so "not semver" is representable at all.
+     */
+    @Column(name = "major", updatable = false)
+    private Integer major;
 
-    @Column(name = "minor", nullable = false, updatable = false)
-    private int minor;
+    @Column(name = "minor", updatable = false)
+    private Integer minor;
 
-    @Column(name = "patch", nullable = false, updatable = false)
-    private int patch;
+    @Column(name = "patch", updatable = false)
+    private Integer patch;
 
-    @Column(name = "version_label", nullable = false, updatable = false, length = 20)
+    /**
+     * The identity: a git tag name, not a number this platform invents — either one it derived
+     * (e.g. {@code 1.0.7}) or one an admin picked from the repository's existing tags (e.g.
+     * {@code v2.3.0}, {@code release-2024}). See docs/specs/poc-tag-driven-deployment.md.
+     */
+    @Column(name = "version_label", nullable = false, updatable = false, length = 255)
     private String versionLabel;
 
     @Column(name = "container_image", length = 500)
     private String containerImage;
+
+    /** Whether containerImage still resolves in Artifact Registry, as of the last refresh. Null means never checked. */
+    @Column(name = "image_available")
+    private Boolean imageAvailable;
+
+    @Column(name = "image_checked_at")
+    private Instant imageCheckedAt;
 
     /** Commit this version was built from — reported by the pipeline, used for update detection. */
     @Column(name = "commit_sha")

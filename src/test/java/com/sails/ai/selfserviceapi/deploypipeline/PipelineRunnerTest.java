@@ -19,6 +19,7 @@ import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.Resources;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
+import com.sails.ai.selfserviceapi.poc.service.PocRepoStatusService;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -35,9 +36,10 @@ class PipelineRunnerTest {
     private final GitHubService gitHubService = mock(GitHubService.class);
     private final PipelineExecutor executor = mock(PipelineExecutor.class);
     private final PocDeploymentService pocDeploymentService = mock(PocDeploymentService.class);
+    private final PocRepoStatusService pocRepoStatusService = mock(PocRepoStatusService.class);
 
     private final PipelineRunner runner = new PipelineRunner(gitHubService, executor, pocDeploymentService,
-            new PipelineProperties("cloud-build", "self-service-builder", "ghp_token", false, true,
+            pocRepoStatusService, new PipelineProperties("cloud-build", "self-service-builder", "ghp_token", false, true,
                     Duration.ofMinutes(20), Duration.ofSeconds(10), null));
 
     /**
@@ -51,10 +53,11 @@ class PipelineRunnerTest {
         doThrow(new GitHubApiException("The configured GitHub token cannot push to " + REPO))
                 .when(gitHubService).requirePushAccess(REPO);
 
-        runner.runBuildAndDeploy(DEPLOYMENT_ID, POC_ID, "their-poc", GITHUB_URL, "1.0.0", "abc123", manifest());
+        runner.runBuildAndDeploy(DEPLOYMENT_ID, POC_ID, "their-poc", GITHUB_URL, "1.0.0", "abc123", manifest(), true);
 
         verify(gitHubService, never()).createTagIfAbsent(any(), anyString(), anyString());
         verifyNoInteractions(executor);
+        verifyNoInteractions(pocRepoStatusService);
     }
 
     /** The same failure must still be recorded, or the deployment sits in-flight for ever. */
@@ -64,10 +67,34 @@ class PipelineRunnerTest {
         doThrow(new GitHubApiException("The configured GitHub token cannot push to " + REPO))
                 .when(gitHubService).requirePushAccess(REPO);
 
-        runner.runBuildAndDeploy(DEPLOYMENT_ID, POC_ID, "their-poc", GITHUB_URL, "1.0.0", "abc123", manifest());
+        runner.runBuildAndDeploy(DEPLOYMENT_ID, POC_ID, "their-poc", GITHUB_URL, "1.0.0", "abc123", manifest(), true);
 
         verify(pocDeploymentService).reportStatus(eq(DEPLOYMENT_ID), eq("FAILED"), any(), any(), any(), any(),
                 org.mockito.ArgumentMatchers.contains("cannot push to"));
+    }
+
+    // --- deploying an existing tag must not require push access ----------------------------
+
+    /**
+     * The tag is this deploy's input, not its output — see
+     * docs/specs/poc-tag-driven-deployment.md, "Deploying an existing tag must not require push
+     * access." Requiring push access here would defeat the whole point of that path: an admin with
+     * no push access, told to "create the tag yourself, we'll deploy it," could never actually
+     * reach a build.
+     */
+    @Test
+    void skipsThePushAccessCheckAndCreatesNoTagWhenDeployingAnExistingTag() {
+        when(gitHubService.parseRepoUrl(GITHUB_URL)).thenReturn(REPO);
+        when(executor.buildAndPushImages(eq(REPO), eq("v2.3.0"), eq("their-poc"), any()))
+                .thenReturn(Map.of("app", "img:v2.3.0"));
+        when(executor.deploy(eq("their-poc"), any(), any())).thenReturn("https://their-poc.example.com");
+
+        runner.runBuildAndDeploy(DEPLOYMENT_ID, POC_ID, "their-poc", GITHUB_URL, "v2.3.0", "abc123", manifest(), false);
+
+        verify(gitHubService, never()).requirePushAccess(any());
+        verify(gitHubService, never()).createTagIfAbsent(any(), anyString(), anyString());
+        verify(executor).buildAndPushImages(REPO, "v2.3.0", "their-poc", manifest());
+        verify(pocRepoStatusService).refresh(POC_ID);
     }
 
     // --- an unconfigured pipeline must not reach GitHub at all ------------------------------
@@ -81,10 +108,10 @@ class PipelineRunnerTest {
     @Test
     void writesNoTagWhenNoExecutorIsConfiguredAtAll() {
         PipelineRunner unconfigured = new PipelineRunner(gitHubService, executor, pocDeploymentService,
-                new PipelineProperties(null, null, "ghp_token", false, true,
+                pocRepoStatusService, new PipelineProperties(null, null, "ghp_token", false, true,
                         Duration.ofMinutes(20), Duration.ofSeconds(10), null));
 
-        unconfigured.runBuildAndDeploy(DEPLOYMENT_ID, POC_ID, "their-poc", GITHUB_URL, "1.0.0", "abc123", manifest());
+        unconfigured.runBuildAndDeploy(DEPLOYMENT_ID, POC_ID, "their-poc", GITHUB_URL, "1.0.0", "abc123", manifest(), true);
 
         verifyNoInteractions(gitHubService);
         verifyNoInteractions(executor);

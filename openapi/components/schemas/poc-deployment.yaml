@@ -1,13 +1,14 @@
 PocVersionResponse:
   type: object
-  description: One version ever built for a POC. Immutable once containerImage is set.
+  description: >
+    One version ever built for a POC. Immutable once containerImage is set. The identity is
+    versionLabel — a git tag name, either derived by the platform (e.g. "1.2.4") or picked by an
+    admin from the repository's own existing tags (e.g. "v2.3.0", "release-2024"). See
+    docs/specs/poc-tag-driven-deployment.md.
   required:
     - id
     - pocId
     - versionLabel
-    - major
-    - minor
-    - patch
     - isActive
     - createdAt
   properties:
@@ -23,19 +24,23 @@ PocVersionResponse:
 
     versionLabel:
       type: string
-      maxLength: 20
+      maxLength: 255
       example: "1.2.4"
 
     major:
       type: integer
+      nullable: true
+      description: Populated only when versionLabel parses as semver; used only for ordering.
       example: 1
 
     minor:
       type: integer
+      nullable: true
       example: 2
 
     patch:
       type: integer
+      nullable: true
       example: 4
 
     containerImage:
@@ -49,6 +54,14 @@ PocVersionResponse:
       type: boolean
       description: True if this is the POC's currently deployed version.
       example: true
+
+    imageAvailable:
+      type: boolean
+      nullable: true
+      description: >
+        Whether containerImage still resolves in Artifact Registry, as of the last repository
+        refresh. Null means never checked (e.g. no containerImage yet). Used to grey out a
+        rollback that would fail inside Cloud Build with an obscure "image not found".
 
     createdAt:
       type: string
@@ -352,6 +365,117 @@ PocManifestPreviewResponse:
       type: array
       items:
         $ref: '#/PocManifestPreviewContainer'
+
+
+DeployNewVersionRequest:
+  type: object
+  description: >
+    Optional body for POST /pocs/{id}/deploy. Omitted or with tag absent: the platform derives the
+    next tag name from the repository's own tags and creates it — today's existing behaviour. With
+    tag set: deploys that already-existing tag directly, creating nothing and requiring only read
+    access — see docs/specs/poc-tag-driven-deployment.md, "Deploying an existing tag must not
+    require push access."
+  properties:
+    tag:
+      type: string
+      nullable: true
+      description: An existing tag name from GET /pocs/{id}/deployment-overview's tags list.
+      example: "v2.3.0"
+
+
+PocRepoStatusResponse:
+  type: object
+  description: >
+    A POC's repository state as of the last explicit refresh — never fetched from GitHub on this
+    response's own request. Absent entirely if no refresh has ever completed (e.g. immediately
+    after creating a POC, before the async post-create refresh finishes).
+  required:
+    - canCreateTags
+  properties:
+    defaultBranch:
+      type: string
+      nullable: true
+    deployBranch:
+      type: string
+      nullable: true
+      description: The branch actually used, after this POC's own deployBranch and pipeline.deploy-branch are applied.
+    headCommitSha:
+      type: string
+      nullable: true
+    canCreateTags:
+      type: boolean
+      nullable: true
+      description: >
+        A cached UI hint only, never an enforcement point — the pipeline re-checks push access at
+        deploy time. Null means this has never successfully been determined.
+    archived:
+      type: boolean
+      nullable: true
+    visible:
+      type: boolean
+      nullable: true
+      description: False covers both "not found" and a private repository the configured token cannot see.
+    refreshedAt:
+      type: string
+      format: date-time
+      nullable: true
+    refreshError:
+      type: string
+      nullable: true
+      description: Null on success. Set instead of clearing the rest of this object, so a failed refresh is distinguishable from a repository with no tags.
+
+
+PocRepoTagResponse:
+  type: object
+  required:
+    - tagName
+    - commitSha
+    - isCurrent
+  properties:
+    tagName:
+      type: string
+      example: "1.0.7"
+    commitSha:
+      type: string
+      example: "a3f9c2b1e4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9"
+    isCurrent:
+      type: boolean
+      description: This tag's commit equals the deploy branch's head at the last refresh.
+
+
+PocDeploymentOverviewResponse:
+  type: object
+  description: >
+    Everything the Deployment tab renders, in one round trip off the database with no GitHub call —
+    replaces separately fetching the POC, its versions, its deployments and a manifest preview.
+    See docs/specs/poc-tag-driven-deployment.md, "API Surface."
+  required:
+    - githubUrl
+    - tags
+    - versions
+    - deployments
+  properties:
+    githubUrl:
+      type: string
+      nullable: true
+    slug:
+      type: string
+      nullable: true
+    repoStatus:
+      $ref: '#/PocRepoStatusResponse'
+    tags:
+      type: array
+      description: The union of the repository's own recent tags and every tag this POC has a built or attempted version for, deduped by name.
+      items:
+        $ref: '#/PocRepoTagResponse'
+    versions:
+      type: array
+      items:
+        $ref: '#/PocVersionResponse'
+    deployments:
+      type: array
+      items:
+        $ref: '#/PocDeploymentResponse'
 
 
 PocManifestPreviewContainer:

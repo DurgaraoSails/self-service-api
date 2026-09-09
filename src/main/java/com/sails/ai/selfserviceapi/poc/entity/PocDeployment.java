@@ -32,6 +32,14 @@ public class PocDeployment {
     @Column(name = "kind", nullable = false, length = 20, updatable = false)
     private String kind;
 
+    /**
+     * BUILD_AND_DEPLOY only: true creates {@code versionLabel} as a new tag, false deploys a tag
+     * that already exists. A retry must repeat the same path — see the migration that added this
+     * column, and {@code PocDeploymentService.retryDeployment}.
+     */
+    @Column(name = "create_tag", nullable = false, updatable = false)
+    private boolean createTag = true;
+
     @Column(name = "status", nullable = false, length = 20)
     private String status = "PENDING";
 

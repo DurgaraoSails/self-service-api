@@ -843,9 +843,97 @@ paths:
     post:
       summary: Deploy a new version of a POC, building from its githubUrl (admin only)
       description: >
-        Allocates the next version number, records a PENDING deployment, and triggers the (not yet
-        built) pipeline. Poll GET /pocs/deployments/{deploymentId} for progress.
+        With no body, or tag absent: derives the next tag name from the repository's own tags,
+        creates it, and builds from it — today's existing behaviour. With tag set: builds and
+        deploys that already-existing tag directly, creating nothing and requiring only read
+        access. Either way, records a PENDING deployment and triggers the pipeline; poll
+        GET /pocs/deployments/{deploymentId} for progress.
       operationId: deployNewVersion
+      tags:
+        - Deployment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/poc-deployment.yaml#/DeployNewVersionRequest'
+      responses:
+        '202':
+          description: Deployment triggered
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc-deployment.yaml#/PocDeploymentResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          description: >
+            The repository's tags (and this POC's own version history) contain nothing
+            semver-parseable to derive the next version from. Deploy one of the existing tags
+            directly instead (see GET /pocs/{id}/deployment-overview).
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/deployment-overview:
+    get:
+      summary: Everything the Deployment tab renders, in one call with no GitHub round trip (admin only)
+      description: >
+        Reads the POC, its cached repository snapshot (from the last refresh — see
+        POST .../repo-status/refresh), its recent tags, its versions and its deployments — all off
+        the database. Replaces separately fetching the POC, GET .../versions, GET .../deployments
+        and GET .../manifest-preview. See docs/specs/poc-tag-driven-deployment.md.
+      operationId: getDeploymentOverview
+      tags:
+        - Deployment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deployment overview
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc-deployment.yaml#/PocDeploymentOverviewResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /pocs/{id}/repo-status/refresh:
+    post:
+      summary: Re-read this POC's repository state from GitHub (admin only)
+      description: >
+        Refreshes asynchronously — returns immediately, before GitHub has necessarily been read.
+        Poll GET /pocs/{id}/deployment-overview and watch refreshedAt to see the result. The one
+        endpoint this platform calls to read a repository outside of a build; see
+        docs/specs/poc-tag-driven-deployment.md, "The snapshot, and why it is not a cache."
+      operationId: refreshPocRepoStatus
       tags:
         - Deployment
       parameters:
@@ -857,13 +945,7 @@ paths:
             format: uuid
       responses:
         '202':
-          description: Deployment triggered
-          content:
-            application/json:
-              schema:
-                $ref: './components/schemas/poc-deployment.yaml#/PocDeploymentResponse'
-        '400':
-          $ref: './components/responses.yaml#/BadRequest'
+          description: Refresh triggered
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
         '403':

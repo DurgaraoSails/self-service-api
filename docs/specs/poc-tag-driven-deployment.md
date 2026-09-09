@@ -108,6 +108,14 @@ but the pipeline still demands push access to deploy *any* tag, that advice cann
 `requirePushAccess` therefore moves from "always" to "only when this deploy will create a tag".
 Deploying an existing tag needs read access only — which the repository read already proved.
 
+**Reuse, don't rebuild: `GitHubService.checkPushAccess`/`RepoAccess` already exist**, added for the
+onboarding checker (`#47`) after this spec's first draft. `checkPushAccess` returns
+`OK`/`NOT_FOUND`/`ARCHIVED`/`NO_PUSH` instead of throwing, and `RepoAccess.describe(repo)` already
+carries the exact message both this feature's disabled-button UI and the onboarding checker should
+show — one message, not two that can drift apart. `requirePushAccess` becomes the thin
+throwing wrapper it already is; `PipelineRunner` only needs to stop calling it unconditionally, and
+the snapshot's `can_create_tags` column is simply `checkPushAccess(repo) == RepoAccess.OK`.
+
 ### Three deploy paths, one pipeline
 
 | Action | Tag | Build | Deploy |
@@ -126,9 +134,17 @@ label lies about what shipped.
 
 ### Freshness is exact commit equality
 
-A tag is "current" when its commit SHA equals the head of the deploy branch
-(`pipeline.deploy-branch`, or the repository default). Anything else shows the warning icon. This
-needs no extra API call — the branch head is already fetched for the snapshot.
+A tag is "current" when its commit SHA equals the head of the deploy branch. Anything else shows
+the warning icon. This needs no extra API call — the branch head is already fetched for the
+snapshot.
+
+**The three-tier resolution (POC's own `deploy_branch` → `pipeline.deploy-branch` → repository
+default) already exists**, added by `#48` after this spec's first draft:
+`GitHubService.getDeployBranchHeadSha(repo, pocDeployBranch)`. It returns only the head *SHA*,
+not the branch *name* that was chosen — and the repository header ("Repository state" section
+below) needs to display that name. Split a `resolveDeployBranch(String pocDeployBranch)` out of
+it, returning the branch name, with `getDeployBranchHeadSha` calling that and then
+`getBranchHeadSha`. One resolution, not a second copy in the refresh path that can drift from it.
 
 Rejected for now: GitHub's compare API, which would say *"3 commits behind"* and is far more useful
 for deciding which tag to pick, but costs one call per tag shown. Recorded under Future Work; the
@@ -172,7 +188,8 @@ while there, `PipelineRunner` should move onto a pool too.
 
 ## Data Model
 
-New migration `V12__create_poc_repo_status.sql`, plus alterations to `poc_versions`.
+New migration `V13__create_poc_repo_status.sql`, plus alterations to `poc_versions`. (`V12` was taken
+by `#48`'s `pocs.deploy_branch` column after this spec's first draft.)
 
 **`poc_repo_status`** — one row per POC, the snapshot:
 
@@ -340,6 +357,12 @@ directly at the dropdown below it, so the workaround is visible in the same view
 
 ## Changelog
 
+- 2026-09-09 — Reconciled against `develop` after `#47` (onboarding checker) and `#48` (per-POC
+  deploy branch) merged. Migration renumbered `V12` → `V13` (`V12` is now `pocs.deploy_branch`).
+  `checkPushAccess`/`RepoAccess` already exist — reused rather than rebuilt; only
+  `PipelineRunner`'s unconditional call needs to become conditional. Deploy-branch resolution
+  already exists three-tier; needs a small split (`resolveDeployBranch`) to expose the chosen
+  branch *name*, not just its head SHA, for the repository header.
 - 2026-09-09 — Initial draft. Written after tag collisions blocked deploys for repositories with
   pre-existing tags. Records four decisions taken up front: the next tag name is derived from the
   repository's own tags rather than the platform's numbering; freshness is exact commit equality
