@@ -38,7 +38,18 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity
+// proxyTargetClass, explicitly: Boot's own AopAutoConfiguration already defaults the JVM-wide
+// spring.aop.proxy-target-class to true, which is why this has always behaved as class-based
+// (CGLIB) proxying in the running app — but a @WebMvcTest slice does not pull in that
+// autoconfiguration, so without this the default reverts to interface-based (JDK dynamic)
+// proxying for any @PreAuthorize-annotated controller that implements an interface (every
+// OpenAPI-generated one does). A JDK proxy carries only the interface's annotations, not the
+// concrete class's @RestController, so RequestMappingHandlerMapping silently drops the proxy's
+// routes — a controller that resolves to 403 in production 404s in that slice instead, hiding the
+// only interesting case (an authenticated non-admin) behind a passing-looking route. Pinning it
+// here makes the slice match production instead of depending on an autoconfiguration it never
+// loads.
+@EnableMethodSecurity(proxyTargetClass = true)
 public class SecurityConfig {
 
     private final RSAPublicKey jwtPublicKey;
