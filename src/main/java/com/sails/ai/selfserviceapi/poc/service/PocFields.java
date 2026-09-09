@@ -15,6 +15,8 @@ public record PocFields(
         String iconUrl,
         String appUrl,
         String githubUrl,
+        /** Branch to cut versions from. Blank or null follows the repository's default branch. */
+        String deployBranch,
         String owner,
         String category,
         List<String> technologies,

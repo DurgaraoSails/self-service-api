@@ -48,6 +48,7 @@ public final class PocResponseMapper {
                 .deletedAt(toUtcOffset(poc.getDeletedAt()))
                 .appUrl(poc.getAppUrl())
                 .githubUrl(poc.getGithubUrl())
+                .deployBranch(poc.getDeployBranch())
                 .activeVersionId(poc.getActiveVersionId())
                 .slug(poc.getSlug());
     }

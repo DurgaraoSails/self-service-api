@@ -97,7 +97,21 @@ class BuildServiceTest {
 
     @Test
     void clonesTheRequestedTagShallowly() {
-        assertThat(command(buildService.cloneStep("1.0.9", REPO))).contains("clone --branch 1.0.9 --depth 1");
+        assertThat(command(buildService.cloneStep("1.0.9", REPO)))
+                .contains("clone --branch \"1.0.9\" --depth 1");
+    }
+
+    /**
+     * This is a shell command, not an argv list. parseRepoUrl already restricts an owner and name
+     * to GitHub's own charset and a version label is three numbers, so nothing can carry a
+     * metacharacter today — the quotes are what keeps that true if either source is ever loosened.
+     */
+    @Test
+    void quotesTheTagAndTheRepositoryUrlItInterpolates() {
+        String command = command(buildService.cloneStep("1.0.9", REPO));
+
+        assertThat(command).contains("\"https://github.com/DurgaraoSails/poc-integration-testbed.git\" src");
+        assertThat(command).doesNotContain("--branch 1.0.9 ");
     }
 
     // --- deploy step: gcloud's flag grammar -------------------------------------------------

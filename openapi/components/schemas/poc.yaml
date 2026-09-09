@@ -150,6 +150,16 @@ PocResponse:
           description: URL of the POC's source repository.
           example: "https://github.com/example-org/contract-agent"
 
+        deployBranch:
+          type: string
+          maxLength: 255
+          nullable: true
+          description: >
+            Branch a new version is cut from - its head commit is what gets tagged, built and
+            deployed. Null means this repository's own default branch, whatever GitHub reports it
+            to be.
+          example: "main"
+
         activeVersionId:
           type: string
           format: uuid
@@ -209,6 +219,18 @@ CreatePocRequest:
       maxLength: 500
       description: Repository the pipeline clones and tags. Required — this is what triggers the deploy.
       example: "https://github.com/example-org/contract-agent"
+
+    deployBranch:
+      type: string
+      maxLength: 255
+      nullable: true
+      description: >
+        Branch to cut versions from - the branch whose head commit gets tagged, built and deployed.
+        Optional: omit it, or send null or an empty string, to follow the repository's own default
+        branch. Must be a name git accepts as a ref (no spaces, no "..", none of the characters git
+        forbids); anything else is rejected with 400 INVALID_DEPLOY_BRANCH rather than stored and
+        discovered later by a failed deployment.
+      example: "main"
 
     owner:
       type: string
@@ -302,6 +324,18 @@ UpdatePocRequest:
       type: string
       maxLength: 500
       example: "https://github.com/example-org/contract-agent"
+
+    deployBranch:
+      type: string
+      maxLength: 255
+      nullable: true
+      description: >
+        Branch to cut versions from - the branch whose head commit gets tagged, built and deployed.
+        Optional: omit it, or send null or an empty string, to follow the repository's own default
+        branch. Must be a name git accepts as a ref (no spaces, no "..", none of the characters git
+        forbids); anything else is rejected with 400 INVALID_DEPLOY_BRANCH rather than stored and
+        discovered later by a failed deployment.
+      example: "main"
 
     owner:
       type: string

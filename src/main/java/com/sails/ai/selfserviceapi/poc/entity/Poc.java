@@ -46,6 +46,13 @@ public class Poc {
     @Column(name = "github_url", length = 500)
     private String githubUrl;
 
+    /**
+     * Branch a new version is cut from. Null means this repository's own default branch, which is
+     * what every POC did before the column existed.
+     */
+    @Column(name = "deploy_branch", length = 255)
+    private String deployBranch;
+
     @Column(name = "owner", length = 200)
     private String owner;
 

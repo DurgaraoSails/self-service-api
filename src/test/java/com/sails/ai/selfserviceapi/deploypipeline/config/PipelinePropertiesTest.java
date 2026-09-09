@@ -34,14 +34,16 @@ class PipelinePropertiesTest {
 
     @Test
     void acceptsTheTwoSupportedExecutors() {
-        assertThat(properties("cloud-build").isCloudBuild()).isTrue();
+        assertThatCode(() -> properties("cloud-build")).doesNotThrowAnyException();
+        assertThat(properties("cloud-build").isSkip()).isFalse();
         assertThat(properties("skip").isSkip()).isTrue();
     }
 
-    /** Matches isCloudBuild()/isSkip(), which have always compared case-insensitively. */
+    /** Matches isSkip(), which has always compared case-insensitively. */
     @Test
     void acceptsAnExecutorInAnyCase() {
-        assertThat(properties("CLOUD-BUILD").isCloudBuild()).isTrue();
+        assertThatCode(() -> properties("CLOUD-BUILD")).doesNotThrowAnyException();
+        assertThat(properties("CLOUD-BUILD").isSkip()).isFalse();
         assertThat(properties("Skip").isSkip()).isTrue();
     }
 
@@ -52,7 +54,6 @@ class PipelinePropertiesTest {
     @Test
     void allowsNoExecutorAtAll() {
         assertThatCode(() -> properties(null)).doesNotThrowAnyException();
-        assertThat(properties(null).isCloudBuild()).isFalse();
     }
 
     /**
@@ -103,6 +104,48 @@ class PipelinePropertiesTest {
     void allowsNoBuildServiceAccountWhenNothingIsBuilt() {
         assertThatCode(() -> properties("skip", null)).doesNotThrowAnyException();
         assertThatCode(() -> properties(null, null)).doesNotThrowAnyException();
+    }
+
+    // --- the deploy branch, if one is pinned -------------------------------------------------
+
+    /**
+     * The branch name is concatenated into the GitHub URI path so a slashed name keeps its slash
+     * (see GitHubService.getBranchHeadSha), which makes its shape this record's business: ".."
+     * would climb out of /repos/{owner}/{repo}, and a brace would be read as a URI variable.
+     */
+    @Test
+    void rejectsADeployBranchThatIsNotAUsableRefName() {
+        assertThatThrownBy(() -> propertiesDeployingFrom("../../other/repo"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("pipeline.deploy-branch");
+
+        assertThatThrownBy(() -> propertiesDeployingFrom("release 2024"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("pipeline.deploy-branch");
+
+        assertThatThrownBy(() -> propertiesDeployingFrom("{main}"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("pipeline.deploy-branch");
+    }
+
+    @Test
+    void acceptsTheBranchNamesPeopleActuallyUse() {
+        assertThatCode(() -> propertiesDeployingFrom("main")).doesNotThrowAnyException();
+        assertThatCode(() -> propertiesDeployingFrom("release/2024")).doesNotThrowAnyException();
+        assertThatCode(() -> propertiesDeployingFrom("feature/ABC-123_thing")).doesNotThrowAnyException();
+    }
+
+    /** Blank is "not pinned", not an invalid name — the property is optional. */
+    @Test
+    void acceptsABlankDeployBranchAsMeaningUnpinned() {
+        assertThatCode(() -> propertiesDeployingFrom("   ")).doesNotThrowAnyException();
+        assertThat(propertiesDeployingFrom("   ").hasDeployBranch()).isFalse();
+        assertThat(propertiesDeployingFrom(null).hasDeployBranch()).isFalse();
+    }
+
+    private static PipelineProperties propertiesDeployingFrom(String deployBranch) {
+        return new PipelineProperties("cloud-build", "self-service-builder", "ghp_token", false, true,
+                Duration.ofMinutes(20), Duration.ofSeconds(10), deployBranch);
     }
 
     private static PipelineProperties properties(String executor) {

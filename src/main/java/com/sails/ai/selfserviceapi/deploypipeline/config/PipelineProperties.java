@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.deploypipeline.config;
 
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitBranchNames;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -110,6 +111,11 @@ public record PipelineProperties(
      * start cleanly and quietly skip every deploy, reporting SKIPPED for work an operator believes
      * is running. Failing here turns that into one unmissable line at boot.
      *
+     * <p>The deploy branch is checked for shape rather than existence — whether a given repository
+     * has it is a per-POC question answered at deploy time, but "a value git would never accept as
+     * a ref name" is answerable here, and worth answering because the name is concatenated into the
+     * GitHub URI path (see {@code GitHubService.getBranchHeadSha}).
+     *
      * <p>The build service account became mandatory under cloud-build when {@code BuildService}
      * started reading the clone token from Secret Manager unconditionally. Blank is not a weaker
      * fallback there, it is a dead end: Cloud Build's own default service account holds no
@@ -129,10 +135,9 @@ public record PipelineProperties(
                     + " step would fail resolving GITHUB_TOKEN. Set it to the account that does hold that grant"
                     + " (self-service-builder, per self-service-terraform).");
         }
-    }
-
-    public boolean isCloudBuild() {
-        return CLOUD_BUILD.equalsIgnoreCase(executor);
+        if (deployBranch != null && !deployBranch.isBlank()) {
+            GitBranchNames.requireValid(deployBranch, "pipeline.deploy-branch");
+        }
     }
 
     /**

@@ -25,7 +25,6 @@ FILE_STORAGE_BUCKET: sails-agenthub-poc-files
 PIPELINE_EXECUTOR: cloud-build
 BUILD_SERVICE_ACCOUNT: self-service-builder
 SELF_SERVICE_API_URL: https://self-service-api-471182745065.us-central1.run.app
-PIPELINE_DEPLOY_BRANCH: main
 
 #GCP
 GCP_PROJECT_ID: sails-agenthub
