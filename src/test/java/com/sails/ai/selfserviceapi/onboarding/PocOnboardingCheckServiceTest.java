@@ -200,7 +200,8 @@ class PocOnboardingCheckServiceTest {
     private void reachableRepo() {
         when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.OK);
-        when(gitHubService.getDeployBranchHeadSha(REPO)).thenReturn(SHA);
+        // null: the checker runs before a POC exists, so there is no per-POC branch to honour.
+        when(gitHubService.getDeployBranchHeadSha(REPO, null)).thenReturn(SHA);
     }
 
     private PocManifest singleContainerManifest() {

@@ -72,7 +72,10 @@ public class PocOnboardingCheckService {
 
         String commitSha;
         try {
-            commitSha = gitHubService.getDeployBranchHeadSha(repo);
+            // No POC exists yet, so there is no per-POC deployBranch to honour — this resolves the
+            // same way an unconfigured POC would, through pipeline.deploy-branch if one is pinned
+            // and otherwise the repository's own default branch.
+            commitSha = gitHubService.getDeployBranchHeadSha(repo, null);
         } catch (GitHubApiException e) {
             findings.add(OnboardingFinding.error(PocOnboardingCheckId.REPO_ACCESS,
                     "Could not read the branch this POC would deploy from",
