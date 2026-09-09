@@ -1691,6 +1691,48 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+
+  /poc-onboarding/check:
+    post:
+      summary: Check whether a GitHub repository is ready to be onboarded as a POC
+      description: >
+        Runs the platform's own repository preconditions and manifest resolution against a repo
+        that may not have a POC yet, and returns every finding in one pass. Deliberately reuses
+        GitHubService and ManifestService rather than restating their rules, so the answer cannot
+        drift from what a real deploy enforces.
+
+
+        Available to any signed-in user, matching the onboarding guide: a team lead evaluating
+        feasibility should not need admin first. It reads a repository on demand, so it is rate
+        limited per user, and it returns only findings plus the manifest the team itself wrote —
+        never other repository contents.
+      operationId: checkPocOnboarding
+      tags:
+        - Onboarding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/poc-onboarding.yaml#/PocOnboardingCheckRequest'
+      responses:
+        '200':
+          description: >
+            The check ran. Note that findings of severity ERROR are reported in this 200 body,
+            not as a 4xx — an unready repository is the expected answer here, not a failed call.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc-onboarding.yaml#/PocOnboardingCheckResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '429':
+          $ref: './components/responses.yaml#/TooManyRequests'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
 components:
   securitySchemes:
     bearerAuth:

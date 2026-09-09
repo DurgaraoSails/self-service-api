@@ -206,7 +206,8 @@ one moment, not an entity with a lifecycle.
 
 ## Implementation Status
 
-The API half is complete. The portal half — the guide page and the checker's UI — is not yet built.
+Both halves are built: the API endpoint here, and the guide page plus checker panel in
+`self-service-portal`.
 
 | Piece | State |
 |-------|-------|
@@ -218,7 +219,7 @@ The API half is complete. The portal half — the guide page and the checker's U
 | `onboarding/PocOnboardingController` | Done |
 | `onboarding/OnboardingRateLimiter` | Done |
 | Tests | Done — 13 across 3 classes |
-| Portal guide page and checker panel | Pending, in `self-service-portal` |
+| Portal guide page and checker panel | Done — `host-poc-guide`, `repo-check-panel` and six shared primitives in `self-service-portal` |
 
 ### Verification
 

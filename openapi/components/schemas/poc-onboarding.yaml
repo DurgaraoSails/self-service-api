@@ -1,0 +1,113 @@
+PocOnboardingCheckRequest:
+  type: object
+  description: >
+    A repository a team wants to onboard, checked before any POC exists for it. Only the URL is
+    required; a slug is checked for availability when supplied.
+  required:
+    - githubUrl
+  properties:
+    githubUrl:
+      type: string
+      maxLength: 500
+      description: HTTPS or SSH GitHub URL, with or without a trailing .git
+      example: "https://github.com/acme/contract-agent"
+
+    slug:
+      type: string
+      maxLength: 100
+      nullable: true
+      description: >
+        The slug the team intends to use. Omitted means "not decided yet", and the slug
+        availability check is skipped rather than reported as a failure.
+      example: "contract-agent"
+
+PocOnboardingCheckResponse:
+  type: object
+  description: >
+    The result of running the platform's own manifest resolution and repository preconditions
+    against a repo. Never includes repository contents beyond the manifest the team wrote.
+  required:
+    - repository
+    - ready
+    - findings
+  properties:
+    repository:
+      type: string
+      description: The owner/name the URL resolved to.
+      example: "acme/contract-agent"
+
+    ready:
+      type: boolean
+      description: >
+        True when no finding has severity ERROR. Warnings do not block a deploy, and neither
+        value can promise the POC runs — the platform can read a repo but cannot run its image.
+      example: false
+
+    manifestPresent:
+      type: boolean
+      description: >
+        False when the repo has no poc.yaml, in which case the single-container default was
+        assumed and reported as an INFO finding.
+      example: true
+
+    findings:
+      type: array
+      items:
+        $ref: '#/PocOnboardingFinding'
+
+PocOnboardingFinding:
+  type: object
+  description: One thing the checker looked at, and what the team should do about it.
+  required:
+    - checkId
+    - severity
+    - title
+    - detail
+  properties:
+    checkId:
+      $ref: '#/PocOnboardingCheckId'
+
+    severity:
+      $ref: '#/PocOnboardingSeverity'
+
+    title:
+      type: string
+      description: One short line naming the problem.
+      example: "Sidecar 'api' declares no port"
+
+    detail:
+      type: string
+      description: The platform's own message, verbatim where one exists.
+
+    fix:
+      type: string
+      nullable: true
+      description: What to change in the repo, phrased as an action.
+      example: "Add 'port: 7000' to the api container in poc.yaml."
+
+PocOnboardingSeverity:
+  type: string
+  description: >
+    ERROR blocks a deploy. WARNING deploys but will probably misbehave — a sidecar with no
+    health path still starts, it just loses startup ordering. INFO states an assumption.
+  enum:
+    - ERROR
+    - WARNING
+    - INFO
+
+PocOnboardingCheckId:
+  type: string
+  description: >
+    Stable identifier for each check, so the portal's readiness checklist can be tied to the
+    checks the API actually performs instead of drifting from them in prose.
+  enum:
+    - REPO_URL
+    - REPO_ACCESS
+    - REPO_ARCHIVED
+    - REPO_PUSH_ACCESS
+    - MANIFEST_ABSENT
+    - MANIFEST_PARSE
+    - MANIFEST_VALIDATION
+    - DOCKERFILE_PRESENT
+    - SIDECAR_HEALTH
+    - SLUG_AVAILABLE
