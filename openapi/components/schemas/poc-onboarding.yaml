@@ -5,6 +5,7 @@ PocOnboardingCheckRequest:
     required; a slug is checked for availability when supplied.
   required:
     - githubUrl
+    - deployBranch
   properties:
     githubUrl:
       type: string
@@ -14,13 +15,14 @@ PocOnboardingCheckRequest:
 
     deployBranch:
       type: string
+      minLength: 1
       maxLength: 255
-      nullable: true
       description: >
-        The branch the team intends to deploy from. Omitted checks the repository's own default
-        branch, which is what a POC with no branch configured would build. Supply it to check the
-        branch you will actually deploy - poc.yaml and the Dockerfiles it names are read at that
-        branch's head, and a repo whose default branch is ready says nothing about a feature branch.
+        The branch the team intends to deploy from. Required, because poc.yaml and the Dockerfiles
+        it names are read at that branch's head - a repo whose default branch is ready says nothing
+        about the feature branch a team actually deploys, and silently checking the default made a
+        green result mean something other than what the team asked about. A branch that does not
+        exist comes back with availableBranches populated rather than as a bare failure.
       example: "main"
 
     slug:
@@ -40,6 +42,7 @@ PocOnboardingCheckResponse:
   required:
     - repository
     - ready
+    - checksPassed
     - findings
   properties:
     repository:
@@ -60,6 +63,27 @@ PocOnboardingCheckResponse:
         False when the repo has no poc.yaml, in which case the single-container default was
         assumed and reported as an INFO finding.
       example: true
+
+    availableBranches:
+      type: array
+      nullable: true
+      description: >
+        Present only when deployBranch does not exist in the repository: the branches that do, so
+        the caller can offer them rather than leaving the team to guess. Absent on every other
+        outcome, including a successful check.
+      items:
+        type: string
+      example: ["main", "develop"]
+
+    checksPassed:
+      type: array
+      description: >
+        The checks that actually ran and found nothing wrong. Not the inverse of `findings`: this
+        endpoint stops at the first blocking problem, so a check absent from both lists was never
+        performed - reading "no finding" as "passed" would tick a box for something never looked at.
+        The portal's readiness checklist ticks exactly these.
+      items:
+        $ref: '#/PocOnboardingCheckId'
 
     findings:
       type: array
@@ -116,6 +140,7 @@ PocOnboardingCheckId:
     - REPO_ACCESS
     - REPO_ARCHIVED
     - REPO_PUSH_ACCESS
+    - DEPLOY_BRANCH
     - MANIFEST_ABSENT
     - MANIFEST_PARSE
     - MANIFEST_VALIDATION

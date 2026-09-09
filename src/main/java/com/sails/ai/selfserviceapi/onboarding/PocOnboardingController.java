@@ -51,8 +51,9 @@ public class PocOnboardingController implements OnboardingApi {
                 .map(this::toFinding)
                 .toList();
 
-        return new PocOnboardingCheckResponse(result.repository(), result.ready(), findings)
-                .manifestPresent(result.manifestPresent());
+        return new PocOnboardingCheckResponse(result.repository(), result.ready(), result.checksPassed(), findings)
+                .manifestPresent(result.manifestPresent())
+                .availableBranches(result.availableBranches());
     }
 
     private PocOnboardingFinding toFinding(OnboardingFinding finding) {
