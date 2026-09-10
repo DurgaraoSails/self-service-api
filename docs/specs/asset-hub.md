@@ -483,3 +483,11 @@ reuse metric, or a redundant `Published` state.
   internal ASSET_REVIEWER role, no self-approval, last-approved revision visibility, URL-only
   SharePoint references, hosted POC launch integration, deferred content templates, and removal of
   reuse behavior.
+- 2026-09-10 — Clarified `asset_search_documents` migration phasing: the base table (`search_text`,
+  `tsvector`, provider/model/dimensions/checksum columns) is created in Phase 0/1 so keyword search
+  works for the vertical slice, as already required by "Configuration and Safe Defaults" and
+  "Definition of Done." Only the `vector` embedding column and the pgvector extension itself are
+  deferred to Phase 3, added via a separate `ALTER TABLE` migration once the local PostgreSQL image
+  is swapped for a pgvector-enabled one. The backend checklist previously read as deferring the whole
+  table to Phase 3, which would have left Phase 1 without real keyword search; see
+  `docs/checklists/asset-hub/backend-api.md` §2.
