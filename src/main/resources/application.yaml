@@ -216,7 +216,7 @@ brevo:
 # Microsoft Entra employee SSO. Production supplies the standard environment variables;
 # local development may fall back to the legacy keys in the gitignored secrets YAML.
 microsoft-sso:
-  enabled: ${MICROSOFT_SSO_ENABLED:false}
+  enabled: ${MICROSOFT_SSO_ENABLED:true}
   tenant-id: ${MICROSOFT_TENANT_ID:${tenantID:}}
   client-id: ${MICROSOFT_CLIENT_ID:${ClientID:}}
   client-secret: ${MICROSOFT_CLIENT_SECRET:${Value/secret:}}
