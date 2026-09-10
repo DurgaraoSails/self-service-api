@@ -322,3 +322,96 @@ AccountType:
   type: string
   description: Verified employee classification, independent of administrative roles.
   enum: [EXTERNAL, INTERNAL]
+
+
+EmployeeResponse:
+  type: object
+  description: An internal employee, for Asset Hub role administration.
+  required:
+    - id
+    - email
+    - firstName
+    - lastName
+    - roles
+    - accountType
+  properties:
+    id:
+      type: string
+      example: "01JABC123XYZ"
+
+    email:
+      type: string
+      format: email
+      example: "jane.doe@example.com"
+
+    firstName:
+      type: string
+      maxLength: 100
+      example: "Jane"
+
+    lastName:
+      type: string
+      maxLength: 100
+      example: "Doe"
+
+    roles:
+      type: array
+      description: The employee's complete current role set, including baseline USER and, if present, database-managed SUPERADMIN.
+      items:
+        type: string
+      example:
+        - "USER"
+        - "ASSET_REVIEWER"
+
+    accountType:
+      $ref: '#/AccountType'
+
+
+EmployeePageResponse:
+  type: object
+  description: One page of internal employees, for the role-administration list.
+  required:
+    - content
+    - page
+    - size
+    - totalElements
+    - totalPages
+  properties:
+    content:
+      type: array
+      items:
+        $ref: '#/EmployeeResponse'
+
+    page:
+      type: integer
+      example: 0
+
+    size:
+      type: integer
+      example: 20
+
+    totalElements:
+      type: integer
+      format: int64
+      example: 37
+
+    totalPages:
+      type: integer
+      example: 2
+
+
+UpdateManagedRolesRequest:
+  type: object
+  description: >
+    Replaces the target employee's complete managed-role set atomically. Baseline USER and
+    database-managed SUPERADMIN are always preserved and can never be requested here.
+  required:
+    - roles
+  properties:
+    roles:
+      type: array
+      items:
+        type: string
+        enum: [ADMIN, ASSET_REVIEWER]
+      example:
+        - "ASSET_REVIEWER"

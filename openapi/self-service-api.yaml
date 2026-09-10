@@ -1915,6 +1915,763 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /assets:
+    get:
+      summary: Search and list approved assets
+      operationId: listAssets
+      tags:
+        - Asset
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 500
+          description: >
+            Free-text search, normalized and capped at 500 characters. Combines keyword and
+            (when enabled) semantic ranking per the Search Contract. Empty or omitted returns
+            approved assets ordered by approved-revision updatedAt DESC, id ASC.
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+          description: Repeatable. Filters to any of the given asset types.
+        - name: tag
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          description: Repeatable. Filters to assets carrying any of the given tags.
+        - name: ownerId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filters to assets owned by this user.
+        - name: launchable
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: When true, only POC-type assets with a currently launchable linked POC.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: One page of approved assets
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetPageResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    post:
+      summary: Create an asset and its first draft revision
+      description: The authenticated internal employee becomes both submitter and initial revision author.
+      operationId: createAsset
+      tags:
+        - Asset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/asset.yaml#/CreateAssetRequest'
+      responses:
+        '201':
+          description: Asset and initial draft revision created
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetEditorResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/facets:
+    get:
+      summary: Facet counts for approved assets
+      operationId: getAssetFacets
+      tags:
+        - Asset
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 500
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+        - name: tag
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: ownerId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: launchable
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Facet counts under the same optional filters as GET /assets
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetFacetsResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/mine:
+    get:
+      summary: List the caller's own submitted/owned assets
+      operationId: listMyAssets
+      tags:
+        - Asset
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: One page of the caller's own assets, including working status
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetMinePageResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/{assetId}:
+    get:
+      summary: Get an asset's approved detail
+      operationId: getAsset
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Approved asset detail
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetDetailResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          description: No approved revision exists for this asset, or it is archived.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/{assetId}/working-revision:
+    get:
+      summary: Get an asset's working revision (submitter, owner, or reviewer)
+      operationId: getWorkingRevision
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Working revision plus the last approved summary, if any
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetEditorResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    post:
+      summary: Start a new working revision (submitter or owner)
+      description: >
+        Clones the approved, changes-requested, or rejected revision into the next draft. 409 if
+        an editable or pending working revision already exists.
+      operationId: createWorkingRevision
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: New draft working revision created
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetEditorResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          description: An editable or pending working revision already exists (WORKING_REVISION_EXISTS).
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+    patch:
+      summary: Update the current draft working revision (submitter or owner)
+      operationId: updateWorkingRevision
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/asset.yaml#/UpdateAssetRevisionRequest'
+      responses:
+        '200':
+          description: Updated working revision
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetEditorResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          description: The revision is not a DRAFT, or an expected version is stale (INVALID_ASSET_TRANSITION / ASSET_REVISION_STALE).
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/{assetId}/working-revision/submit:
+    post:
+      summary: Submit the current draft for review (submitter or owner)
+      operationId: submitWorkingRevision
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/asset.yaml#/SubmitWorkingRevisionRequest'
+      responses:
+        '200':
+          description: Revision transitioned to PENDING_REVIEW
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetEditorResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          description: The revision is not a DRAFT, or expectedVersion is stale (INVALID_ASSET_TRANSITION / ASSET_REVISION_STALE).
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/{assetId}/archive:
+    post:
+      summary: Archive an asset (submitter, owner, or internal admin)
+      description: Soft archive — sets assets.archivedAt and removes it from discovery. Revisions are unchanged.
+      operationId: archiveAsset
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/asset.yaml#/ArchiveAssetRequest'
+      responses:
+        '204':
+          description: Asset archived
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          description: expectedVersion is stale (ASSET_REVISION_STALE).
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/{assetId}/ai-suggestions:
+    post:
+      summary: Start AI metadata suggestions for the current draft (submitter or owner)
+      operationId: startAssetAiSuggestions
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Suggestion run started (or an in-flight/cached run returned)
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetAiSuggestionResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '503':
+          description: Suggestion provider is disabled or unavailable; manual work remains usable (ASSET_AI_UNAVAILABLE).
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/{assetId}/ai-suggestions/latest:
+    get:
+      summary: Get the latest AI suggestion run for the working revision (submitter, owner, or reviewer)
+      operationId: getLatestAssetAiSuggestion
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Latest suggestion run
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetAiSuggestionResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/{assetId}/feedback:
+    put:
+      summary: Replace the caller's feedback on an asset
+      operationId: putAssetFeedback
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/asset.yaml#/AssetFeedbackRequest'
+      responses:
+        '200':
+          description: Feedback recorded
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetFeedbackResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/{assetId}/events:
+    post:
+      summary: Record a detail-view, source-open, or POC-launch event
+      operationId: recordAssetEvent
+      tags:
+        - Asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/asset.yaml#/AssetEventRequest'
+      responses:
+        '204':
+          description: Event recorded
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /asset-reviews:
+    get:
+      summary: List the pending review queue (internal reviewer)
+      operationId: listAssetReviews
+      tags:
+        - AssetReview
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+        - name: maxAgeDays
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Pending revisions, oldest submitted first, id tie-break
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetReviewQueuePageResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /asset-reviews/{revisionId}:
+    get:
+      summary: Get a revision's frozen review detail (internal reviewer)
+      operationId: getAssetReviewDetail
+      tags:
+        - AssetReview
+      parameters:
+        - name: revisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Frozen revision, last approved revision if any, and decision history
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetReviewDetailResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /asset-reviews/{revisionId}/decisions:
+    post:
+      summary: Record a review decision (a different internal reviewer)
+      description: >
+        Rejected with 403 SELF_REVIEW_FORBIDDEN when the caller submitted the asset or authored
+        this revision, even if they hold ASSET_REVIEWER.
+      operationId: createAssetReviewDecision
+      tags:
+        - AssetReview
+      parameters:
+        - name: revisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/asset.yaml#/CreateAssetReviewRequest'
+      responses:
+        '200':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetReviewDetailResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          description: Caller lacks ASSET_REVIEWER, or is the submitter/revision author (SELF_REVIEW_FORBIDDEN).
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          description: The revision is not PENDING_REVIEW, or expectedVersion is stale.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /employees:
+    get:
+      summary: List internal employees, for role administration (internal superadmin)
+      operationId: listEmployees
+      tags:
+        - Employee
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive substring match against first name, last name, or email.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: One page of internal employees
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/EmployeePageResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /employees/{userId}/roles:
+    put:
+      summary: Atomically replace an internal employee's managed roles (a different internal superadmin)
+      description: >
+        Replaces only the managed-role allowlist (ADMIN, ASSET_REVIEWER); baseline USER and
+        database-managed SUPERADMIN are always preserved. Writes a role_change_audit row in the
+        same transaction.
+      operationId: updateEmployeeManagedRoles
+      tags:
+        - Employee
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/user.yaml#/UpdateManagedRolesRequest'
+      responses:
+        '200':
+          description: Updated employee with its authoritative role list
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/user.yaml#/EmployeeResponse'
+        '400':
+          description: Request contains a role outside the managed allowlist (INVALID_MANAGED_ROLE).
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          description: Target is not internal, or caller targeted themselves (ROLE_TARGET_MUST_BE_INTERNAL / ROLE_SELF_MANAGEMENT_FORBIDDEN).
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/common.yaml#/ErrorResponse'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
 components:
   securitySchemes:
     bearerAuth:

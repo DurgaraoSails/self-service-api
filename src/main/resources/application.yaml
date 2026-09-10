@@ -225,3 +225,11 @@ microsoft-sso:
   # prod) so a literal here would be wrong somewhere. Comes from the environment only — the
   # gitignored local secrets YAML for local dev, the deployed environment's own secrets elsewhere.
   redirect-uri: ${MICROSOFT_REDIRECT_URI}
+
+# Asset Hub. False by default everywhere until migrations and both applications (this one and
+# self-service-portal) are deployed. ai-enabled/semantic-search-enabled are independent of each
+# other and of enabled itself: keyword search and manual review must work with both off.
+asset-hub:
+  enabled: ${ASSET_HUB_ENABLED:false}
+  ai-enabled: ${ASSET_HUB_AI_ENABLED:false}
+  semantic-search-enabled: ${ASSET_HUB_SEMANTIC_SEARCH_ENABLED:false}
