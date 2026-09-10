@@ -1,0 +1,933 @@
+AssetLaunch:
+  type: object
+  description: >
+    Derived POC launch availability for a POC-type asset. Never a second editable launch URL —
+    launchable reflects the linked POC's own readiness, computed at read time.
+  required:
+    - launchable
+  properties:
+    pocId:
+      type: string
+      format: uuid
+      nullable: true
+      description: Linked POC, if any.
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+    launchable:
+      type: boolean
+      description: True only when the linked POC is active and has a successfully deployed version.
+      example: true
+
+
+AssetSummaryResponse:
+  type: object
+  description: >
+    One asset as shown in discovery/search results and facet-filtered listings. Always reflects the
+    approved revision only.
+  required:
+    - id
+    - assetType
+    - title
+    - summary
+    - ownerUserId
+    - tags
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+    assetType:
+      type: string
+      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      example: "POC"
+
+    title:
+      type: string
+      maxLength: 200
+      example: "Radiology Triage Assistant"
+
+    summary:
+      type: string
+      maxLength: 4000
+      example: "Flags high-priority scans for radiologist review."
+
+    ownerUserId:
+      type: string
+      example: "01JABC123XYZ"
+
+    ownerDisplayName:
+      type: string
+      description: Display name of the current owner, for card rendering.
+      example: "Jane Doe"
+
+    tags:
+      type: array
+      items:
+        type: string
+      example:
+        - "Healthcare"
+        - "Computer Vision"
+
+    updatedAt:
+      type: string
+      format: date-time
+      description: When the approved revision was last updated, in UTC.
+      example: "2026-09-10T10:30:00Z"
+
+    launch:
+      $ref: '#/AssetLaunch'
+
+
+AssetDetailResponse:
+  description: Full approved detail for an asset, including its source link and launch availability.
+  allOf:
+    - $ref: '#/AssetSummaryResponse'
+    - type: object
+      required:
+        - submittedByUserId
+        - sourceUrl
+        - revisionNumber
+      properties:
+        problemStatement:
+          type: string
+          maxLength: 8000
+          nullable: true
+          example: "Urgent studies can wait in a general queue."
+
+        businessImpact:
+          type: string
+          maxLength: 8000
+          nullable: true
+          example: "Shortens time to clinical review."
+
+        solutionOverview:
+          type: string
+          maxLength: 8000
+          nullable: true
+          example: "A prioritization model ranks incoming studies."
+
+        sourceUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: >
+            Stored only — never fetched, previewed, or proxied by the backend. Opens in a new
+            browser context; the source system remains responsible for access control.
+          example: "https://tenant.sharepoint.com/sites/ai/Shared%20Documents/radiology"
+
+        submittedByUserId:
+          type: string
+          example: "01JABC123XYZ"
+
+        revisionNumber:
+          type: integer
+          description: Revision number of the currently approved revision.
+          example: 2
+
+
+AssetPageResponse:
+  type: object
+  description: One page of approved discovery/search results.
+  required:
+    - content
+    - page
+    - size
+    - totalElements
+    - totalPages
+  properties:
+    content:
+      type: array
+      items:
+        $ref: '#/AssetSummaryResponse'
+
+    page:
+      type: integer
+      description: Zero-based page index of this page.
+      example: 0
+
+    size:
+      type: integer
+      description: Maximum number of records per page.
+      example: 20
+
+    totalElements:
+      type: integer
+      format: int64
+      example: 142
+
+    totalPages:
+      type: integer
+      example: 8
+
+    searchSessionId:
+      type: string
+      format: uuid
+      nullable: true
+      description: >
+        A fresh opaque id generated only when the request's q was non-empty. Carried by later
+        detail/source/launch events for privacy-minimized funnel metrics; never derived from or
+        containing query text.
+      example: "8f14e45f-ceea-467e-9494-763486731bd8"
+
+
+AssetFacetsResponse:
+  type: object
+  description: Counts for approved types/tags/owners and launchable POCs, under the same optional query filters as GET /assets.
+  required:
+    - types
+    - tags
+    - owners
+    - launchableCount
+  properties:
+    types:
+      type: array
+      items:
+        type: object
+        required: [assetType, count]
+        properties:
+          assetType:
+            type: string
+            enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+          count:
+            type: integer
+
+    tags:
+      type: array
+      items:
+        type: object
+        required: [tag, count]
+        properties:
+          tag:
+            type: string
+          count:
+            type: integer
+
+    owners:
+      type: array
+      items:
+        type: object
+        required: [ownerUserId, count]
+        properties:
+          ownerUserId:
+            type: string
+          ownerDisplayName:
+            type: string
+          count:
+            type: integer
+
+    launchableCount:
+      type: integer
+      description: Number of matching assets with a currently launchable linked POC.
+      example: 4
+
+
+AssetRevisionFields:
+  type: object
+  description: The revision field group shared by the working-revision editor and reviewer views.
+  required:
+    - id
+    - revisionNumber
+    - state
+    - title
+    - summary
+    - sourceUrl
+    - tags
+    - version
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+      example: "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+
+    revisionNumber:
+      type: integer
+      example: 2
+
+    state:
+      type: string
+      enum: [DRAFT, PENDING_REVIEW, CHANGES_REQUESTED, APPROVED, REJECTED, SUPERSEDED]
+      example: "DRAFT"
+
+    title:
+      type: string
+      maxLength: 200
+      example: "Radiology Triage Assistant"
+
+    summary:
+      type: string
+      maxLength: 4000
+      example: "Flags high-priority scans for radiologist review."
+
+    problemStatement:
+      type: string
+      maxLength: 8000
+      nullable: true
+      example: "Urgent studies can wait in a general queue."
+
+    businessImpact:
+      type: string
+      maxLength: 8000
+      nullable: true
+      example: "Shortens time to clinical review."
+
+    solutionOverview:
+      type: string
+      maxLength: 8000
+      nullable: true
+      example: "A prioritization model ranks incoming studies."
+
+    sourceUrl:
+      type: string
+      format: uri
+      maxLength: 2048
+      example: "https://tenant.sharepoint.com/sites/ai/Shared%20Documents/radiology"
+
+    tags:
+      type: array
+      items:
+        type: string
+      example:
+        - "Healthcare"
+        - "Computer Vision"
+
+    version:
+      type: integer
+      format: int64
+      description: Optimistic-concurrency version of this revision row.
+      example: 3
+
+    submittedAt:
+      type: string
+      format: date-time
+      nullable: true
+      example: null
+
+    createdAt:
+      type: string
+      format: date-time
+      example: "2026-09-01T09:00:00Z"
+
+    updatedAt:
+      type: string
+      format: date-time
+      example: "2026-09-10T10:30:00Z"
+
+
+AssetEditorResponse:
+  type: object
+  description: An asset plus its working revision, for the submitter/owner/reviewer editor view.
+  required:
+    - asset
+    - workingRevision
+  properties:
+    asset:
+      type: object
+      required: [id, assetType, ownerUserId, submittedByUserId, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        assetType:
+          type: string
+          enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+        ownerUserId:
+          type: string
+        submittedByUserId:
+          type: string
+        pocId:
+          type: string
+          format: uuid
+          nullable: true
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        version:
+          type: integer
+          format: int64
+          description: Optimistic-concurrency version of the asset row.
+          example: 1
+
+    workingRevision:
+      $ref: '#/AssetRevisionFields'
+
+    lastApprovedSummary:
+      type: object
+      nullable: true
+      description: Present only when a previously approved revision remains live while this working revision is reviewed.
+      required: [revisionNumber, title, summary, updatedAt]
+      properties:
+        revisionNumber:
+          type: integer
+        title:
+          type: string
+        summary:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+
+AssetMineSummaryResponse:
+  type: object
+  description: One row of the caller's own submissions, in GET /assets/mine.
+  required:
+    - id
+    - assetType
+    - title
+    - hasApprovedRevision
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+    assetType:
+      type: string
+      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      example: "POC"
+
+    title:
+      type: string
+      description: Working revision's title if one exists, otherwise the approved revision's title.
+      example: "Radiology Triage Assistant"
+
+    workingState:
+      type: string
+      enum: [DRAFT, PENDING_REVIEW, CHANGES_REQUESTED, REJECTED]
+      nullable: true
+      description: Null when there is no active working revision (fully approved, nothing pending).
+      example: "PENDING_REVIEW"
+
+    hasApprovedRevision:
+      type: boolean
+      example: true
+
+    updatedAt:
+      type: string
+      format: date-time
+      example: "2026-09-10T10:30:00Z"
+
+
+AssetMinePageResponse:
+  type: object
+  description: One page of the caller's own submissions.
+  required:
+    - content
+    - page
+    - size
+    - totalElements
+    - totalPages
+  properties:
+    content:
+      type: array
+      items:
+        $ref: '#/AssetMineSummaryResponse'
+    page:
+      type: integer
+      example: 0
+    size:
+      type: integer
+      example: 20
+    totalElements:
+      type: integer
+      format: int64
+      example: 6
+    totalPages:
+      type: integer
+      example: 1
+
+
+CreateAssetRequest:
+  type: object
+  description: >
+    Creates an asset and its first DRAFT revision in one call. The caller becomes both submitter
+    and revision author.
+  required:
+    - assetType
+    - ownerUserId
+    - title
+    - summary
+    - sourceUrl
+  properties:
+    assetType:
+      type: string
+      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      example: "POC"
+
+    ownerUserId:
+      type: string
+      description: Must be an active internal employee.
+      example: "01JABC123XYZ"
+
+    title:
+      type: string
+      maxLength: 200
+      example: "Radiology Triage Assistant"
+
+    summary:
+      type: string
+      maxLength: 4000
+      example: "Flags high-priority scans for radiologist review."
+
+    problemStatement:
+      type: string
+      maxLength: 8000
+      nullable: true
+      example: "Urgent studies can wait in a general queue."
+
+    businessImpact:
+      type: string
+      maxLength: 8000
+      nullable: true
+      example: "Shortens time to clinical review."
+
+    solutionOverview:
+      type: string
+      maxLength: 8000
+      nullable: true
+      example: "A prioritization model ranks incoming studies."
+
+    sourceUrl:
+      type: string
+      format: uri
+      maxLength: 2048
+      example: "https://tenant.sharepoint.com/sites/ai/Shared%20Documents/radiology"
+
+    tags:
+      type: array
+      items:
+        type: string
+      example:
+        - "Healthcare"
+        - "Computer Vision"
+
+    pocId:
+      type: string
+      format: uuid
+      nullable: true
+      description: >
+        Accepted only from an internal ADMIN and only when assetType is POC; ignored (never
+        silently applied) from any other caller.
+      example: null
+
+
+UpdateAssetRevisionRequest:
+  type: object
+  description: >
+    Replaces the editable fields of the current DRAFT working revision. May also change stable
+    asset-table fields (ownerUserId, assetType before first approval, pocId as ADMIN), so it carries
+    both an asset and a revision expected-version — both rows can change in the same transaction.
+  required:
+    - title
+    - summary
+    - sourceUrl
+    - revisionExpectedVersion
+    - assetExpectedVersion
+  properties:
+    assetType:
+      type: string
+      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      nullable: true
+      description: Settable only before the asset has ever had an approved revision.
+      example: "POC"
+
+    ownerUserId:
+      type: string
+      nullable: true
+      description: Settable by the submitter or current owner; target must be an active internal employee.
+      example: "01JABC123XYZ"
+
+    title:
+      type: string
+      maxLength: 200
+      example: "Radiology Triage Assistant"
+
+    summary:
+      type: string
+      maxLength: 4000
+      example: "Flags high-priority scans for radiologist review."
+
+    problemStatement:
+      type: string
+      maxLength: 8000
+      nullable: true
+      example: "Urgent studies can wait in a general queue."
+
+    businessImpact:
+      type: string
+      maxLength: 8000
+      nullable: true
+      example: "Shortens time to clinical review."
+
+    solutionOverview:
+      type: string
+      maxLength: 8000
+      nullable: true
+      example: "A prioritization model ranks incoming studies."
+
+    sourceUrl:
+      type: string
+      format: uri
+      maxLength: 2048
+      example: "https://tenant.sharepoint.com/sites/ai/Shared%20Documents/radiology"
+
+    tags:
+      type: array
+      items:
+        type: string
+      example:
+        - "Healthcare"
+        - "Computer Vision"
+
+    pocId:
+      type: string
+      format: uuid
+      nullable: true
+      description: Only an internal ADMIN may set/change this.
+      example: null
+
+    revisionExpectedVersion:
+      type: integer
+      format: int64
+      description: Optimistic-concurrency version of the working revision, rejected with 409 if stale.
+      example: 3
+
+    assetExpectedVersion:
+      type: integer
+      format: int64
+      description: Optimistic-concurrency version of the asset row, rejected with 409 if stale.
+      example: 1
+
+
+SubmitWorkingRevisionRequest:
+  type: object
+  required:
+    - expectedVersion
+  properties:
+    expectedVersion:
+      type: integer
+      format: int64
+      description: Working revision's current version.
+      example: 3
+
+
+ArchiveAssetRequest:
+  type: object
+  required:
+    - expectedVersion
+  properties:
+    expectedVersion:
+      type: integer
+      format: int64
+      description: Asset's current version.
+      example: 1
+
+
+AssetAiSuggestionResponse:
+  type: object
+  description: A metadata-suggestion run for the current working revision.
+  required:
+    - id
+    - revisionId
+    - status
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+      example: "8f14e45f-ceea-467e-9494-763486731bd8"
+
+    revisionId:
+      type: string
+      format: uuid
+      example: "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+
+    status:
+      type: string
+      enum: [PENDING, RUNNING, SUCCEEDED, FAILED]
+      example: "SUCCEEDED"
+
+    suggestedTitle:
+      type: string
+      maxLength: 200
+      nullable: true
+      example: "AI-Assisted Radiology Triage"
+
+    suggestedSummary:
+      type: string
+      maxLength: 4000
+      nullable: true
+      example: "Surfaces urgent scans first so radiologists review them sooner."
+
+    suggestedTags:
+      type: array
+      nullable: true
+      items:
+        type: string
+      example:
+        - "Healthcare"
+        - "Triage"
+
+    provider:
+      type: string
+      nullable: true
+      example: "internal-llm"
+
+    model:
+      type: string
+      nullable: true
+      example: "gpt-model-name"
+
+    schemaVersion:
+      type: string
+      nullable: true
+      example: "1"
+
+    errorCode:
+      type: string
+      nullable: true
+      description: Safe, non-sensitive error classification, present only when status is FAILED.
+      example: null
+
+    createdAt:
+      type: string
+      format: date-time
+      example: "2026-09-10T10:30:00Z"
+
+    updatedAt:
+      type: string
+      format: date-time
+      example: "2026-09-10T10:30:05Z"
+
+
+AssetFeedbackRequest:
+  type: object
+  required:
+    - rating
+  properties:
+    rating:
+      type: string
+      enum: [HELPFUL, NOT_HELPFUL]
+      example: "HELPFUL"
+
+    comment:
+      type: string
+      maxLength: 2000
+      nullable: true
+      example: "Saved us from building this from scratch."
+
+
+AssetFeedbackResponse:
+  type: object
+  required:
+    - rating
+    - updatedAt
+  properties:
+    rating:
+      type: string
+      enum: [HELPFUL, NOT_HELPFUL]
+      example: "HELPFUL"
+
+    comment:
+      type: string
+      maxLength: 2000
+      nullable: true
+      example: "Saved us from building this from scratch."
+
+    updatedAt:
+      type: string
+      format: date-time
+      example: "2026-09-10T10:30:00Z"
+
+
+AssetEventRequest:
+  type: object
+  required:
+    - eventType
+  properties:
+    eventType:
+      type: string
+      enum: [DETAIL_VIEW, SOURCE_OPEN, POC_LAUNCH]
+      description: SEARCH events are recorded by GET /assets itself, not through this endpoint.
+      example: "SOURCE_OPEN"
+
+    searchSessionId:
+      type: string
+      format: uuid
+      nullable: true
+      description: Opaque id from a prior search response, for funnel correlation.
+      example: "8f14e45f-ceea-467e-9494-763486731bd8"
+
+
+AssetReviewQueueItemResponse:
+  type: object
+  required:
+    - revisionId
+    - assetId
+    - assetType
+    - title
+    - ownerUserId
+    - submittedByUserId
+    - submittedAt
+    - ageDays
+  properties:
+    revisionId:
+      type: string
+      format: uuid
+      example: "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+
+    assetId:
+      type: string
+      format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+    assetType:
+      type: string
+      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      example: "POC"
+
+    title:
+      type: string
+      example: "Radiology Triage Assistant"
+
+    ownerUserId:
+      type: string
+      example: "01JABC123XYZ"
+
+    submittedByUserId:
+      type: string
+      example: "01JXYZ987ABC"
+
+    submittedAt:
+      type: string
+      format: date-time
+      example: "2026-09-08T09:00:00Z"
+
+    ageDays:
+      type: integer
+      description: Whole days since submittedAt, for prioritizing the queue.
+      example: 2
+
+
+AssetReviewQueuePageResponse:
+  type: object
+  required:
+    - content
+    - page
+    - size
+    - totalElements
+    - totalPages
+  properties:
+    content:
+      type: array
+      items:
+        $ref: '#/AssetReviewQueueItemResponse'
+    page:
+      type: integer
+      example: 0
+    size:
+      type: integer
+      example: 20
+    totalElements:
+      type: integer
+      format: int64
+      example: 11
+    totalPages:
+      type: integer
+      example: 1
+
+
+AssetReviewDecisionResponse:
+  type: object
+  description: One append-only review decision.
+  required:
+    - id
+    - revisionId
+    - reviewerUserId
+    - decision
+    - createdAt
+  properties:
+    id:
+      type: string
+      format: uuid
+      example: "1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5061"
+
+    revisionId:
+      type: string
+      format: uuid
+      example: "5b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+
+    reviewerUserId:
+      type: string
+      example: "01JQRS456DEF"
+
+    decision:
+      type: string
+      enum: [APPROVE, REQUEST_CHANGES, REJECT]
+      example: "REQUEST_CHANGES"
+
+    feedback:
+      type: string
+      maxLength: 4000
+      nullable: true
+      description: Required by the API for REQUEST_CHANGES and REJECT; optional for APPROVE.
+      example: "Please add a business-impact estimate before this can be approved."
+
+    createdAt:
+      type: string
+      format: date-time
+      example: "2026-09-09T14:00:00Z"
+
+
+AssetReviewDetailResponse:
+  type: object
+  description: The exact frozen revision under review, the last approved revision if one exists, and its decision history.
+  required:
+    - revision
+    - history
+  properties:
+    revision:
+      $ref: '#/AssetRevisionFields'
+
+    lastApprovedRevision:
+      allOf:
+        - $ref: '#/AssetRevisionFields'
+      nullable: true
+      description: The currently approved revision, if this asset has ever had one, for comparison.
+
+    history:
+      type: array
+      items:
+        $ref: '#/AssetReviewDecisionResponse'
+
+
+CreateAssetReviewRequest:
+  type: object
+  required:
+    - decision
+    - expectedVersion
+  properties:
+    decision:
+      type: string
+      enum: [APPROVE, REQUEST_CHANGES, REJECT]
+      example: "APPROVE"
+
+    feedback:
+      type: string
+      maxLength: 4000
+      nullable: true
+      description: Required when decision is REQUEST_CHANGES or REJECT.
+      example: "Please add a business-impact estimate before this can be approved."
+
+    expectedVersion:
+      type: integer
+      format: int64
+      description: Revision's current version, rejected with 409 if stale or already decided.
+      example: 3
