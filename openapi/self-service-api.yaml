@@ -329,6 +329,7 @@ paths:
           schema:
             type: integer
             default: 0
+            minimum: 0
         - name: size
           in: query
           required: false
@@ -1973,6 +1974,8 @@ paths:
           schema:
             type: integer
             default: 20
+            minimum: 1
+            maximum: 100
       responses:
         '200':
           description: One page of approved assets
@@ -2607,7 +2610,7 @@ paths:
 
   /employees:
     get:
-      summary: List internal employees, for role administration (internal superadmin)
+      summary: List active internal employees, for role administration (internal superadmin)
       operationId: listEmployees
       tags:
         - Employee
@@ -2632,7 +2635,7 @@ paths:
             default: 20
       responses:
         '200':
-          description: One page of internal employees
+          description: One page of active internal employees
           content:
             application/json:
               schema:
@@ -2674,7 +2677,7 @@ paths:
               schema:
                 $ref: './components/schemas/user.yaml#/EmployeeResponse'
         '400':
-          description: Request contains a role outside the managed allowlist (INVALID_MANAGED_ROLE).
+          description: Request contains a role outside the managed allowlist or duplicates a role (INVALID_MANAGED_ROLE / DUPLICATE_MANAGED_ROLE).
           content:
             application/json:
               schema:
@@ -2682,7 +2685,7 @@ paths:
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
         '403':
-          description: Target is not internal, or caller targeted themselves (ROLE_TARGET_MUST_BE_INTERNAL / ROLE_SELF_MANAGEMENT_FORBIDDEN).
+          description: Target is not an active internal employee, or caller targeted themselves (ROLE_TARGET_MUST_BE_INTERNAL / ROLE_TARGET_MUST_BE_ACTIVE / ROLE_SELF_MANAGEMENT_FORBIDDEN).
           content:
             application/json:
               schema:

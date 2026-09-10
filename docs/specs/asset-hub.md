@@ -50,8 +50,9 @@ The initial asset types are:
   `SUPERADMIN` and `ASSET_REVIEWER`.
 - `SUPERADMIN` remains database-managed. It cannot be granted or revoked through an API or portal
   control.
-- An internal superadmin can atomically assign multiple allowlisted managed roles to an internal
-  employee. `SUPERADMIN` is not part of that allowlist.
+- An internal superadmin can atomically assign multiple allowlisted managed roles to a different,
+  active internal employee. `SUPERADMIN` is not part of that allowlist. Duplicate requested roles
+  are rejected and the target row is locked until the matching audit record is written.
 - Role changes are audited with actor, target, before/after roles, and timestamp.
 
 ### Catalog and sources
@@ -139,9 +140,9 @@ prevents search results changing before approval.
 
 `users.roles` remains the existing `TEXT[]` and JWT claim. A new multi-role operation manages only
 an explicit privileged-role allowlist (initially `ADMIN` and `ASSET_REVIEWER`) while preserving
-baseline `USER` and database-managed `SUPERADMIN`. Both caller and target must be internal for this
-operation. Role changes take effect in newly issued/refreshed portal tokens under the current JWT
-architecture.
+baseline `USER` and database-managed `SUPERADMIN`. The caller must be internal; the target must be
+a different active internal employee. Role changes take effect in newly issued/refreshed portal
+tokens under the current JWT architecture.
 
 ### PostgreSQL-backed hybrid search for the POC
 
@@ -258,7 +259,7 @@ ordering by UUID after the documented primary sort.
 | `GET /assets/facets` | internal | Counts for approved types/tags/owners and launchable POCs under the same optional query filters. |
 | `GET /assets/{assetId}` | internal | Approved `AssetDetailResponse`; `404` when no approved revision or archived, except authorized editor/reviewer endpoints below. |
 | `POST /assets` | internal | `CreateAssetRequest`; creates asset + revision 1 draft; returns `201 AssetEditorResponse`. |
-| `GET /assets/mine` | internal | Caller-owned assets including working status, paginated. Submission alone does not place an asset in My assets when another employee owns it. |
+| `GET /assets/mine` | internal | Caller-owned assets including working status, displayed revision number, and latest working-revision review feedback, paginated. Submission alone does not place an asset in My assets when another employee owns it. |
 | `GET /assets/{assetId}/working-revision` | submitter, owner, or reviewer | `AssetEditorResponse` including working revision and last approved summary. |
 | `POST /assets/{assetId}/working-revision` | submitter or owner | Clones approved/changes-requested/rejected revision into next draft; `409` if an editable/pending working revision already exists. |
 | `PATCH /assets/{assetId}/working-revision` | submitter or owner | `UpdateAssetRevisionRequest` including `expectedVersion`; draft only. |
@@ -429,8 +430,9 @@ cross-workstream acceptance list pass, and all of the following are true:
 - Approved content remains stable while a new revision moves through review.
 - Source URLs are never fetched by backend code or AI input construction.
 - POC launch is derived from the existing linked POC and never from an asset-owned runtime URL.
-- Role management changes only `ADMIN`/`ASSET_REVIEWER`, preserves `USER`/`SUPERADMIN`, targets an
-  internal employee, and writes an audit row in the same transaction.
+- Role management changes only `ADMIN`/`ASSET_REVIEWER`, preserves `USER`/`SUPERADMIN`, targets a
+  different active internal employee, locks concurrent updates, and writes an audit row in the
+  same transaction.
 - Keyword search is deterministic; semantic search follows the ranking contract when enabled and
   falls back without changing authorization or response shape.
 - The portal uses the existing design system, passes its tests/build and AXE/WCAG checks, and has

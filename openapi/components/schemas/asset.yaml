@@ -377,6 +377,7 @@ AssetMineSummaryResponse:
     - id
     - assetType
     - title
+    - revisionNumber
     - hasApprovedRevision
     - updatedAt
   properties:
@@ -395,6 +396,11 @@ AssetMineSummaryResponse:
       description: Working revision's title if one exists, otherwise the approved revision's title.
       example: "Radiology Triage Assistant"
 
+    revisionNumber:
+      type: integer
+      description: Working revision number if one exists, otherwise the approved revision number.
+      example: 2
+
     workingState:
       type: string
       enum: [DRAFT, PENDING_REVIEW, CHANGES_REQUESTED, REJECTED]
@@ -405,6 +411,12 @@ AssetMineSummaryResponse:
     hasApprovedRevision:
       type: boolean
       example: true
+
+    latestReviewFeedback:
+      type: string
+      maxLength: 4000
+      nullable: true
+      description: Latest reviewer feedback for the active working revision, when present.
 
     updatedAt:
       type: string
@@ -773,6 +785,9 @@ AssetReviewQueueItemResponse:
     - ownerDisplayName
     - submittedByUserId
     - submittedByDisplayName
+    - authoredByUserId
+    - authoredByDisplayName
+    - version
     - submittedAt
     - ageDays
   properties:
@@ -812,6 +827,22 @@ AssetReviewQueueItemResponse:
       type: string
       description: Internal display name used to explain and enforce the no-self-approval rule.
       example: "Alex Morgan"
+
+    authoredByUserId:
+      type: string
+      description: Author of the frozen revision; reviewers cannot decide their own revision.
+      example: "01JDEF456XYZ"
+
+    authoredByDisplayName:
+      type: string
+      description: Internal display name of the frozen revision's author.
+      example: "Sam Lee"
+
+    version:
+      type: integer
+      format: int64
+      description: Optimistic-lock version required when recording the decision.
+      example: 2
 
     submittedAt:
       type: string
@@ -960,7 +991,7 @@ AssetReviewDetailResponse:
     asset:
       type: object
       description: Stable asset context required for authorization cues and a reload-safe review screen.
-      required: [id, assetType, ownerUserId, submittedByUserId]
+      required: [id, assetType, ownerUserId, submittedByUserId, authoredByUserId]
       properties:
         id:
           type: string
@@ -976,6 +1007,12 @@ AssetReviewDetailResponse:
         submittedByUserId:
           type: string
         submittedByDisplayName:
+          type: string
+          nullable: true
+        authoredByUserId:
+          type: string
+          description: Author of the exact revision returned in this response.
+        authoredByDisplayName:
           type: string
           nullable: true
 

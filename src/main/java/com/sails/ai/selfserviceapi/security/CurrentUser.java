@@ -47,6 +47,13 @@ public final class CurrentUser {
         }
     }
 
+    public static void requireSuperAdmin() {
+        if (!hasRole("SUPERADMIN")) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "SUPERADMIN_REQUIRED",
+                    "This action requires the SUPERADMIN role.");
+        }
+    }
+
     public static String id() {
         Jwt jwt = (Jwt) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         return jwt.getSubject();

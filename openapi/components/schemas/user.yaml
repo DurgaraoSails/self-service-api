@@ -326,7 +326,7 @@ AccountType:
 
 EmployeeResponse:
   type: object
-  description: An internal employee, for Asset Hub role administration.
+  description: An active internal employee, for Asset Hub role administration.
   required:
     - id
     - email
@@ -369,7 +369,7 @@ EmployeeResponse:
 
 EmployeePageResponse:
   type: object
-  description: One page of internal employees, for the role-administration list.
+  description: One page of active internal employees, for the role-administration list.
   required:
     - content
     - page

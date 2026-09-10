@@ -49,7 +49,8 @@ public class AssetController implements AssetApi {
     public ResponseEntity<AssetPageResponse> listAssets(String q, List<String> type, List<String> tag, String ownerId,
                                                           Boolean launchable, Integer page, Integer size) {
         CurrentUser.requireInternal();
-        return ResponseEntity.ok(assetLifecycleService.listAssets(q, type, tag, ownerId, launchable, page, size));
+        return ResponseEntity.ok(assetLifecycleService.listAssets(q, type, tag, ownerId, launchable, page, size,
+                CurrentUser.id()));
     }
 
     @Override

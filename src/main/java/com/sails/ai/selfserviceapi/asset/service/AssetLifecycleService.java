@@ -13,6 +13,7 @@ import com.sails.ai.selfserviceapi.asset.exception.WorkingRevisionExistsExceptio
 import com.sails.ai.selfserviceapi.asset.repository.AssetEventRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetFeedbackRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetRepository;
+import com.sails.ai.selfserviceapi.asset.repository.AssetReviewRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetRevisionRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetSearchRepository;
 import com.sails.ai.selfserviceapi.asset.repository.TagRepository;
@@ -40,6 +41,8 @@ import com.sails.ai.selfserviceapi.user.entity.AccountType;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.entity.UserStatus;
 import com.sails.ai.selfserviceapi.user.repository.UserRepository;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -65,13 +68,14 @@ public class AssetLifecycleService {
     private final PocRepository pocRepository;
     private final AssetFeedbackRepository assetFeedbackRepository;
     private final AssetEventRepository assetEventRepository;
+    private final AssetReviewRepository assetReviewRepository;
     private final AssetSearchIndexer assetSearchIndexer;
 
     public AssetLifecycleService(AssetRepository assetRepository, AssetRevisionRepository assetRevisionRepository,
                                   AssetSearchRepository assetSearchRepository, TagRepository tagRepository,
                                   UserRepository userRepository, PocRepository pocRepository,
                                   AssetFeedbackRepository assetFeedbackRepository, AssetEventRepository assetEventRepository,
-                                  AssetSearchIndexer assetSearchIndexer) {
+                                  AssetReviewRepository assetReviewRepository, AssetSearchIndexer assetSearchIndexer) {
         this.assetRepository = assetRepository;
         this.assetRevisionRepository = assetRevisionRepository;
         this.assetSearchRepository = assetSearchRepository;
@@ -80,11 +84,13 @@ public class AssetLifecycleService {
         this.pocRepository = pocRepository;
         this.assetFeedbackRepository = assetFeedbackRepository;
         this.assetEventRepository = assetEventRepository;
+        this.assetReviewRepository = assetReviewRepository;
         this.assetSearchIndexer = assetSearchIndexer;
     }
 
     @Transactional
     public AssetEditorResponse createAsset(CreateAssetRequest request, String callerId) {
+        validateSourceUrl(request.getSourceUrl());
         User owner = requireActiveInternalUser(request.getOwnerUserId());
         String assetType = request.getAssetType().getValue();
         validatePocAssociation(request.getPocId(), assetType);
@@ -121,10 +127,7 @@ public class AssetLifecycleService {
 
     @Transactional(readOnly = true)
     public AssetDetailResponse getAsset(UUID assetId) {
-        Asset asset = assetRepository.findById(assetId).orElseThrow(() -> new AssetNotFoundException(assetId));
-        if (asset.getArchivedAt() != null || asset.getApprovedRevisionId() == null) {
-            throw new AssetNotFoundException(assetId);
-        }
+        Asset asset = requireDiscoverableAsset(assetId);
         AssetRevision approved = assetRevisionRepository.findById(asset.getApprovedRevisionId())
                 .orElseThrow(() -> new AssetNotFoundException(assetId));
         String ownerDisplayName = userRepository.findById(asset.getOwnerUserId())
@@ -194,6 +197,7 @@ public class AssetLifecycleService {
 
     @Transactional
     public AssetEditorResponse updateWorkingRevision(UUID assetId, String callerId, UpdateAssetRevisionRequest request) {
+        validateSourceUrl(request.getSourceUrl());
         Asset asset = assetRepository.lockById(assetId).orElseThrow(() -> new AssetNotFoundException(assetId));
         requireSubmitterOrOwner(asset, callerId);
 
@@ -296,14 +300,18 @@ public class AssetLifecycleService {
                     ? assetRevisionRepository.findById(asset.getWorkingRevisionId()).orElse(null) : null;
             AssetRevision approved = asset.getApprovedRevisionId() != null
                     ? assetRevisionRepository.findById(asset.getApprovedRevisionId()).orElse(null) : null;
-            content.add(AssetResponseMapper.toMineSummaryResponse(asset, working, approved));
+            String latestReviewFeedback = working == null ? null
+                    : assetReviewRepository.findFirstByRevisionIdOrderByCreatedAtDesc(working.getId())
+                            .map(com.sails.ai.selfserviceapi.asset.entity.AssetReview::getFeedback)
+                            .orElse(null);
+            content.add(AssetResponseMapper.toMineSummaryResponse(asset, working, approved, latestReviewFeedback));
         }
         return AssetResponseMapper.toMinePageResponse(content, page, size, owned.size());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public AssetPageResponse listAssets(String q, List<String> types, List<String> tags, String ownerId,
-                                         Boolean launchable, int page, int size) {
+                                         Boolean launchable, int page, int size, String callerId) {
         String normalizedQ = normalizeQuery(q);
         String typesCsv = csv(types);
         String tagsCsv = csv(tags == null ? null : tags.stream().map(AssetLifecycleService::normalizeTagName).toList());
@@ -314,6 +322,13 @@ public class AssetLifecycleService {
 
         List<AssetSummaryResponse> content = hydrateSummaries(ids);
         UUID searchSessionId = normalizedQ != null ? UUID.randomUUID() : null;
+        if (searchSessionId != null) {
+            AssetEvent event = new AssetEvent();
+            event.setUserId(callerId);
+            event.setEventType("SEARCH");
+            event.setSearchSessionId(searchSessionId);
+            assetEventRepository.save(event);
+        }
         return AssetResponseMapper.toPageResponse(content, page, size, total, searchSessionId);
     }
 
@@ -349,7 +364,7 @@ public class AssetLifecycleService {
 
     @Transactional
     public AssetFeedbackResponse putFeedback(UUID assetId, String callerId, AssetFeedbackRequest request) {
-        Asset asset = assetRepository.findById(assetId).orElseThrow(() -> new AssetNotFoundException(assetId));
+        Asset asset = requireDiscoverableAsset(assetId);
         AssetFeedback feedback = assetFeedbackRepository.findByAssetIdAndUserId(assetId, callerId)
                 .orElseGet(AssetFeedback::new);
         feedback.setAssetId(asset.getId());
@@ -362,7 +377,7 @@ public class AssetLifecycleService {
 
     @Transactional
     public void recordEvent(UUID assetId, String callerId, AssetEventRequest request) {
-        assetRepository.findById(assetId).orElseThrow(() -> new AssetNotFoundException(assetId));
+        requireDiscoverableAsset(assetId);
         AssetEvent event = new AssetEvent();
         event.setAssetId(assetId);
         event.setUserId(callerId);
@@ -447,6 +462,24 @@ public class AssetLifecycleService {
         return String.join(",", values);
     }
 
+    private static void validateSourceUrl(String sourceUrl) {
+        try {
+            URI uri = new URI(sourceUrl);
+            String scheme = uri.getScheme();
+            if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    || uri.getHost() == null || uri.getHost().isBlank()) {
+                throw invalidSourceUrl();
+            }
+        } catch (URISyntaxException | NullPointerException exception) {
+            throw invalidSourceUrl();
+        }
+    }
+
+    private static ApiException invalidSourceUrl() {
+        return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ASSET_SOURCE_URL",
+                "Source URL must be an absolute HTTP(S) URL.");
+    }
+
     private User requireActiveInternalUser(String userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "User not found: " + userId));
@@ -454,6 +487,14 @@ public class AssetLifecycleService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Owner must be an active internal employee.");
         }
         return user;
+    }
+
+    private Asset requireDiscoverableAsset(UUID assetId) {
+        Asset asset = assetRepository.findById(assetId).orElseThrow(() -> new AssetNotFoundException(assetId));
+        if (asset.getArchivedAt() != null || asset.getApprovedRevisionId() == null) {
+            throw new AssetNotFoundException(assetId);
+        }
+        return asset;
     }
 
     private void validatePocAssociation(UUID pocId, String assetType) {
