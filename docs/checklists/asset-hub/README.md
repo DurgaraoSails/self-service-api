@@ -69,7 +69,9 @@ they are not duplicated and allowed to drift.
 
 ### Phase 1 — authorization and vertical slice (backend and portal in parallel after Phase 0)
 
-- Backend: internal guard, assets/revisions/reviews, no-self-review, approved-only keyword listing.
+- Backend: internal guard, assets/revisions/reviews, no-self-review, approved-only keyword search
+  (via `asset_search_documents`' `tsvector` column, created in this phase — the `vector` embedding
+  column and pgvector extension stay Phase 3 only).
 - Portal: guards, routes, discovery, editor, My assets, reviewer queue using the frozen contract.
 - Exit test: internal employee A creates/submits; reviewer B approves; A and B can discover the
   approved revision; editing creates a new draft without removing the approved result.

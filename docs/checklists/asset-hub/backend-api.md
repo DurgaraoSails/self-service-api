@@ -58,6 +58,10 @@ feature spec.
 - [ ] Add Flyway migrations for `assets`, `asset_revisions`, `tags`,
       `asset_revision_tags`, `asset_reviews`, `asset_ai_suggestions`,
       `asset_search_documents`, `asset_feedback`, `asset_events`, and `role_change_audit`.
+      Create `asset_search_documents` with its base columns, `search_text`, stored `tsvector`, and
+      provider/model/dimensions/checksum columns nullable in this migration — keyword search must
+      exist for the Phase 1 vertical slice. Add the `vector` embedding column through a separate,
+      later migration in Phase 3 (see the last bullet in this section).
 - [ ] Use UUIDs for asset and revision identifiers exposed through URLs.
 - [ ] Store stable identity and `approved_revision_id`/`working_revision_id` on `assets`, with
       constraints preventing cross-asset revision pointers.
@@ -74,8 +78,12 @@ feature spec.
 - [ ] Add migration and repository integration tests, including constraint failures.
 - [ ] Add the two same-asset composite revision-pointer FKs only after `asset_revisions` exists and
       verify cross-asset pointers fail at the database layer.
-- [ ] Keep the vector extension/search-document migration in Phase 3 so the core vertical slice can
-      ship against the existing local PostgreSQL image.
+- [ ] Keep only the `vector` embedding column and the pgvector extension itself in a Phase 3
+      migration (an `ALTER TABLE asset_search_documents ADD COLUMN embedding vector(...)` plus
+      `CREATE EXTENSION vector`), added once the local PostgreSQL image is swapped for a
+      pgvector-enabled one. The rest of `asset_search_documents` (keyword/tsvector columns) is a
+      Phase 0/1 migration so the core vertical slice ships against the existing local PostgreSQL
+      image with working keyword search.
 
 ## 3. Internal-account authorization
 
