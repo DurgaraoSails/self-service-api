@@ -60,6 +60,10 @@ they are not duplicated and allowed to drift.
 
 ## Required implementation phases
 
+**Status (2026-09-10):** Phase 0 done (`5de7764`) and Phase 1's backend half done (`520b4ed`) — see
+`backend-api.md`'s Handoff evidence for the full exit-test verification and known gaps. Phase 1's
+portal half has not started. Phase 2/3 not started.
+
 ### Phase 0 — contract freeze (backend owner)
 
 - Add every agreed Asset Hub path/schema and stable error code to OpenAPI.
