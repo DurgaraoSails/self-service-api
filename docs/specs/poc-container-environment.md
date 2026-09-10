@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+In Progress
 
 ## Overview / Purpose
 
@@ -142,15 +142,60 @@ rather than the one that version originally ran with — the same reproducibilit
 overrides introduce generally, and acceptable for a demo platform where the alternative is that
 rotating a leaked key requires editing every POC that used it. See Future Work.
 
-**IAM is granted when the binding is created, not when the deploy runs.** The POC runtime service
-account (`gcp.serviceAccountEmail("poc-runtime")`) needs `roles/secretmanager.secretAccessor` on
-each secret it consumes. Granting at bind time means a permission problem surfaces immediately, in
-the portal, attached to the action that caused it. Granting at deploy time means the deploy
-*succeeds* and the container then crash-loops with a Secret Manager permission error that looks
-nothing like a secrets problem — the failure mode this platform has already been bitten by twice.
+**Every POC gets its own runtime service account. This must land before the first secret exists.**
+Today every deployed POC runs as one shared identity, named at `BuildService.deployStep` as
+`gcp.serviceAccountEmail("poc-runtime")`. Per-secret grants to a shared identity do not isolate
+anything: they accumulate into one pool that every hosted POC's container can draw from. Secret ids
+are derived from the slug and are therefore guessable, a Cloud Run container can reach the metadata
+server and mint a token for the identity it runs as, and Secret Manager is a public API. Any POC
+could read any other POC's secrets by asking for them.
+
+That makes the shared account a blocker for this feature rather than a detail of it. `pocs` gains a
+`runtime_service_account` column (migration `V16`), allocated once per POC and passed to
+`--service-account=` at deploy. Two properties matter:
+
+- **Allocate, don't derive at use.** A GCP account id is 6–30 characters and `pocs.slug` is
+  unbounded `TEXT`, so `poc-<slug>-<environment>` overflows for any slug past roughly fifteen
+  characters. The id is derived once — truncated, with a short deterministic digest appended for
+  uniqueness — and then *stored*, so nothing depends on that derivation staying stable if the
+  truncation rule is ever changed. A null column means the POC predates this and keeps using
+  `poc-runtime-<environment>`, which stays defined in Terraform as the fallback.
+- **The builder must be able to act as it.** Creating the account is not enough: Cloud Run refuses
+  `--service-account=` unless the deploying identity holds `roles/iam.serviceAccountUser` on the
+  target, even with `run.admin`. `iam.tf`'s existing `builder_can_act_as_poc_runtime` binding exists
+  for exactly that reason and says so in a comment. Terraform cannot grant it for accounts that do
+  not exist yet, so `self-service-api` sets it on the new account at creation — the same shape as
+  the dynamic per-POC `run.invoker` grant `grantApiInvokerStep` already makes, and gated by a
+  property the same way, so a developer running under `roles/editor` is not blocked.
+
+`ensureRuntimeServiceAccount(poc)` is idempotent get-or-create, called from both the bind path and
+the deploy path, because a secret cannot be granted to an account that does not exist and a deploy
+cannot name one either.
+
+Deleting a POC must delete its account along with its secrets. Slugs are `UNIQUE` and soft deletion
+keeps them reserved, so a deleted slug can never be reused into a stale account.
+
+*Operational ceiling worth knowing before committing:* a GCP project allows 100 service accounts by
+default. That is a cap on concurrently hosted POCs and is raised by a quota request, not by code.
+
+**IAM is granted when the binding is created, not when the deploy runs.** The POC's own runtime
+service account needs `roles/secretmanager.secretAccessor` on each secret it consumes. Granting at
+bind time means a permission problem surfaces immediately, in the portal, attached to the action
+that caused it. Granting at deploy time means the deploy *succeeds* and the container then
+crash-loops with a Secret Manager permission error that looks nothing like a secrets problem — the
+failure mode this platform has already been bitten by twice.
 
 Per-secret, per-consumer bindings, not a project-wide accessor grant — following the precedent
 `poc-deployment-pipeline.md` sets for `self-service-builder`'s scoped access to `github-token`.
+
+**A secret is never readable from an `env:` placeholder.** `poc-manifest-deployment.md` adds
+`${...}` references that resolve inside `env:` values; there is deliberately no `${secrets.X}` among
+them and there must never be. An `env:` value is emitted through `--set-env-vars`, whose arguments
+are stored permanently on the Cloud Build resource — the exact exposure `--set-secrets` exists to
+avoid. A secret reaches a container as its own variable or not at all, so composing one into a
+larger string (a password inside a connection URL, say) is not supported; the whole URL is the
+secret instead. `ManifestValidator` rejects the reference rather than leaving it to resolve to
+nothing.
 
 The grant needs `secretmanager.secrets.setIamPolicy`, which is the same permission class that
 already forces `pipeline.grant-api-invoker=false` for local runs under `roles/editor`. It must
@@ -186,7 +231,13 @@ become invalid because of a row in another table.
 
 ## Data Model
 
-**`poc_container_env`** (new table, migration `V21__poc_container_env.sql`) — one row per bound
+**`pocs`** (migration `V16__add_pocs_runtime_service_account.sql`) gains:
+
+| column | type | notes |
+|---|---|---|
+| runtime_service_account | TEXT NULL | The account id allocated for this POC, without the project suffix. Null for a POC created before this existed, which falls back to `poc-runtime-<environment>`. Stored rather than recomputed — see the Architecture Decision above. |
+
+**`poc_container_env`** (new table, migration `V15__poc_container_env.sql`) — one row per bound
 variable:
 
 | column | type | notes |
@@ -273,9 +324,15 @@ blocked before the admin clicks Deploy.
   point of the indirection.
 - **The Cloud Run env spec shows `valueFrom`, not a value** — so `gcloud run services describe`,
   which any project viewer can run, exposes the binding but not the secret.
-- **Access is granted per secret, to one identity** (`poc-runtime`), never project-wide — so one
-  POC's runtime identity cannot read another POC's secrets. This is the property that makes the
-  derived, non-author-supplied naming scheme load-bearing rather than cosmetic.
+- **Access is granted per secret, to the consuming POC's own runtime identity**, never project-wide
+  and never to a shared one — so one POC's container cannot read another POC's secrets. This is what
+  makes the derived, non-author-supplied naming scheme load-bearing rather than cosmetic, and it is
+  the reason the per-POC service account above is a prerequisite rather than a refinement. An
+  earlier draft of this section claimed the property while the platform still deployed every POC
+  under one shared account, which would have made it false as written: the ids are derivable from
+  the slug, a container can mint a token for the identity it runs as, and Secret Manager is a public
+  API, so a shared identity means a shared pool. **This is a test, not an argument** — from one
+  POC's container, ask Secret Manager for another POC's derived id and confirm the denial.
 - **Admin overrides are subject to the same reserved-name rejection as manifests.** Without it an
   admin could set `PLATFORM_API_URL` and silently redirect a POC's JWKS lookup — a token-verification
   bypass dressed as a config change. The merge order (platform last, unconditional) enforces it, and
@@ -289,8 +346,15 @@ blocked before the admin clicks Deploy.
 
 Ordered so each phase is independently shippable and useful.
 
+**Phase 0 — a runtime identity per POC.** `V16__add_pocs_runtime_service_account.sql`; a
+`ServiceAccountService` over the IAM REST API with idempotent `ensureRuntimeServiceAccount(poc)`
+(create, then `setIamPolicy` granting the builder `serviceAccountUser`); `BuildService.deployStep`
+naming the POC's account instead of the shared one; deletion on POC deletion; the Terraform role
+changes. Shippable and worth shipping on its own — it turns the isolation between hosted POCs from
+nominal into real, whether or not a secret is ever bound. Nothing in Phase 1 is safe without it.
+
 **Phase 1 — secrets end to end.** `requires:` parsing (`ManifestParser`, `ManifestContainer`) and
-shape validation (`ManifestValidator`); `V21__poc_container_env.sql`; `secretManagerRestClient` bean
+shape validation (`ManifestValidator`); `V15__poc_container_env.sql`; `secretManagerRestClient` bean
 plus a `SecretManagerService` (create / addVersion / setIamPolicy / delete); the three endpoints;
 `--set-secrets` emission in `CloudRunDeployCommandBuilder` (it is
 container-scoped, so it belongs with the existing per-container flags, not in `buildServiceArgs`);
@@ -337,6 +401,18 @@ following the existing tab and `?tab=` query-param pattern.
   container would fix the ergonomics; not worth it until a real POC needs it.
 
 ## Changelog
+
+- 2026-09-10 — Draft to In Progress, with one blocking correction. This document's Security
+  Considerations claimed that one POC's runtime identity cannot read another POC's secrets; every
+  POC is deployed under the same shared `poc-runtime` account, so per-secret grants accumulate onto
+  a single identity and the claim was false as written. A per-POC runtime service account is now
+  Phase 0 and a prerequisite for binding any secret at all, which makes the claim true rather than
+  dropping it. Also on this pass: the migration renumbered `V21` to `V15`, since the tree was at
+  `V14` and the original number assumed work that never landed; `${secrets.X}` ruled out explicitly
+  now that `env:` values carry placeholders, because an `env:` value is emitted through
+  `--set-env-vars` and stored permanently on the Cloud Build resource; and the endpoints confirmed
+  as staying admin-guarded, matching every other POC mutation endpoint rather than widening access
+  alongside a new feature.
 
 - 2026-09-07 — Initial draft. Written before implementation, per `docs/specs/README.md`. Arose from
   a design discussion about how a multi-container POC supplies per-container configuration: the

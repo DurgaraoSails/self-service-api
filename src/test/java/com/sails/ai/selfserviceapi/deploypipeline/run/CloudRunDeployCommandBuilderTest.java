@@ -382,4 +382,135 @@ class CloudRunDeployCommandBuilderTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("api");
     }
+
+    // --- a single container that declares its own port ---
+
+    /**
+     * The gap this closes: the probe was already built from the declared port while no --port was
+     * emitted at all, so Cloud Run kept serving 8080 and the two disagreed about one manifest.
+     */
+    @Test
+    void aSingleContainerDeclaringItsOwnPortGetsBothThatPortAndAProbeOnIt() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", 3000,
+                Map.of(), "/healthz");
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).containsExactly(
+                "--image=img/app:1",
+                "--port=3000",
+                "--startup-probe=httpGet.path=/healthz,httpGet.port=3000,timeoutSeconds=5,periodSeconds=10,failureThreshold=12",
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com");
+    }
+
+    // --- ${...} placeholders ---
+
+    @Test
+    void resolvesASidecarUrlIntoTheEnvVarNameTheManifestChose() {
+        ManifestContainer web = new ManifestContainer("web", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("BACKEND_API_URL", "${services.api.url}"));
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "api/Dockerfile", "api", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(web, api), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("web", "img/web:1", "api", "img/api:1"));
+
+        // SVC_API_URL is still injected beside it: an alias adds a name, it never replaces one.
+        assertThat(args).contains(
+                "--set-env-vars=^;^BACKEND_API_URL=http://localhost:9000;PLATFORM_API_URL=https://self-service-api.example.com"
+                        + ";POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;SVC_API_URL=http://localhost:9000");
+    }
+
+    @Test
+    void resolvesSelfPortToTheIngressPortTheDeployActuallyEmits() {
+        ManifestContainer web = new ManifestContainer("web", ContainerRole.INGRESS, "Dockerfile", ".", 3000,
+                Map.of("SERVER_PORT", "${self.port}"));
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "api/Dockerfile", "api", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(web, api), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("web", "img/web:1", "api", "img/api:1"));
+
+        assertThat(args).contains("--port=3000");
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("SERVER_PORT=3000"));
+    }
+
+    /** An ingress naming no port still resolves it — to the platform's value, not to nothing. */
+    @Test
+    void resolvesSelfPortToThePlatformDefaultWhenTheIngressDeclaresNone() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("SERVER_PORT", "${self.port}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("SERVER_PORT=8080"));
+    }
+
+    @Test
+    void resolvesASidecarOwnPortAlongsideTheInjectedPort() {
+        ManifestContainer web = new ManifestContainer("web", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "api/Dockerfile", "api", 9000,
+                Map.of("ASPNETCORE_URLS", "http://0.0.0.0:${self.port}"));
+        PocManifest manifest = new PocManifest(List.of(web, api), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("web", "img/web:1", "api", "img/api:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg)
+                .contains("ASPNETCORE_URLS=http://0.0.0.0:9000")
+                .contains("PORT=9000"));
+    }
+
+    @Test
+    void resolvesTheRemainingPlatformRoots() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("TENANT", "${poc.slug}", "API", "${platform.apiUrl}", "EMBEDDER", "${portal.origin}",
+                        "WHOAMI", "${self.name}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg)
+                .contains("TENANT=my-poc")
+                .contains("API=https://self-service-api.example.com")
+                .contains("EMBEDDER=https://portal.example.com")
+                .contains("WHOAMI=app"));
+    }
+
+    @Test
+    void leavesAValueReferencingNoKnownRootExactlyAsWritten() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("TEMPLATE", "total is ${amount}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("TEMPLATE=total is ${amount}"));
+    }
+
+    @Test
+    void unescapesADoubledDollarIntoALiteralPlaceholder() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("DOCS", "write $${self.port}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("DOCS=write ${self.port}"));
+    }
+
+    /**
+     * The redeploy path re-parses a stored manifest without revalidating, so an unresolvable
+     * reference must deploy verbatim rather than throw — a rollback cannot start failing because a
+     * rule was added after that version was built.
+     */
+    @Test
+    void leavesAnUnresolvableKnownRootVerbatimRatherThanFailingTheDeploy() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("GONE", "${services.removed.url}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("GONE=${services.removed.url}"));
+    }
 }

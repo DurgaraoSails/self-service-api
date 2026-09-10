@@ -2,7 +2,9 @@ package com.sails.ai.selfserviceapi.deploypipeline.run;
 
 import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.EnvPlaceholders;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PlatformEnvContext;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.Resources;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.Scaling;
@@ -101,8 +103,16 @@ public class CloudRunDeployCommandBuilder {
     private List<String> buildSingleContainerArgs(String pocSlug, ManifestContainer container, Resources resources, Map<String, String> imagesByContainer) {
         List<String> args = new ArrayList<>();
         args.add("--image=" + requireImage(container, imagesByContainer));
-        // No --port=: a single-container service is the one case Cloud Run does default a port for,
-        // so it binds its own $PORT exactly as it did before this feature existed.
+        // Emitted only when the manifest names a port. A single-container service is the one case
+        // Cloud Run defaults a port for, so a manifest that names none binds its own $PORT exactly
+        // as it did before this flag was ever emitted here — the arguments are unchanged for it.
+        // One that names 3000 previously got no --port at all while its startup probe was built
+        // from that same declared port, so Cloud Run kept routing to 8080 and the deploy was broken
+        // whichever port the image actually bound. Honouring it is what lets a repo whose app
+        // hardcodes a port deploy without a source change.
+        if (container.port() != null) {
+            args.add("--port=" + container.port());
+        }
         addResourceArgs(resources, args);
         addStartupProbeArg(container, ingressPort(container), args);
         args.add(envArg(platformEnv(pocSlug, container, List.of(container))));
@@ -207,7 +217,14 @@ public class CloudRunDeployCommandBuilder {
      * two values are written, so they cannot drift.
      */
     private Map<String, String> platformEnv(String pocSlug, ManifestContainer container, List<ManifestContainer> allContainers) {
-        Map<String, String> env = new LinkedHashMap<>(container.env());
+        // The author's own values first, with their ${...} references resolved, then the platform's
+        // on top — the same overlay order as before, so a reserved name still cannot be shadowed.
+        // Resolution happens here rather than at parse time because this is where the ports and the
+        // SVC_ values are already decided, which is what keeps them from drifting apart.
+        PlatformEnvContext context = PlatformEnvContext.of(container, allContainers,
+                effectiveIngressPort(allContainers), pocSlug, pocRuntime.platformApiUrl(), pocRuntime.portalOrigin());
+        Map<String, String> env = new LinkedHashMap<>();
+        container.env().forEach((key, value) -> env.put(key, EnvPlaceholders.resolve(value, context)));
         env.put("PLATFORM_API_URL", pocRuntime.platformApiUrl());
         env.put("POC_SLUG", pocSlug);
         if (pocRuntime.hasPortalOrigin()) {
@@ -240,6 +257,21 @@ public class CloudRunDeployCommandBuilder {
      */
     private int ingressPort(ManifestContainer ingress) {
         return ingress.port() == null ? pocRuntime.ingressPort() : ingress.port();
+    }
+
+    /**
+     * The same value {@link #ingressPort} produces, found from the container list rather than handed
+     * the ingress — what {@link PlatformEnvContext} needs so a {@code ${services.<ingress>.url}} or
+     * a {@code ${self.port}} on the ingress agrees with the {@code --port=} actually emitted. Falls
+     * back to the platform default for a stored manifest with no ingress at all, which never passed
+     * through {@code ManifestValidator}.
+     */
+    private int effectiveIngressPort(List<ManifestContainer> containers) {
+        return containers.stream()
+                .filter(container -> container.role() == ContainerRole.INGRESS)
+                .findFirst()
+                .map(this::ingressPort)
+                .orElseGet(pocRuntime::ingressPort);
     }
 
     /**

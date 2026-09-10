@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=./poc.schema.json
+#
+# poc.yaml — copy this into your repository root, delete what you don't need.
+#
+# You only need this file at all if one of these is true:
+#   * your POC runs more than one container
+#   * your Dockerfile is not at the repository root
+#   * you want to set CPU, memory or scaling
+# A repo with a root Dockerfile and nothing else deploys as a single container named "app".
+#
+# The line at the top gives you validation and autocomplete in any editor with the YAML
+# extension installed. It points at the schema next to this file; if you copy this template
+# into your own repo, point it at the raw URL of poc.schema.json instead.
+
+# --- Descriptive only. Shown to humans, drives nothing. -----------------------
+apiVersion: sails.poc/v1
+name: Contract Agent
+description: Reviews contracts and highlights unusual clauses.
+team: Platform Experiments
+
+# --- Containers. Exactly one ingress; any number of sidecars. -----------------
+containers:
+  - name: web # lowercase, hyphens allowed, max 40 chars
+    role: ingress # exactly one container has this; it receives all external traffic
+    dockerfile: apps/web/Dockerfile # path from the REPOSITORY ROOT
+    context: apps/web # also from the repository root, NOT relative to dockerfile
+    port: 3000 # optional. Omit it and the platform uses 8080.
+    health: /healthz # optional but strongly recommended, see the note below
+    env:
+      # Your own variable names. Values may reference platform values with ${...}
+      # so you never have to edit your application to read a name we chose.
+      BACKEND_API_URL: ${services.api.url} # http://localhost:7000
+      PUBLIC_API_BASE: ${services.api.url}/v1 # compose them into larger values
+      SERVER_PORT: ${self.port} # 3000, this container's own port
+      LOG_LEVEL: info # plain values work exactly as before
+
+  - name: api
+    role: sidecar # reachable from the other containers, never from a browser
+    dockerfile: apps/api/Dockerfile
+    context: apps/api
+    port: 7000 # REQUIRED for a sidecar: the port it listens on
+    health: /healthz
+    env:
+      SERVER_PORT: ${self.port} # 7000
+      ASPNETCORE_URLS: http://0.0.0.0:${self.port} # a URL built around the port
+      ALLOWED_ORIGIN: ${portal.origin} # the one origin allowed to frame you
+      JWKS_ISSUER: ${platform.apiUrl} # where to verify a launch token
+      EXPECTED_AUDIENCE: poc:${poc.slug} # your own POC's audience
+
+# --- Applies to the ingress container. Sidecars get Cloud Run's defaults. -----
+resources:
+  cpu: "1" # quote it: "1", "2", "0.5"
+  memory: 512Mi # 512Mi, 1Gi, 2Gi
+
+# --- Optional. Omit for Cloud Run's own defaults (0 and 100). -----------------
+scaling:
+  min: 0 # 0 means scale to zero when idle; the first request then pays a cold start
+  max: 4
+
+# =============================================================================
+# Notes worth reading once
+# =============================================================================
+#
+# ${...} placeholders — everything you can reference
+#
+#   ${self.port}               this container's port
+#   ${self.name}               this container's name
+#   ${services.<name>.url}     http://localhost:<that container's port>
+#   ${services.<name>.host}    localhost
+#   ${services.<name>.port}    that container's port, bare
+#   ${poc.slug}                your POC's slug
+#   ${platform.apiUrl}         the platform API, for verifying launch tokens
+#   ${portal.origin}           the one origin allowed to frame your POC
+#
+#   A reference that names one of those roots but doesn't resolve is an error, and you'll
+#   see it before anything is built. Anything else, like ${HOME} or ${amount}, is left
+#   alone as ordinary text. Write $${ if you want a literal ${ that starts a known root.
+#
+#   These are aliases, never replacements. The platform still injects PORT,
+#   SVC_<NAME>_URL, POC_SLUG, PLATFORM_API_URL and PORTAL_ORIGIN as it always has, so a
+#   POC already written against those names keeps working untouched.
+#
+# health: — add one to every container
+#
+#   It becomes a startup probe, and Cloud Run will only hold the ingress back for a sidecar
+#   that has one. Without it your ingress can start serving before your backend is
+#   listening, which shows up as a 502 on the first request after a scale-up from zero.
+#   You get 120 seconds to answer it, which is generous for a JVM cold start.
+#
+# ports
+#
+#   A sidecar must declare one: it is the only address anything can reach it at, and it is
+#   what the platform injects as that sidecar's own PORT. The ingress may declare one; if
+#   it doesn't, it gets 8080. No two containers may use the same port — they share one
+#   network namespace.
+#
+# what you cannot set
+#
+#   PORT, POC_SLUG, PLATFORM_API_URL and PORTAL_ORIGIN, and anything starting with SAILS_
+#   or SVC_. The platform owns those. Read them with a placeholder under your own name.
+#
+# every container builds from THIS repository
+#
+#   A repo: key on a container is rejected. Cross-repository containers aren't supported.
+#
+# the filename
+#
+#   poc.yaml or poc.yml, at the repository root. Both work.
