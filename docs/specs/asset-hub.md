@@ -258,7 +258,7 @@ ordering by UUID after the documented primary sort.
 | `GET /assets/facets` | internal | Counts for approved types/tags/owners and launchable POCs under the same optional query filters. |
 | `GET /assets/{assetId}` | internal | Approved `AssetDetailResponse`; `404` when no approved revision or archived, except authorized editor/reviewer endpoints below. |
 | `POST /assets` | internal | `CreateAssetRequest`; creates asset + revision 1 draft; returns `201 AssetEditorResponse`. |
-| `GET /assets/mine` | internal | Caller-owned/submitted assets including working status, paginated. |
+| `GET /assets/mine` | internal | Caller-owned assets including working status, paginated. Submission alone does not place an asset in My assets when another employee owns it. |
 | `GET /assets/{assetId}/working-revision` | submitter, owner, or reviewer | `AssetEditorResponse` including working revision and last approved summary. |
 | `POST /assets/{assetId}/working-revision` | submitter or owner | Clones approved/changes-requested/rejected revision into next draft; `409` if an editable/pending working revision already exists. |
 | `PATCH /assets/{assetId}/working-revision` | submitter or owner | `UpdateAssetRevisionRequest` including `expectedVersion`; draft only. |
@@ -267,6 +267,7 @@ ordering by UUID after the documented primary sort.
 | `POST /assets/{assetId}/ai-suggestions` | submitter or owner | Starts suggestions for the current draft and returns `202 AssetAiSuggestionResponse`. |
 | `GET /assets/{assetId}/ai-suggestions/latest` | submitter, owner, or reviewer | Latest run for the current working revision. |
 | `GET /asset-reviews` | internal reviewer | Pending queue. Query: type/age/page/size; oldest submitted first, UUID tie-break. |
+| `GET /asset-reviews/dashboard` | internal reviewer | Authoritative total/approved/in-review counts across non-archived assets, plus the same counts for every asset type. Approved and in-review may overlap while a newer revision is pending. |
 | `GET /asset-reviews/{revisionId}` | internal reviewer | Exact frozen revision, last approved revision when present, and review history. |
 | `POST /asset-reviews/{revisionId}/decisions` | different internal reviewer | `CreateAssetReviewRequest {decision, feedback?, expectedVersion}`; returns updated review detail. |
 | `PUT /assets/{assetId}/feedback` | internal | `AssetFeedbackRequest {rating, comment?}`; idempotently replaces caller's feedback. |

@@ -374,7 +374,7 @@ AssetEditorResponse:
 
 AssetMineSummaryResponse:
   type: object
-  description: One row of the caller's own submissions, in GET /assets/mine.
+  description: One row for an asset currently owned by the caller, in GET /assets/mine.
   required:
     - id
     - assetType
@@ -774,7 +774,9 @@ AssetReviewQueueItemResponse:
     - assetType
     - title
     - ownerUserId
+    - ownerDisplayName
     - submittedByUserId
+    - submittedByDisplayName
     - submittedAt
     - ageDays
   properties:
@@ -801,9 +803,19 @@ AssetReviewQueueItemResponse:
       type: string
       example: "01JABC123XYZ"
 
+    ownerDisplayName:
+      type: string
+      description: Internal display name for the reviewer queue; never exposes an external identity.
+      example: "Priya Raman"
+
     submittedByUserId:
       type: string
       example: "01JXYZ987ABC"
+
+    submittedByDisplayName:
+      type: string
+      description: Internal display name used to explain and enforce the no-self-approval rule.
+      example: "Alex Morgan"
 
     submittedAt:
       type: string
@@ -842,6 +854,61 @@ AssetReviewQueuePageResponse:
     totalPages:
       type: integer
       example: 1
+
+
+AssetReviewerDashboardCategoryResponse:
+  type: object
+  required:
+    - assetType
+    - totalAssets
+    - approvedAssets
+    - inReviewAssets
+  properties:
+    assetType:
+      type: string
+      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+    totalAssets:
+      type: integer
+      format: int64
+      minimum: 0
+    approvedAssets:
+      type: integer
+      format: int64
+      minimum: 0
+    inReviewAssets:
+      type: integer
+      format: int64
+      minimum: 0
+
+
+AssetReviewerDashboardResponse:
+  type: object
+  description: >
+    Reviewer-visible counts over all non-archived assets. Approved and in-review counts may overlap
+    when an asset has a currently approved revision and a newer revision awaiting review.
+  required:
+    - totalAssets
+    - approvedAssets
+    - inReviewAssets
+    - categories
+  properties:
+    totalAssets:
+      type: integer
+      format: int64
+      minimum: 0
+    approvedAssets:
+      type: integer
+      format: int64
+      minimum: 0
+    inReviewAssets:
+      type: integer
+      format: int64
+      minimum: 0
+    categories:
+      type: array
+      description: One entry for every supported asset type, including zero-count categories.
+      items:
+        $ref: '#/AssetReviewerDashboardCategoryResponse'
 
 
 AssetReviewDecisionResponse:
@@ -890,9 +957,32 @@ AssetReviewDetailResponse:
   type: object
   description: The exact frozen revision under review, the last approved revision if one exists, and its decision history.
   required:
+    - asset
     - revision
     - history
   properties:
+    asset:
+      type: object
+      description: Stable asset context required for authorization cues and a reload-safe review screen.
+      required: [id, assetType, ownerUserId, submittedByUserId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        assetType:
+          type: string
+          enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+        ownerUserId:
+          type: string
+        ownerDisplayName:
+          type: string
+          nullable: true
+        submittedByUserId:
+          type: string
+        submittedByDisplayName:
+          type: string
+          nullable: true
+
     revision:
       $ref: '#/AssetRevisionFields'
 

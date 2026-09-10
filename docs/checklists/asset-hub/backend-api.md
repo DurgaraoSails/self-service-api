@@ -119,6 +119,9 @@ feature spec.
 
 ## 5. Asset lifecycle and revisions
 
+- [ ] Implement `GET /asset-reviews/dashboard` with authoritative total, approved, and in-review
+      counts overall and per asset type; include zero-count categories and exclude archived assets.
+
 - [ ] Implement draft creation with the authenticated employee as submitter and initial revision
       author.
 - [ ] Support an explicit owner separate from the submitter, restricted to eligible internal users.

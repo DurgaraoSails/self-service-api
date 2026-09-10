@@ -2073,7 +2073,7 @@ paths:
 
   /assets/mine:
     get:
-      summary: List the caller's own submitted/owned assets
+      summary: List assets currently owned by the caller
       operationId: listMyAssets
       tags:
         - Asset
@@ -2092,7 +2092,7 @@ paths:
             default: 20
       responses:
         '200':
-          description: One page of the caller's own assets, including working status
+          description: One page of caller-owned assets, including working status
           content:
             application/json:
               schema:
@@ -2499,6 +2499,26 @@ paths:
             application/json:
               schema:
                 $ref: './components/schemas/asset.yaml#/AssetReviewQueuePageResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /asset-reviews/dashboard:
+    get:
+      summary: Get all-asset workflow counts for the reviewer dashboard
+      operationId: getAssetReviewerDashboard
+      tags:
+        - AssetReview
+      responses:
+        '200':
+          description: Counts across all non-archived assets, including a breakdown by asset type
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetReviewerDashboardResponse'
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
         '403':
