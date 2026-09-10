@@ -14,6 +14,7 @@ import com.sails.ai.selfserviceapi.poc.service.PocService;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
 import com.sails.ai.selfserviceapi.poc.service.PocLaunchService;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentResponseMapper;
+import com.sails.ai.selfserviceapi.poc.service.PocRepoStatusService;
 import com.sails.ai.selfserviceapi.poc.config.DeploymentWebhookProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -76,6 +77,7 @@ class SecurityConfigTest {
 
     @MockitoBean private PocService pocService;
     @MockitoBean private PocDeploymentService deployments;
+    @MockitoBean private PocRepoStatusService pocRepoStatusService;
     @MockitoBean private PocLaunchService launches;
     @MockitoBean private PocDeploymentResponseMapper deploymentMapper;
     @MockitoBean private DeploymentWebhookProperties webhookProperties;
