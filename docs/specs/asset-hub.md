@@ -319,10 +319,13 @@ Use the existing API error envelope and these stable codes:
 | 400 | `INVALID_ASSET_SOURCE_URL` | URL is not absolute HTTP(S) or exceeds bounds. |
 | 400 | `INVALID_ASSET_TYPE` | Value is outside the closed enum. |
 | 400 | `INVALID_MANAGED_ROLE` | Role request contains anything except the managed allowlist. |
+| 400 | `DUPLICATE_MANAGED_ROLE` | Role request lists the same managed role more than once. |
 | 403 | `INTERNAL_ACCOUNT_REQUIRED` | Authenticated account is not internal. |
 | 403 | `ASSET_REVIEWER_REQUIRED` | Caller lacks the reviewer role. |
+| 403 | `SUPERADMIN_REQUIRED` | Caller lacks the superadmin role required for role administration. |
 | 403 | `SELF_REVIEW_FORBIDDEN` | Reviewer submitted the asset or authored the revision. |
 | 403 | `ROLE_TARGET_MUST_BE_INTERNAL` | Role target is not an internal employee. |
+| 403 | `ROLE_TARGET_MUST_BE_ACTIVE` | Role target's account is not active. |
 | 403 | `ROLE_SELF_MANAGEMENT_FORBIDDEN` | Superadmin targeted their own role assignment. |
 | 404 | `ASSET_NOT_FOUND` | Asset is absent or not visible in this context. |
 | 404 | `ASSET_REVISION_NOT_FOUND` | Revision is absent or belongs to another asset/context. |
@@ -494,3 +497,7 @@ reuse metric, or a redundant `Published` state.
   is swapped for a pgvector-enabled one. The backend checklist previously read as deferring the whole
   table to Phase 3, which would have left Phase 1 without real keyword search; see
   `docs/checklists/asset-hub/backend-api.md` §2.
+- 2026-09-10 — Added `DUPLICATE_MANAGED_ROLE`, `SUPERADMIN_REQUIRED`, and `ROLE_TARGET_MUST_BE_ACTIVE`
+  to the Error Contract table. All three were already implemented and returned by the §4 multi-role
+  management endpoint (commit `1b5c305`) but were missing from this table — code review caught the
+  documentation gap, not a behavior change.
