@@ -143,17 +143,21 @@ public final class AssetResponseMapper {
         return response;
     }
 
-    public static AssetMineSummaryResponse toMineSummaryResponse(Asset asset, AssetRevision working, AssetRevision approved) {
-        String title = working != null ? working.getTitle() : approved.getTitle();
+    public static AssetMineSummaryResponse toMineSummaryResponse(Asset asset, AssetRevision working, AssetRevision approved,
+                                                                   String latestReviewFeedback) {
+        AssetRevision displayed = working != null ? working : approved;
+        String title = displayed.getTitle();
         AssetMineSummaryResponse response = new AssetMineSummaryResponse(
                 asset.getId(),
                 AssetMineSummaryResponse.AssetTypeEnum.fromValue(asset.getAssetType()),
                 title,
+                displayed.getRevisionNumber(),
                 approved != null,
-                toOffsetDateTime(working != null ? working.getUpdatedAt() : approved.getUpdatedAt()));
+                toOffsetDateTime(displayed.getUpdatedAt()));
         if (working != null && !AssetRevision.APPROVED.equals(working.getState())) {
             response.workingState(AssetMineSummaryResponse.WorkingStateEnum.fromValue(working.getState()));
         }
+        response.latestReviewFeedback(latestReviewFeedback);
         return response;
     }
 
@@ -185,13 +189,15 @@ public final class AssetResponseMapper {
     }
 
     public static AssetReviewQueueItemResponse toReviewQueueItemResponse(Asset asset, AssetRevision revision,
-                                                                           String ownerDisplayName, String submitterDisplayName) {
+                                                                           String ownerDisplayName, String submitterDisplayName,
+                                                                           String authorDisplayName) {
         long ageDays = Duration.between(revision.getSubmittedAt(), Instant.now()).toDays();
         return new AssetReviewQueueItemResponse(
                 revision.getId(), asset.getId(),
                 AssetReviewQueueItemResponse.AssetTypeEnum.fromValue(asset.getAssetType()),
                 revision.getTitle(), asset.getOwnerUserId(), ownerDisplayName,
                 asset.getSubmittedByUserId(), submitterDisplayName,
+                revision.getAuthoredByUserId(), authorDisplayName, revision.getVersion(),
                 toOffsetDateTime(revision.getSubmittedAt()), (int) ageDays);
     }
 
@@ -201,12 +207,14 @@ public final class AssetResponseMapper {
     }
 
     public static AssetReviewDetailResponse toReviewDetailResponse(Asset asset, AssetRevision revision, AssetRevision lastApproved,
-                                                                     List<AssetReview> history, String ownerDisplayName, String submitterDisplayName) {
+                                                                     List<AssetReview> history, String ownerDisplayName,
+                                                                     String submitterDisplayName, String authorDisplayName) {
         AssetReviewDetailResponseAsset assetFields = new AssetReviewDetailResponseAsset(
                 asset.getId(), AssetReviewDetailResponseAsset.AssetTypeEnum.fromValue(asset.getAssetType()),
-                asset.getOwnerUserId(), asset.getSubmittedByUserId());
+                asset.getOwnerUserId(), asset.getSubmittedByUserId(), revision.getAuthoredByUserId());
         assetFields.ownerDisplayName(ownerDisplayName);
         assetFields.submittedByDisplayName(submitterDisplayName);
+        assetFields.authoredByDisplayName(authorDisplayName);
 
         List<AssetReviewDecisionResponse> decisions = history.stream()
                 .sorted(Comparator.comparing(AssetReview::getCreatedAt))

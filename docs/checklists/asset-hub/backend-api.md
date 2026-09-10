@@ -44,7 +44,7 @@ feature spec.
       mutation that can race.
 - [x] Add optional POC launch-action data without exposing a second editable launch URL.
 - [x] Add employee listing and managed-role request/response schemas to the user contract.
-      *(schemas only — `EmployeeController` itself is §4, deferred.)*
+      *(`EmployeeController` and its service are implemented in §4.)*
 - [x] Restrict managed role values in the schema to `ADMIN` and `ASSET_REVIEWER`; do not include
       `USER` or `SUPERADMIN`.
 - [x] Define consistent `400`, `401`, `403`, `404`, `409`, and AI-unavailable responses using the
@@ -96,10 +96,8 @@ feature spec.
 - [x] Add a reusable current-user/internal-account authorization helper rather than duplicating JWT
       claim expressions across controllers. *(`CurrentUser.isInternal()`/`requireInternal()`/
       `hasRole()`/`requireAssetReviewer()`.)*
-- [ ] Require `INTERNAL` on every asset, review, feedback, search, telemetry, employee-list, and
-      Asset Hub role-management operation. **Done for every asset/review/feedback/telemetry/search
-      operation (§5, §7, §9's storage). Not yet applicable to employee-list/role-management — §4 is
-      deferred, so there is no such endpoint to gate yet.**
+- [x] Require `INTERNAL` on every asset, review, feedback, search, telemetry, employee-list, and
+      Asset Hub role-management operation.
 - [x] Require `ASSET_REVIEWER` in addition to `INTERNAL` for reviewer queue and decision operations.
 - [x] Ensure `ADMIN` alone does not grant Asset Hub review access. *(imperative role check, not
       `@PreAuthorize` — see the commit message for why.)*
@@ -111,22 +109,22 @@ feature spec.
 
 ## 4. Multi-role management
 
-- [ ] Add an internal-employee listing/filter suitable for superadmin role administration; do not
+- [x] Add an active-internal-employee listing/filter suitable for superadmin role administration; do not
       force the portal to use the customer/trial-oriented presentation.
-- [ ] Add one atomic managed-role replacement operation for an internal target.
-- [ ] Require the caller to be both `INTERNAL` and `SUPERADMIN`.
-- [ ] Preserve the target's baseline `USER` role and any database-managed `SUPERADMIN` role.
-- [ ] Reject unknown roles, duplicates after normalization, external targets, inactive policy
+- [x] Add one atomic managed-role replacement operation for an internal target.
+- [x] Require the caller to be both `INTERNAL` and `SUPERADMIN`.
+- [x] Preserve the target's baseline `USER` role and any database-managed `SUPERADMIN` role.
+- [x] Reject unknown roles, duplicates after normalization, external targets, inactive policy
       violations, and self-modification.
 - [ ] Decide and document compatibility for the existing promote/demote ADMIN endpoints; do not let
       them become a bypass around the internal-target policy for Asset Hub role administration.
-- [ ] Write `role_change_audit` in the same transaction as the role update.
-- [ ] Return the authoritative updated role list.
-- [ ] Document that the current JWT carries role claims and when an updated assignment becomes
+- [x] Write `role_change_audit` in the same transaction as the role update.
+- [x] Return the authoritative updated role list.
+- [x] Document that the current JWT carries role claims and when an updated assignment becomes
       effective; add immediate revocation only if separately approved.
 - [ ] Test assigning `ADMIN` and `ASSET_REVIEWER` together, removing one role, idempotent replacement,
       forbidden targets, and attempts to assign or remove `SUPERADMIN`.
-- [ ] Lock the target user row during replacement so concurrent requests cannot lose a role update
+- [x] Lock the target user row during replacement so concurrent requests cannot lose a role update
       or write a mismatched audit record.
 
 ## 5. Asset lifecycle and revisions
@@ -137,12 +135,7 @@ feature spec.
 - [x] Implement draft creation with the authenticated employee as submitter and initial revision
       author.
 - [x] Support an explicit owner separate from the submitter, restricted to eligible internal users.
-- [ ] Validate asset type, bounded catalog fields, normalized tags, and absolute HTTP(S) source URL.
-      **Type/field-length/tag validation is done. Source-URL validation is NOT — `sourceUrl` is
-      stored as-is with no server-side check that it's an absolute HTTP(S) URL, and
-      `INVALID_ASSET_SOURCE_URL` (400) from the spec's Error Contract is never thrown. Genuine gap,
-      caught while updating this checklist, not fixed yet — flagging rather than silently leaving it
-      implied done.**
+- [x] Validate asset type, bounded catalog fields, normalized tags, and absolute HTTP(S) source URL.
 - [x] Never dereference, preview, or validate source content server-side.
 - [x] Implement working-revision updates with optimistic concurrency.
 - [x] Submit an immutable revision into `PENDING_REVIEW`.
@@ -232,11 +225,9 @@ Feedback and event *storage* landed this phase (the controller needed them to co
 *aggregation* is still Phase 2 and not started.
 
 - [x] Add general asset feedback distinct from reviewer feedback.
-- [ ] Define privacy-minimized events for search session, detail view, source open, and POC launch.
-      **`DETAIL_VIEW`/`SOURCE_OPEN`/`POC_LAUNCH` are recorded via `POST /assets/{id}/events` as
-      specced. `SEARCH` is NOT recorded anywhere — `GET /assets` generates and returns a
-      `searchSessionId` but never inserts the corresponding `asset_events` row. Gap, caught while
-      updating this checklist, not fixed yet.**
+- [x] Define privacy-minimized events for search session, detail view, source open, and POC launch.
+      *(`GET /assets` records `SEARCH` without raw query text; the returned session id correlates
+      subsequent detail/source/launch events.)*
 - [x] Do not add reuse events or infer that a source open means reuse.
 - [ ] Define successful-search and time-to-useful-result calculations in the living spec before
       exposing dashboard numbers. *(not started.)*
@@ -249,18 +240,16 @@ Feedback and event *storage* landed this phase (the controller needed them to co
 
 ## 10. Verification and rollout
 
-- [ ] Add service tests for every state transition and authorization invariant. *(not done — no
-      test files this pass, explicit scope decision.)*
+- [ ] Add service tests for every state transition and authorization invariant. *(role-policy,
+      source-URL, and search-event coverage exists; full lifecycle transition coverage remains.)*
 - [ ] Add controller slice tests implementing the generated API interface. *(not done, same reason.)*
 - [ ] Add database-backed tests for revision promotion, role audit, search indexing, and races.
-      *(not done, same reason; role audit is §4, not built yet regardless.)*
+      *(role audit has unit coverage; database-backed concurrency coverage remains.)*
 - [ ] Add configuration validation and safe disabled fallbacks for AI/embedding providers.
       *(`AssetHubProperties` exists with safe `false` defaults from Phase 0; no explicit
       invalid-config-fails-startup validation added.)*
 - [x] Verify existing authentication, POC, user administration, activity, and file tests do not
-      regress. *(`mvn test`: 419 tests, 0 failures. 2 errors, both in a compiled test class with no
-      corresponding source file anywhere in the repo or git history — confirmed unrelated to this
-      feature; see Handoff evidence.)*
+      regress. *(`mvn test`: 423 tests, 0 failures, 0 errors, 4 skipped.)*
 - [x] Run the full Maven test suite and OpenAPI generation from a clean checkout. *(not from a
       clean checkout specifically, but `generate-sources`, `compile`, and `test` all run clean from
       the current tree.)*
@@ -270,8 +259,10 @@ Feedback and event *storage* landed this phase (the controller needed them to co
 
 ## Handoff evidence
 
-This covers Phase 0 (contract freeze) + Phase 1 (authorization and vertical slice, §§3/5/7-keyword)
-only. §§4/6-launch-token-minting/8/9-metrics remain for later phases.
+This covers Phase 0 (contract freeze), Phase 1 (authorization and vertical slice), the §4
+multi-role workflow, keyword-search telemetry, and portal contract fields needed for revision-safe
+review. §6 launch-token minting, §7 semantic ranking, §8 AI, and §9 metric aggregation remain later
+phases.
 
 ```text
 Implementation commit(s):
@@ -282,10 +273,7 @@ Implementation commit(s):
 Tests run:
   .\mvnw.cmd generate-sources   — clean
   .\mvnw.cmd compile            — clean
-  .\mvnw.cmd test               — 419 tests, 0 failures, 0 errors in any tracked source file
-                                   (2 errors in a compiled class with no corresponding .java file
-                                   anywhere in the repo or git history — pre-existing build/IDE
-                                   artifact, unrelated to this feature; did not investigate further)
+  .\mvnw.cmd test               — 423 tests, 0 failures, 0 errors, 4 skipped
   Live smoke test (no automated Asset Hub test files this phase — explicit scope decision):
     booted the app against a real local Postgres and drove the full exit test with curl using
     JWTs minted to match JwtService's claim shape (the existing dev-token endpoint is
@@ -312,8 +300,6 @@ Result: pass. Four real bugs were caught and fixed by the live verification itse
        a self-contained query with the join correctly placed in FROM.
 
 Deferred items:
-  - §4 Multi-role management / EmployeeController — untouched; a separate generated interface, so
-    nothing above depends on it existing.
   - §6 partial — launch-token minting still goes entirely through the existing
     /pocs/{slug}/launch endpoint; Asset Hub only derives the read-only `launchable` flag.
   - §7 semantic search (EmbeddingProvider, RRF) — Phase 3, blocked on the provider/model/dimension
@@ -322,18 +308,12 @@ Deferred items:
     503 ASSET_AI_UNAVAILABLE for now (a real, spec-compliant disabled-path response, not a stub).
   - §9 metrics aggregation (successful-search rate, time-to-useful-result, contributor adoption,
     review turnaround) — not started; only the underlying feedback/event storage landed.
-  - All of §10's automated-test bullets — explicit scope decision this session (smoke-verify only).
+  - §10's database-backed concurrency and PostgreSQL integration coverage remains deferred; unit
+    coverage now protects managed-role policy/auditing, source URL validation, and search events.
 
 Known risks:
-  - GET /assets does not record a SEARCH-type asset_event despite generating a searchSessionId —
-    found while filling in this checklist, not yet fixed. Breaks any future search-funnel metric
-    that expects a SEARCH row to correlate against.
-  - sourceUrl has no server-side "absolute HTTP(S)" validation and INVALID_ASSET_SOURCE_URL is
-    never thrown, despite being in the spec's Error Contract — found while filling in this
-    checklist, not yet fixed. A malformed or non-HTTP(S) sourceUrl is currently accepted as-is.
-  - No automated regression coverage for this feature at all yet (see Deferred items) — the live
-    smoke test covered the exit-test paths but not edge cases (concurrent reviewers, repeated
-    decisions, every illegal state transition, POC-link edge cases).
+  - Database-backed edge coverage is still needed for concurrent reviewers, repeated decisions,
+    every illegal state transition, POC-link edge cases, and pessimistic role-update locking.
   - This sandbox's own embedded Tomcat could not stay up for verification (loopback-socket
     restriction) — all live verification ran against the user's own locally-run process, restarted
     several times over the course of this session.

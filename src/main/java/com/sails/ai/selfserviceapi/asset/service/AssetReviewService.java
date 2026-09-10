@@ -68,6 +68,7 @@ public class AssetReviewService {
             userIds.add(a.getOwnerUserId());
             userIds.add(a.getSubmittedByUserId());
         });
+        pending.forEach(revision -> userIds.add(revision.getAuthoredByUserId()));
         Map<String, User> usersById = userRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(User::getId, u -> u));
 
@@ -76,7 +77,8 @@ public class AssetReviewService {
                     Asset asset = assetsById.get(revision.getAssetId());
                     String ownerName = AssetResponseMapper.displayName(usersById.get(asset.getOwnerUserId()));
                     String submitterName = AssetResponseMapper.displayName(usersById.get(asset.getSubmittedByUserId()));
-                    return AssetResponseMapper.toReviewQueueItemResponse(asset, revision, ownerName, submitterName);
+                    String authorName = AssetResponseMapper.displayName(usersById.get(revision.getAuthoredByUserId()));
+                    return AssetResponseMapper.toReviewQueueItemResponse(asset, revision, ownerName, submitterName, authorName);
                 })
                 .toList();
 
@@ -200,6 +202,7 @@ public class AssetReviewService {
         List<AssetReview> history = assetReviewRepository.findByRevisionIdOrderByCreatedAtAsc(revision.getId());
         String ownerName = userRepository.findById(asset.getOwnerUserId()).map(AssetResponseMapper::displayName).orElse(null);
         String submitterName = userRepository.findById(asset.getSubmittedByUserId()).map(AssetResponseMapper::displayName).orElse(null);
-        return AssetResponseMapper.toReviewDetailResponse(asset, revision, lastApproved, history, ownerName, submitterName);
+        String authorName = userRepository.findById(revision.getAuthoredByUserId()).map(AssetResponseMapper::displayName).orElse(null);
+        return AssetResponseMapper.toReviewDetailResponse(asset, revision, lastApproved, history, ownerName, submitterName, authorName);
     }
 }
