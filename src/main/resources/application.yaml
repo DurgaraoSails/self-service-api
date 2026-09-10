@@ -212,3 +212,5 @@ server:
 
 brevo:
   api-key: ${BREVO_API_KEY}
+
+MICROSOFT_SSO_ENABLED: true
