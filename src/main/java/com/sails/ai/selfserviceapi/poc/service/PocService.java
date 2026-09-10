@@ -98,6 +98,13 @@ public class PocService {
         }
     }
 
+    /**
+     * Does not itself trigger a repository-status refresh — that must wait until this method's own
+     * transaction commits, or the async refresh's read of this POC can race an uncommitted insert
+     * and silently see nothing (see docs/specs/poc-tag-driven-deployment.md, "Repository state is
+     * not fetched during POC creation"). {@link com.sails.ai.selfserviceapi.poc.controller.PocController}
+     * triggers it after this call returns, which is after the transaction below has committed.
+     */
     @Transactional
     public Poc create(PocFields fields) {
         Poc poc = new Poc();

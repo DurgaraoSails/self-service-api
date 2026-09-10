@@ -12,6 +12,11 @@ import java.util.UUID;
  *
  * <p>Both are null when {@code pipeline.executor=skip} — skip mode never touches GitHub at all,
  * consistent with its existing contract.
+ *
+ * @param createTag false for "deploy an existing tag" — the tag is that request's input, not its
+ *                  output, so the pipeline must not write it or demand push access to do so. True
+ *                  for "deploy new version," where the platform derived {@code versionLabel} and
+ *                  the tag does not exist yet.
  */
 public record BuildAndDeployRequest(
         UUID deploymentId,
@@ -20,6 +25,7 @@ public record BuildAndDeployRequest(
         String githubUrl,
         String versionLabel,
         String commitSha,
-        PocManifest manifest
+        PocManifest manifest,
+        boolean createTag
 ) {
 }

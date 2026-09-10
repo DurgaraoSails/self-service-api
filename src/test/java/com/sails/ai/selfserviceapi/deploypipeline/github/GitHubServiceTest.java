@@ -440,6 +440,67 @@ class GitHubServiceTest {
         server.verify();
     }
 
+    // --- listing tags for the version list ---------------------------------------------------
+
+    private static final String TAGS_URL = BASE + "/repos/DurgaraoSails/dummy-poc/tags?per_page=3";
+
+    @Test
+    void listsTagsWithTheirCommitShas() {
+        server.expect(requestTo(TAGS_URL)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"name":"1.0.3","commit":{"sha":"c3","url":"x"}},
+                         {"name":"1.0.2","commit":{"sha":"c2","url":"x"}},
+                         {"name":"1.0.1","commit":{"sha":"c1","url":"x"}}]
+                        """, MediaType.APPLICATION_JSON));
+
+        org.assertj.core.api.Assertions.assertThat(gitHubService.listTags(REPO, 3))
+                .containsExactly(new GitHubTag("1.0.3", "c3"), new GitHubTag("1.0.2", "c2"), new GitHubTag("1.0.1", "c1"));
+
+        server.verify();
+    }
+
+    @Test
+    void listsNoTagsForARepositoryWithNone() {
+        server.expect(requestTo(TAGS_URL)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        org.assertj.core.api.Assertions.assertThat(gitHubService.listTags(REPO, 3)).isEmpty();
+
+        server.verify();
+    }
+
+    @Test
+    void readsOneTagsCommitByExactName() {
+        server.expect(requestTo(READ_TAG_URL)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(tagPointingAt("abc123"), MediaType.APPLICATION_JSON));
+
+        org.assertj.core.api.Assertions.assertThat(gitHubService.getTagCommitSha(REPO, "1.0.1")).isEqualTo("abc123");
+
+        server.verify();
+    }
+
+    // --- the branch name half of getDeployBranchHeadSha, for display -----------------------
+
+    @Test
+    void resolvesToThePocsOwnDeployBranchWithoutAnyCall() {
+        org.assertj.core.api.Assertions.assertThat(gitHubService.resolveDeployBranch(REPO, "release/2024"))
+                .isEqualTo("release/2024");
+        // No expectation registered at all — a call here would fail server.verify() with an
+        // unexpected request, so its absence is the assertion.
+        server.verify();
+    }
+
+    @Test
+    void resolvesToTheRepositorysDefaultBranchWhenNothingIsPinned() {
+        respondToRepoReadWith("""
+                {"default_branch":"develop"}
+                """);
+
+        org.assertj.core.api.Assertions.assertThat(gitHubService.resolveDeployBranch(REPO, null)).isEqualTo("develop");
+
+        server.verify();
+    }
+
     // --- what parseRepoUrl accepts ----------------------------------------------------------
 
     /**

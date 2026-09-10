@@ -3,6 +3,7 @@ package com.sails.ai.selfserviceapi.poc.service;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTag;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestResolution;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestService;
@@ -22,6 +23,7 @@ import com.sails.ai.selfserviceapi.poc.exception.MissingGithubUrlException;
 import com.sails.ai.selfserviceapi.poc.exception.MissingHostedUrlException;
 import com.sails.ai.selfserviceapi.poc.exception.MissingPocSlugException;
 import com.sails.ai.selfserviceapi.poc.exception.NoBuiltImageException;
+import com.sails.ai.selfserviceapi.poc.exception.NonSemverRepositoryException;
 import com.sails.ai.selfserviceapi.poc.exception.PocDeploymentNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocVersionNotFoundException;
@@ -30,9 +32,14 @@ import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocVersionContainerRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocVersionRepository;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +62,9 @@ public class PocDeploymentService {
     private static final String DEFAULT_CONTAINER_NAME = "app";
 
     private static final int MAX_PATCH = 20;
+
+    /** The version list shows the 3 most recent tags — see docs/specs/poc-tag-driven-deployment.md. */
+    private static final int TAG_FETCH_COUNT = 3;
     private static final String BUILD_AND_DEPLOY = "BUILD_AND_DEPLOY";
     private static final String REDEPLOY = "REDEPLOY";
     private static final String PENDING = "PENDING";
@@ -123,25 +133,180 @@ public class PocDeploymentService {
         String commitSha = null;
         PocManifest manifest = null;
         String manifestYaml = null;
+        PocVersion version;
         if (!pipelineProperties.isSkip()) {
             GitHubRepoRef repo = gitHubService.parseRepoUrl(poc.getGithubUrl());
             commitSha = gitHubService.getDeployBranchHeadSha(repo, poc.getDeployBranch());
             ManifestResolution resolution = manifestService.resolveForBuild(repo, commitSha);
             manifest = resolution.manifest();
             manifestYaml = resolution.rawYaml();
+            version = deriveNextVersion(pocId, repo);
+        } else {
+            // skip mode never touches GitHub, so there is no repository to derive a tag name
+            // from — the old, purely platform-numbered allocation is exactly right here, and
+            // nothing it invents can ever collide with a real tag since nothing is ever pushed.
+            version = allocateNextVersion(pocId);
         }
 
-        PocVersion version = allocateNextVersion(pocId);
         if (manifestYaml != null) {
             version.setManifestYaml(manifestYaml);
             pocVersionRepository.save(version);
         }
-        PocDeployment deployment = createDeployment(pocId, version.getId(), BUILD_AND_DEPLOY, initiatedByUserId);
+        PocDeployment deployment = createDeployment(pocId, version.getId(), BUILD_AND_DEPLOY, initiatedByUserId, true);
 
         logInitiated("New deployment", poc, version);
         deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(
-                deployment.getId(), pocId, poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest));
+                deployment.getId(), pocId, poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest, true));
         return deployment;
+    }
+
+    /**
+     * Builds and deploys a tag that already exists in the repository — the tag is this deploy's
+     * input, not something the platform creates. No push access is required (see
+     * docs/specs/poc-tag-driven-deployment.md, "Deploying an existing tag must not require push
+     * access") — the platform only reads the tag's commit, which read access already proves.
+     *
+     * <p>The tag's own commit becomes the version's commitSha, never the deploy branch's head:
+     * deploying tag {@code 1.0.3} must build {@code 1.0.3}'s code even if the branch has moved on
+     * since that tag was cut, or the version label would lie about what actually shipped.
+     *
+     * <p>Find-or-create on {@code (pocId, tagName)}: a tag whose version row already exists (a
+     * previous attempt at this same tag, or one platform-derived version that happens to share a
+     * name with a tag an admin later created by hand) is reused rather than rejected by the
+     * unique constraint — this always runs the full pipeline regardless, so "already has an
+     * image" is the caller's decision to route through {@link #redeployVersion} instead, not this
+     * method's to detect.
+     */
+    @Transactional
+    public PocDeployment deployExistingTag(UUID pocId, String tagName, String initiatedByUserId) {
+        Poc poc = getPoc(pocId);
+        if (poc.getGithubUrl() == null || poc.getGithubUrl().isBlank()) {
+            throw new MissingGithubUrlException(pocId);
+        }
+        requireSlug(poc);
+        requireNoActiveDeployment(pocId);
+
+        GitHubRepoRef repo = gitHubService.parseRepoUrl(poc.getGithubUrl());
+        String commitSha = gitHubService.getTagCommitSha(repo, tagName);
+        ManifestResolution resolution = manifestService.resolveForBuild(repo, commitSha);
+
+        PocVersion version = pocVersionRepository.findByPocIdAndVersionLabel(pocId, tagName)
+                .orElseGet(() -> newVersionForTag(pocId, tagName));
+        if (resolution.rawYaml() != null) {
+            version.setManifestYaml(resolution.rawYaml());
+        }
+        version = pocVersionRepository.save(version);
+
+        PocDeployment deployment = createDeployment(pocId, version.getId(), BUILD_AND_DEPLOY, initiatedByUserId, false);
+
+        logInitiated("New deployment", poc, version);
+        deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(deployment.getId(), pocId, poc.getSlug(),
+                poc.getGithubUrl(), version.getVersionLabel(), commitSha, resolution.manifest(), false));
+        return deployment;
+    }
+
+    private PocVersion newVersionForTag(UUID pocId, String tagName) {
+        PocVersion version = new PocVersion();
+        version.setPocId(pocId);
+        version.setVersionLabel(tagName);
+        Semver parsed = Semver.parse(tagName);
+        if (parsed != null) {
+            version.setMajor(parsed.major());
+            version.setMinor(parsed.minor());
+            version.setPatch(parsed.patch());
+        }
+        return version;
+    }
+
+    /**
+     * Derives the next version's tag name from the repository's own tags — git is the source of
+     * truth, not a number this platform invents in isolation (see
+     * docs/specs/poc-tag-driven-deployment.md, "Deriving the next tag name"). Reads live, never the
+     * cached refresh snapshot: a tag pushed since the last refresh could otherwise collide with the
+     * platform's own next candidate. That still leaves a race if two people act within seconds of
+     * each other — {@link com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService#createTagIfAbsent}
+     * refuses a same-named tag pointing at a different commit rather than silently reusing it, so
+     * the failure mode is a clear error, never a corrupted version.
+     *
+     * <p>Only the highest semver-parseable tag counts as a base to increment from. A repository
+     * whose tags are all something else ({@code latest}, {@code release-2024}) has nothing to
+     * derive from and is refused outright — proposing {@code 1.0.0} into a repository that clearly
+     * numbers releases some other way would only collide upward from there. Those non-semver tags
+     * stay deployable via {@link #deployExistingTag}, so a POC is never stuck.
+     */
+    private PocVersion deriveNextVersion(UUID pocId, GitHubRepoRef repo) {
+        List<GitHubTag> tags = gitHubService.listTags(repo, TAG_FETCH_COUNT);
+        List<PocVersion> existingVersions = pocVersionRepository.findByPocIdOrderByMajorDescMinorDescPatchDesc(pocId);
+
+        Set<String> taken = new HashSet<>();
+        tags.forEach(tag -> taken.add(tag.name()));
+        existingVersions.forEach(v -> taken.add(v.getVersionLabel()));
+
+        Semver highest = tags.stream()
+                .map(tag -> Semver.parse(tag.name()))
+                .filter(Objects::nonNull)
+                .max(Semver::compareTo)
+                .orElseGet(() -> existingVersions.stream()
+                        .filter(v -> v.getMajor() != null)
+                        .map(v -> new Semver(v.getMajor(), v.getMinor(), v.getPatch()))
+                        .max(Semver::compareTo)
+                        .orElse(null));
+
+        if (highest == null) {
+            if (!tags.isEmpty()) {
+                throw new NonSemverRepositoryException(pocId);
+            }
+            highest = new Semver(1, 0, -1); // no tags at all: the first candidate becomes 1.0.0
+        }
+
+        Semver candidate = highest.nextPatch();
+        while (taken.contains(candidate.label())) {
+            candidate = candidate.nextPatch();
+        }
+
+        PocVersion version = new PocVersion();
+        version.setPocId(pocId);
+        version.setMajor(candidate.major());
+        version.setMinor(candidate.minor());
+        version.setPatch(candidate.patch());
+        version.setVersionLabel(candidate.label());
+        return pocVersionRepository.save(version);
+    }
+
+    /** A parsed {@code major.minor.patch} tag — no {@code v} prefix, matching every label this platform has ever produced. */
+    private record Semver(int major, int minor, int patch) implements Comparable<Semver> {
+
+        private static final Pattern PATTERN = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)$");
+
+        static Semver parse(String label) {
+            Matcher matcher = PATTERN.matcher(label);
+            if (!matcher.matches()) {
+                return null;
+            }
+            return new Semver(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)),
+                    Integer.parseInt(matcher.group(3)));
+        }
+
+        Semver nextPatch() {
+            return new Semver(major, minor, patch + 1);
+        }
+
+        String label() {
+            return major + "." + minor + "." + patch;
+        }
+
+        @Override
+        public int compareTo(Semver other) {
+            int byMajor = Integer.compare(major, other.major);
+            if (byMajor != 0) {
+                return byMajor;
+            }
+            int byMinor = Integer.compare(minor, other.minor);
+            if (byMinor != 0) {
+                return byMinor;
+            }
+            return Integer.compare(patch, other.patch);
+        }
     }
 
     @Transactional
@@ -163,7 +328,9 @@ public class PocDeploymentService {
         PocManifest manifest = manifestService.resolveStored(version.getManifestYaml());
         Map<String, String> imagesByContainer = resolveImagesByContainer(versionId, version.getContainerImage());
 
-        PocDeployment deployment = createDeployment(pocId, versionId, REDEPLOY, initiatedByUserId);
+        // createTag is meaningless for REDEPLOY (rollback creates nothing either way) — true
+        // matches the column's own default rather than implying a negative that isn't real.
+        PocDeployment deployment = createDeployment(pocId, versionId, REDEPLOY, initiatedByUserId, true);
 
         logInitiated("Redeployment", poc, version);
         deploymentTrigger.redeploy(new RedeployRequest(
@@ -206,6 +373,12 @@ public class PocDeploymentService {
      * <p>A BUILD_AND_DEPLOY retry re-resolves the manifest (the repo may have fixed a bad poc.yaml
      * since the original attempt failed); a REDEPLOY retry, like any redeploy, never touches
      * GitHub.
+     *
+     * <p>A BUILD_AND_DEPLOY retry also repeats the original attempt's {@code createTag} — re-reads
+     * the deploy branch's head for a "deploy new version" retry, or the tag's own commit (never
+     * the branch head) for a "deploy an existing tag" retry. Flipping that on retry would either
+     * demand push access an existing-tag deploy never needed, or silently rebuild from wherever
+     * the branch has since moved instead of the tag that was actually asked for.
      */
     @Transactional
     public PocDeployment retryDeployment(UUID deploymentId, String initiatedByUserId) {
@@ -225,7 +398,9 @@ public class PocDeploymentService {
             PocManifest manifest = null;
             if (!pipelineProperties.isSkip()) {
                 GitHubRepoRef repo = gitHubService.parseRepoUrl(poc.getGithubUrl());
-                commitSha = gitHubService.getDeployBranchHeadSha(repo, poc.getDeployBranch());
+                commitSha = deployment.isCreateTag()
+                        ? gitHubService.getDeployBranchHeadSha(repo, poc.getDeployBranch())
+                        : gitHubService.getTagCommitSha(repo, version.getVersionLabel());
                 ManifestResolution resolution = manifestService.resolveForBuild(repo, commitSha);
                 manifest = resolution.manifest();
                 if (resolution.rawYaml() != null) {
@@ -235,8 +410,8 @@ public class PocDeploymentService {
             }
             resetForRetry(deployment, initiatedByUserId);
             logInitiated("New deployment", poc, version);
-            deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(
-                    deployment.getId(), poc.getId(), poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest));
+            deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(deployment.getId(), poc.getId(), poc.getSlug(),
+                    poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest, deployment.isCreateTag()));
             return deployment;
         }
 
@@ -536,11 +711,12 @@ public class PocDeploymentService {
         return pocVersionRepository.save(version);
     }
 
-    private PocDeployment createDeployment(UUID pocId, UUID versionId, String kind, String initiatedBy) {
+    private PocDeployment createDeployment(UUID pocId, UUID versionId, String kind, String initiatedBy, boolean createTag) {
         PocDeployment deployment = new PocDeployment();
         deployment.setPocId(pocId);
         deployment.setPocVersionId(versionId);
         deployment.setKind(kind);
+        deployment.setCreateTag(createTag);
         deployment.setInitiatedBy(initiatedBy);
         return pocDeploymentRepository.save(deployment);
     }

@@ -108,6 +108,14 @@ but the pipeline still demands push access to deploy *any* tag, that advice cann
 `requirePushAccess` therefore moves from "always" to "only when this deploy will create a tag".
 Deploying an existing tag needs read access only — which the repository read already proved.
 
+**Reuse, don't rebuild: `GitHubService.checkPushAccess`/`RepoAccess` already exist**, added for the
+onboarding checker (`#47`) after this spec's first draft. `checkPushAccess` returns
+`OK`/`NOT_FOUND`/`ARCHIVED`/`NO_PUSH` instead of throwing, and `RepoAccess.describe(repo)` already
+carries the exact message both this feature's disabled-button UI and the onboarding checker should
+show — one message, not two that can drift apart. `requirePushAccess` becomes the thin
+throwing wrapper it already is; `PipelineRunner` only needs to stop calling it unconditionally, and
+the snapshot's `can_create_tags` column is simply `checkPushAccess(repo) == RepoAccess.OK`.
+
 ### Three deploy paths, one pipeline
 
 | Action | Tag | Build | Deploy |
@@ -126,9 +134,17 @@ label lies about what shipped.
 
 ### Freshness is exact commit equality
 
-A tag is "current" when its commit SHA equals the head of the deploy branch
-(`pipeline.deploy-branch`, or the repository default). Anything else shows the warning icon. This
-needs no extra API call — the branch head is already fetched for the snapshot.
+A tag is "current" when its commit SHA equals the head of the deploy branch. Anything else shows
+the warning icon. This needs no extra API call — the branch head is already fetched for the
+snapshot.
+
+**The three-tier resolution (POC's own `deploy_branch` → `pipeline.deploy-branch` → repository
+default) already exists**, added by `#48` after this spec's first draft:
+`GitHubService.getDeployBranchHeadSha(repo, pocDeployBranch)`. It returns only the head *SHA*,
+not the branch *name* that was chosen — and the repository header ("Repository state" section
+below) needs to display that name. Split a `resolveDeployBranch(String pocDeployBranch)` out of
+it, returning the branch name, with `getDeployBranchHeadSha` calling that and then
+`getBranchHeadSha`. One resolution, not a second copy in the refresh path that can drift from it.
 
 Rejected for now: GitHub's compare API, which would say *"3 commits behind"* and is far more useful
 for deciding which tag to pick, but costs one call per tag shown. Recorded under Future Work; the
@@ -172,7 +188,8 @@ while there, `PipelineRunner` should move onto a pool too.
 
 ## Data Model
 
-New migration `V12__create_poc_repo_status.sql`, plus alterations to `poc_versions`.
+New migration `V13__create_poc_repo_status.sql`, plus alterations to `poc_versions`. (`V12` was taken
+by `#48`'s `pocs.deploy_branch` column after this spec's first draft.)
 
 **`poc_repo_status`** — one row per POC, the snapshot:
 
@@ -286,10 +303,13 @@ Consequences worth stating, since this replaces the three separate controls in R
   only for picking up a new base image from the same source, and is recorded under Future Work
   rather than given a control nobody would find on the day they need it.
 
-**Reuse `version-combobox`.** It already provides type-to-filter, keyboard navigation, outside-click
-close and a typed output. Generalise it rather than writing a second dropdown; a per-item
-`disabled` + `reason` is the only capability it lacks (needed for both the stale-tag warning and
-unavailable rollback images).
+**`version-combobox` was retired, not generalised.** This spec originally called for reusing it with
+a per-item `disabled` + `reason`. Implementation showed that conflicts with the mock above: a
+dropdown option cannot hold a per-row Deploy button, and each row has to carry four facts plus an
+action. The list is also bounded and short — three repository tags unioned with this POC's own
+versions — so type-to-filter was solving a problem the merged list does not have. Keeping a dropdown
+*and* a list would have reintroduced exactly the "two controls that look alike" problem this section
+exists to remove, so the component was deleted; it had no other consumer.
 
 **Disabled states carry their reason.** Every disabled control gets a tooltip or inline note: no
 push access, image gone, deploy in progress. A disabled button with no explanation is the specific
@@ -340,6 +360,52 @@ directly at the dropdown below it, so the workaround is visible in the same view
 
 ## Changelog
 
+- 2026-09-09 — **The manual refresh is now synchronous** (`POST .../repo-status/refresh` answers
+  `204`, not `202`). Found by running the page: the async dispatch meant the refetch that follows
+  raced the GitHub read and won essentially every time, so pressing refresh left the same
+  "last refreshed" value on screen — a control that visibly did nothing. The refreshes triggered by
+  POC creation and by a finished deploy stay asynchronous; they are side-effects of something else
+  the admin was doing. This one *is* the request, so it waits. Also on this pass: the branch save
+  and the settings dialog's follow-up read were both escaping onto the global loading overlay and
+  the save was telling the dashboard to reload its whole list, which together made switching branch
+  look like the entire app was reloading — the dashboard has nothing to learn from it, since
+  `deployBranch` is on `PocDetail` and never on the `PocSummary` a card renders.
+- 2026-09-09 — Reworked after review of the running page. The merged list became a **dropdown plus a
+  single Deploy button** rather than rows with per-row buttons: with commit SHAs, currency and the
+  `Tag deleted` marking all removed as things an admin could not act on, a row had only its name and
+  its kind left, which is what a dropdown option holds. What each entry *is* — a Docker image that
+  redeploys as-is, or a git tag that must be built first — is now the only distinction shown, since
+  it is the only one that changes the outcome. Entries that cannot be deployed at all are omitted
+  rather than listed and refused: a dropdown has nowhere to explain a disabled option.
+  `Current`/`Behind <branch>` are gone for the same reason (they described the snapshot, not a
+  choice), which also retires the `Tag deleted` marking and the `confirmedAbsent` timestamp guard
+  added earlier the same day. The repository URL is plain copyable text, not a link — a same-tab
+  navigation out of an open settings dialog discards whatever else is in it. The branch picker is
+  always visible and preselects the repository default, so creating a version no longer waits for an
+  explicit save: the branch it would build is stated beside the button, so there is no longer an
+  invisible guess for that gate to guard against. **The manifest preview is back on page load**,
+  reversing the decision below — an always-visible "won't build" warning was judged worth two GitHub
+  calls per open. If that cost bites, the fix is to resolve the manifest during the repository
+  refresh and store the container list on the snapshot, which would restore "no GitHub call on page
+  load" without hiding the warning.
+- 2026-09-09 — Portal implemented. Four deviations from the text above, each recorded where it
+  applies: `version-combobox` was deleted rather than generalised (see "One list of versions");
+  `PocRepoTagResponse` gained an `inRepository` flag, without which the `Tag deleted` marking this
+  spec requires is not renderable — the merged list alone cannot say which side a row came from;
+  `commitSha` on that schema became nullable, since a version whose build never succeeded has none;
+  and the manifest preview moved behind an explicit "Preview what this builds" control rather than
+  being dropped or kept on load, which is what actually delivers "no GitHub call on any page load"
+  while keeping the pre-flight check available. Also fixed while implementing: the deploy-branch
+  `<select>` needed `[selected]` on its options as well as the element's own `[value]`, because the
+  editor now renders on demand and Angular sets that value before `@for` has created anything for it
+  to match — leaving the browser to fall back to the first option and display a branch the POC does
+  not deploy from.
+- 2026-09-09 — Reconciled against `develop` after `#47` (onboarding checker) and `#48` (per-POC
+  deploy branch) merged. Migration renumbered `V12` → `V13` (`V12` is now `pocs.deploy_branch`).
+  `checkPushAccess`/`RepoAccess` already exist — reused rather than rebuilt; only
+  `PipelineRunner`'s unconditional call needs to become conditional. Deploy-branch resolution
+  already exists three-tier; needs a small split (`resolveDeployBranch`) to expose the chosen
+  branch *name*, not just its head SHA, for the repository header.
 - 2026-09-09 — Initial draft. Written after tag collisions blocked deploys for repositories with
   pre-existing tags. Records four decisions taken up front: the next tag name is derived from the
   repository's own tags rather than the platform's numbering; freshness is exact commit equality

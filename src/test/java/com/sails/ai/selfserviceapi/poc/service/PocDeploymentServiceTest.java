@@ -12,6 +12,8 @@ import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTag;
+import com.sails.ai.selfserviceapi.poc.exception.NonSemverRepositoryException;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestResolution;
@@ -227,6 +229,181 @@ class PocDeploymentServiceTest {
         verify(pocVersionRepository, never()).save(any());
         verify(pocDeploymentRepository, never()).save(any());
         verify(deploymentTrigger, never()).buildAndDeploy(any());
+    }
+
+    // --- deriving the next tag name from the repository's own tags -------------------------
+
+    @Test
+    void deployNewVersionDerivesTheNextTagFromTheRepositorysExistingTags() {
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
+        when(pipelineProperties.isSkip()).thenReturn(false);
+        GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
+        when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
+        when(gitHubService.getDeployBranchHeadSha(repo, null)).thenReturn("abc123");
+        when(manifestService.resolveForBuild(repo, "abc123")).thenReturn(new ManifestResolution(null, defaultManifest()));
+        when(gitHubService.listTags(repo, 3)).thenReturn(List.of(
+                new GitHubTag("1.0.7", "sha7"), new GitHubTag("1.0.6", "sha6"), new GitHubTag("1.0.5", "sha5")));
+        when(pocVersionRepository.findByPocIdOrderByMajorDescMinorDescPatchDesc(ID_1)).thenReturn(List.of());
+
+        service.deployNewVersion(ID_1, "admin-1");
+
+        ArgumentCaptor<PocVersion> versionCaptor = ArgumentCaptor.forClass(PocVersion.class);
+        verify(pocVersionRepository).save(versionCaptor.capture());
+        assertThat(versionCaptor.getValue().getVersionLabel()).isEqualTo("1.0.8");
+    }
+
+    /**
+     * A tag deleted from GitHub after the platform derived it must not be reused for different
+     * code — the version row recording it stays taken even though it fell out of the live list.
+     */
+    @Test
+    void deployNewVersionSkipsACandidateAlreadyTakenByAVersionNoLongerInTheLiveTagList() {
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
+        when(pipelineProperties.isSkip()).thenReturn(false);
+        GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
+        when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
+        when(gitHubService.getDeployBranchHeadSha(repo, null)).thenReturn("abc123");
+        when(manifestService.resolveForBuild(repo, "abc123")).thenReturn(new ManifestResolution(null, defaultManifest()));
+        when(gitHubService.listTags(repo, 3)).thenReturn(List.of(new GitHubTag("1.0.6", "sha6")));
+        when(pocVersionRepository.findByPocIdOrderByMajorDescMinorDescPatchDesc(ID_1))
+                .thenReturn(List.of(versionOf(1, 0, 7)));
+
+        service.deployNewVersion(ID_1, "admin-1");
+
+        ArgumentCaptor<PocVersion> versionCaptor = ArgumentCaptor.forClass(PocVersion.class);
+        verify(pocVersionRepository).save(versionCaptor.capture());
+        assertThat(versionCaptor.getValue().getVersionLabel()).isEqualTo("1.0.8");
+    }
+
+    @Test
+    void deployNewVersionStartsAtOneZeroZeroForARepositoryWithNoTagsAtAll() {
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
+        when(pipelineProperties.isSkip()).thenReturn(false);
+        GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
+        when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
+        when(gitHubService.getDeployBranchHeadSha(repo, null)).thenReturn("abc123");
+        when(manifestService.resolveForBuild(repo, "abc123")).thenReturn(new ManifestResolution(null, defaultManifest()));
+        when(gitHubService.listTags(repo, 3)).thenReturn(List.of());
+        when(pocVersionRepository.findByPocIdOrderByMajorDescMinorDescPatchDesc(ID_1)).thenReturn(List.of());
+
+        service.deployNewVersion(ID_1, "admin-1");
+
+        ArgumentCaptor<PocVersion> versionCaptor = ArgumentCaptor.forClass(PocVersion.class);
+        verify(pocVersionRepository).save(versionCaptor.capture());
+        assertThat(versionCaptor.getValue().getVersionLabel()).isEqualTo("1.0.0");
+    }
+
+    /**
+     * This platform only hosts semver repositories. Proposing 1.0.0 into a repository that clearly
+     * numbers releases some other way would only collide upward from there — refused outright
+     * instead, before anything is persisted. The existing tags stay deployable via
+     * {@link PocDeploymentService#deployExistingTag}.
+     */
+    @Test
+    void deployNewVersionRefusesToDeriveWhenNoTagsAreSemverParseable() {
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
+        when(pipelineProperties.isSkip()).thenReturn(false);
+        GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
+        when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
+        when(gitHubService.getDeployBranchHeadSha(repo, null)).thenReturn("abc123");
+        when(manifestService.resolveForBuild(repo, "abc123")).thenReturn(new ManifestResolution(null, defaultManifest()));
+        when(gitHubService.listTags(repo, 3)).thenReturn(List.of(new GitHubTag("latest", "s1"), new GitHubTag("release-2024", "s2")));
+        when(pocVersionRepository.findByPocIdOrderByMajorDescMinorDescPatchDesc(ID_1)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.deployNewVersion(ID_1, "admin-1"))
+                .isInstanceOf(NonSemverRepositoryException.class);
+
+        verify(pocVersionRepository, never()).save(any());
+        verify(pocDeploymentRepository, never()).save(any());
+        verify(deploymentTrigger, never()).buildAndDeploy(any());
+    }
+
+    // --- deploying a tag that already exists ------------------------------------------------
+
+    @Test
+    void deployExistingTagBuildsFromTheTagsOwnCommitAndCreatesNoNewTag() {
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
+        GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
+        when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
+        when(gitHubService.getTagCommitSha(repo, "v2.3.0")).thenReturn("tagsha1");
+        when(manifestService.resolveForBuild(repo, "tagsha1")).thenReturn(new ManifestResolution(null, defaultManifest()));
+        when(pocVersionRepository.findByPocIdAndVersionLabel(ID_1, "v2.3.0")).thenReturn(Optional.empty());
+
+        PocDeployment deployment = service.deployExistingTag(ID_1, "v2.3.0", "admin-1");
+
+        assertThat(deployment.isCreateTag()).isFalse();
+        ArgumentCaptor<PocVersion> versionCaptor = ArgumentCaptor.forClass(PocVersion.class);
+        verify(pocVersionRepository).save(versionCaptor.capture());
+        assertThat(versionCaptor.getValue().getVersionLabel()).isEqualTo("v2.3.0");
+        // "v2.3.0" has a 'v' prefix, so it does not match this platform's own major.minor.patch
+        // form — no ordering data to store, exactly like any other non-semver tag.
+        assertThat(versionCaptor.getValue().getMajor()).isNull();
+
+        ArgumentCaptor<BuildAndDeployRequest> requestCaptor = ArgumentCaptor.forClass(BuildAndDeployRequest.class);
+        verify(deploymentTrigger).buildAndDeploy(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().createTag()).isFalse();
+        assertThat(requestCaptor.getValue().commitSha()).isEqualTo("tagsha1");
+        assertThat(requestCaptor.getValue().versionLabel()).isEqualTo("v2.3.0");
+
+        verify(gitHubService, never()).getDeployBranchHeadSha(any(), any());
+        verify(gitHubService, never()).requirePushAccess(any());
+    }
+
+    @Test
+    void deployExistingTagReusesTheVersionRowWhenOneAlreadyExistsForThatTagName() {
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
+        GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
+        when(gitHubService.parseRepoUrl(poc.getGithubUrl())).thenReturn(repo);
+        when(gitHubService.getTagCommitSha(repo, "1.0.5")).thenReturn("tagsha5");
+        when(manifestService.resolveForBuild(repo, "tagsha5")).thenReturn(new ManifestResolution("raw yaml", defaultManifest()));
+        PocVersion existing = versionOf(1, 0, 5);
+        when(pocVersionRepository.findByPocIdAndVersionLabel(ID_1, "1.0.5")).thenReturn(Optional.of(existing));
+
+        service.deployExistingTag(ID_1, "1.0.5", "admin-1");
+
+        ArgumentCaptor<PocVersion> versionCaptor = ArgumentCaptor.forClass(PocVersion.class);
+        verify(pocVersionRepository).save(versionCaptor.capture());
+        assertThat(versionCaptor.getValue().getId()).isEqualTo(existing.getId());
+        assertThat(versionCaptor.getValue().getManifestYaml()).isEqualTo("raw yaml");
+    }
+
+    // --- retrying repeats the original attempt's path, never the other one ------------------
+
+    /**
+     * Flipping this on retry would demand push access an existing-tag deploy never needed —
+     * exactly the contradiction docs/specs/poc-tag-driven-deployment.md's "Deploying an existing
+     * tag must not require push access" exists to avoid.
+     */
+    @Test
+    void retryDeploymentOfAnExistingTagDeployResolvesTheTagsCommitNotTheBranchHead() {
+        PocDeployment failed = pendingDeployment("BUILD_AND_DEPLOY");
+        failed.setCreateTag(false);
+        failed.setStatus("FAILED");
+        when(pocDeploymentRepository.findById(failed.getId())).thenReturn(Optional.of(failed));
+        when(pocDeploymentRepository.findTopByPocIdOrderByStartedAtDesc(ID_1)).thenReturn(Optional.of(failed));
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(pocWithGithubUrl(ID_1)));
+        PocVersion version = versionOf(1, 0, 1);
+        version.setVersionLabel("v2.3.0");
+        when(pocVersionRepository.findById(ID_1)).thenReturn(Optional.of(version));
+        when(pipelineProperties.isSkip()).thenReturn(false);
+        GitHubRepoRef repo = new GitHubRepoRef("example-org", "contract-agent");
+        when(gitHubService.parseRepoUrl(any())).thenReturn(repo);
+        when(gitHubService.getTagCommitSha(repo, "v2.3.0")).thenReturn("tagsha-retry");
+        when(manifestService.resolveForBuild(repo, "tagsha-retry")).thenReturn(new ManifestResolution(null, defaultManifest()));
+
+        service.retryDeployment(failed.getId(), "admin-2");
+
+        verify(gitHubService, never()).getDeployBranchHeadSha(any(), any());
+        ArgumentCaptor<BuildAndDeployRequest> requestCaptor = ArgumentCaptor.forClass(BuildAndDeployRequest.class);
+        verify(deploymentTrigger).buildAndDeploy(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().createTag()).isFalse();
+        assertThat(requestCaptor.getValue().commitSha()).isEqualTo("tagsha-retry");
     }
 
     private static PocVersion versionOf(int major, int minor, int patch) {

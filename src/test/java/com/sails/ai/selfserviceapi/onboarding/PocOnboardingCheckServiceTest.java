@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubApiException;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubBranches;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService.RepoAccess;
@@ -37,6 +38,9 @@ class PocOnboardingCheckServiceTest {
     private static final GitHubRepoRef REPO = new GitHubRepoRef("acme", "contract-agent");
     private static final String SHA = "abc123";
 
+    /** Required now, so every test supplies one — the branch is what the manifest is read at. */
+    private static final String BRANCH = "main";
+
     private final GitHubService gitHubService = mock(GitHubService.class);
     private final ManifestService manifestService = mock(ManifestService.class);
     private final PocRepository pocRepository = mock(PocRepository.class);
@@ -56,7 +60,7 @@ class PocOnboardingCheckServiceTest {
                 "sidecar container 'api' must declare a port — it's only reachable at an address the ingress names",
                 "exactly one container must have role 'ingress' — found 2")));
 
-        OnboardingCheckResult result = service.check(URL, null, null);
+        OnboardingCheckResult result = service.check(URL, BRANCH, null);
 
         assertThat(result.ready()).isFalse();
         assertThat(result.findings())
@@ -79,7 +83,7 @@ class PocOnboardingCheckServiceTest {
                 .thenReturn(new ManifestResolution(null, singleContainerManifest()));
         when(gitHubService.getFileContent(REPO, SHA, "Dockerfile")).thenReturn(Optional.of("FROM scratch"));
 
-        OnboardingCheckResult result = service.check(URL, null, null);
+        OnboardingCheckResult result = service.check(URL, BRANCH, null);
 
         assertThat(result.ready()).isTrue();
         assertThat(result.manifestPresent()).isFalse();
@@ -98,7 +102,7 @@ class PocOnboardingCheckServiceTest {
                 .thenReturn(new ManifestResolution("containers: []", singleContainerManifest()));
         when(gitHubService.getFileContent(REPO, SHA, "Dockerfile")).thenReturn(Optional.empty());
 
-        OnboardingCheckResult result = service.check(URL, null, null);
+        OnboardingCheckResult result = service.check(URL, BRANCH, null);
 
         assertThat(result.ready()).isFalse();
         assertThat(result.findings()).singleElement()
@@ -120,7 +124,7 @@ class PocOnboardingCheckServiceTest {
         when(manifestService.resolveForBuild(REPO, SHA)).thenReturn(new ManifestResolution("yaml", manifest));
         when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
 
-        OnboardingCheckResult result = service.check(URL, null, null);
+        OnboardingCheckResult result = service.check(URL, BRANCH, null);
 
         assertThat(result.ready()).isTrue();
         assertThat(result.findings()).singleElement()
@@ -140,7 +144,7 @@ class PocOnboardingCheckServiceTest {
         when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.NO_PUSH);
 
-        OnboardingCheckResult result = service.check(URL, null, null);
+        OnboardingCheckResult result = service.check(URL, BRANCH, null);
 
         assertThat(result.ready()).isFalse();
         assertThat(result.findings()).singleElement()
@@ -153,7 +157,7 @@ class PocOnboardingCheckServiceTest {
         when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.ARCHIVED);
 
-        OnboardingCheckResult result = service.check(URL, null, null);
+        OnboardingCheckResult result = service.check(URL, BRANCH, null);
 
         assertThat(result.findings()).singleElement()
                 .satisfies(finding -> assertThat(finding.checkId()).isEqualTo(PocOnboardingCheckId.REPO_ARCHIVED));
@@ -163,7 +167,7 @@ class PocOnboardingCheckServiceTest {
     void reportsAnUnparseableUrlWithoutCallingGitHubAtAll() {
         when(gitHubService.parseRepoUrl("not-a-url")).thenThrow(new GitHubApiException("Not a recognizable GitHub repo URL: not-a-url"));
 
-        OnboardingCheckResult result = service.check("not-a-url", null, null);
+        OnboardingCheckResult result = service.check("not-a-url", BRANCH, null);
 
         assertThat(result.ready()).isFalse();
         assertThat(result.findings()).singleElement()
@@ -180,7 +184,7 @@ class PocOnboardingCheckServiceTest {
         when(gitHubService.getFileContent(REPO, SHA, "Dockerfile")).thenReturn(Optional.of("FROM scratch"));
         when(pocRepository.findBySlugAndDeletedAtIsNull("contract-agent")).thenReturn(Optional.of(new Poc()));
 
-        OnboardingCheckResult result = service.check(URL, null, "contract-agent");
+        OnboardingCheckResult result = service.check(URL, BRANCH, "contract-agent");
 
         assertThat(result.ready()).isFalse();
         assertThat(result.findings())
@@ -195,7 +199,7 @@ class PocOnboardingCheckServiceTest {
                 .thenReturn(new ManifestResolution(null, singleContainerManifest()));
         when(gitHubService.getFileContent(REPO, SHA, "Dockerfile")).thenReturn(Optional.of("FROM scratch"));
 
-        service.check(URL, null, "  ");
+        service.check(URL, BRANCH, "  ");
 
         verifyNoInteractions(pocRepository);
     }
@@ -203,9 +207,7 @@ class PocOnboardingCheckServiceTest {
     private void reachableRepo() {
         when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.OK);
-        // null: no branch supplied means the repository's own default, which is what a POC with
-        // none configured would deploy from.
-        when(gitHubService.getDeployBranchHeadSha(REPO, null)).thenReturn(SHA);
+        when(gitHubService.getBranchHeadSha(REPO, BRANCH)).thenReturn(SHA);
     }
 
     // --- the branch the team says they will deploy from ---------------------------------------
@@ -219,7 +221,7 @@ class PocOnboardingCheckServiceTest {
     void checksTheBranchTheTeamNamedRatherThanTheDefault() {
         when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.OK);
-        when(gitHubService.getDeployBranchHeadSha(REPO, "release/2024")).thenReturn(SHA);
+        when(gitHubService.getBranchHeadSha(REPO, "release/2024")).thenReturn(SHA);
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution("containers:\n", singleContainerManifest()));
         when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
@@ -227,19 +229,29 @@ class PocOnboardingCheckServiceTest {
         OnboardingCheckResult result = service.check(URL, "release/2024", null);
 
         assertThat(result.ready()).isTrue();
-        verify(gitHubService).getDeployBranchHeadSha(REPO, "release/2024");
+        // Never the repository's default: a blank branch is now a failure, not a fallback, so this
+        // must not quietly resolve to something the team did not name.
+        verify(gitHubService).getBranchHeadSha(REPO, "release/2024");
+        verify(gitHubService, never()).getDefaultBranch(any());
     }
 
+    /**
+     * A branch is required now. It used to fall back to the repository's default, which made a green
+     * result answer a question the team never asked — they checked "release/2024" and were told
+     * about "main".
+     */
     @Test
-    void treatsABlankBranchAsNotSupplied() {
-        reachableRepo();
-        when(manifestService.resolveForBuild(REPO, SHA))
-                .thenReturn(new ManifestResolution("containers:\n", singleContainerManifest()));
-        when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
+    void refusesABlankBranchRatherThanFallingBackToTheDefault() {
+        when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
+        when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.OK);
+        when(gitHubService.listBranches(REPO)).thenReturn(new GitHubBranches(List.of("main"), false));
 
-        service.check(URL, "   ", null);
+        OnboardingCheckResult result = service.check(URL, "   ", null);
 
-        verify(gitHubService).getDeployBranchHeadSha(REPO, null);
+        assertThat(result.ready()).isFalse();
+        assertThat(result.findings()).anySatisfy(finding ->
+                assertThat(finding.checkId()).isEqualTo(PocOnboardingCheckId.DEPLOY_BRANCH));
+        verifyNoInteractions(manifestService);
     }
 
     /**
@@ -250,13 +262,120 @@ class PocOnboardingCheckServiceTest {
     void reportsABranchNameGitWouldNotAcceptInsteadOfAskingGitHub() {
         when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.OK);
+        when(gitHubService.listBranches(REPO)).thenReturn(new GitHubBranches(List.of("main"), false));
 
         OnboardingCheckResult result = service.check(URL, "../../other/repo", null);
 
         assertThat(result.ready()).isFalse();
         assertThat(result.findings()).anySatisfy(finding ->
                 assertThat(finding.title()).contains("not a usable git branch name"));
-        verify(gitHubService, never()).getDeployBranchHeadSha(any(), any());
+        verify(gitHubService, never()).getBranchHeadSha(any(), any());
+    }
+
+    // --- what the checker proved, as opposed to what it merely did not complain about ----------
+
+    /**
+     * The portal's readiness checklist ticks these, so "no finding" must never be read as "passed":
+     * this run stopped at repository access, and everything past it was never looked at.
+     */
+    @Test
+    void reportsOnlyTheChecksThatActuallyRan() {
+        when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
+        when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.NO_PUSH);
+
+        OnboardingCheckResult result = service.check(URL, BRANCH, null);
+
+        assertThat(result.checksPassed()).containsExactly(PocOnboardingCheckId.REPO_URL);
+        assertThat(result.checksPassed()).doesNotContain(
+                PocOnboardingCheckId.DEPLOY_BRANCH,
+                PocOnboardingCheckId.MANIFEST_PARSE,
+                PocOnboardingCheckId.DOCKERFILE_PRESENT);
+    }
+
+    @Test
+    void reportsEveryCheckAsPassedWhenTheRepositoryIsReady() {
+        reachableRepo();
+        when(manifestService.resolveForBuild(REPO, SHA))
+                .thenReturn(new ManifestResolution("containers:\n", singleContainerManifest()));
+        when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
+
+        OnboardingCheckResult result = service.check(URL, BRANCH, "contract-agent");
+
+        assertThat(result.checksPassed()).contains(
+                PocOnboardingCheckId.REPO_URL,
+                PocOnboardingCheckId.REPO_ACCESS,
+                PocOnboardingCheckId.REPO_ARCHIVED,
+                PocOnboardingCheckId.REPO_PUSH_ACCESS,
+                PocOnboardingCheckId.DEPLOY_BRANCH,
+                PocOnboardingCheckId.MANIFEST_PARSE,
+                PocOnboardingCheckId.MANIFEST_VALIDATION,
+                PocOnboardingCheckId.DOCKERFILE_PRESENT,
+                PocOnboardingCheckId.SIDECAR_HEALTH,
+                PocOnboardingCheckId.SLUG_AVAILABLE);
+    }
+
+    /** Skipped is not passed: with no slug supplied there is nothing to tick. */
+    @Test
+    void doesNotClaimTheSlugCheckPassedWhenNoSlugWasGiven() {
+        reachableRepo();
+        when(manifestService.resolveForBuild(REPO, SHA))
+                .thenReturn(new ManifestResolution("containers:\n", singleContainerManifest()));
+        when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
+
+        OnboardingCheckResult result = service.check(URL, BRANCH, null);
+
+        assertThat(result.checksPassed()).doesNotContain(PocOnboardingCheckId.SLUG_AVAILABLE);
+    }
+
+    /**
+     * A branch that does not exist is the one failure with an obvious remedy, so the branches that
+     * do come back with it — the team picks instead of guessing at a name they already got wrong.
+     */
+    @Test
+    void returnsTheRealBranchesWhenTheNamedOneDoesNotExist() {
+        when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
+        when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.OK);
+        when(gitHubService.getBranchHeadSha(REPO, "mian")).thenThrow(new GitHubApiException("Not Found"));
+        when(gitHubService.listBranches(REPO)).thenReturn(new GitHubBranches(List.of("main", "develop"), false));
+
+        OnboardingCheckResult result = service.check(URL, "mian", null);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.availableBranches()).containsExactly("main", "develop");
+        assertThat(result.findings()).anySatisfy(finding -> {
+            assertThat(finding.checkId()).isEqualTo(PocOnboardingCheckId.DEPLOY_BRANCH);
+            assertThat(finding.title()).contains("does not exist");
+        });
+    }
+
+    /** Listing is best-effort — it runs while already reporting a failure, and a second helps nobody. */
+    @Test
+    void stillReportsTheMissingBranchWhenListingTheRealOnesAlsoFails() {
+        when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
+        when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.OK);
+        when(gitHubService.getBranchHeadSha(REPO, "mian")).thenThrow(new GitHubApiException("Not Found"));
+        when(gitHubService.listBranches(REPO)).thenThrow(new GitHubApiException("rate limited"));
+
+        OnboardingCheckResult result = service.check(URL, "mian", null);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.availableBranches()).isEmpty();
+        assertThat(result.findings()).anySatisfy(finding ->
+                assertThat(finding.checkId()).isEqualTo(PocOnboardingCheckId.DEPLOY_BRANCH));
+    }
+
+    /** A successful check carries no branch list — there is nothing to correct. */
+    @Test
+    void offersNoBranchListWhenTheBranchWasFine() {
+        reachableRepo();
+        when(manifestService.resolveForBuild(REPO, SHA))
+                .thenReturn(new ManifestResolution("containers:\n", singleContainerManifest()));
+        when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
+
+        OnboardingCheckResult result = service.check(URL, BRANCH, null);
+
+        assertThat(result.availableBranches()).isNull();
+        verify(gitHubService, never()).listBranches(any());
     }
 
     private PocManifest singleContainerManifest() {

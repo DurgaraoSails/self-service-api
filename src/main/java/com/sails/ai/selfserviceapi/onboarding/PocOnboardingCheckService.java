@@ -54,6 +54,7 @@ public class PocOnboardingCheckService {
      */
     public OnboardingCheckResult check(String githubUrl, String deployBranch, String slug) {
         List<OnboardingFinding> findings = new ArrayList<>();
+        List<PocOnboardingCheckId> passed = new ArrayList<>();
 
         GitHubRepoRef repo;
         try {
@@ -63,10 +64,11 @@ public class PocOnboardingCheckService {
                     "That is not a GitHub repository URL",
                     e.getMessage(),
                     "Use the repository's own URL, for example https://github.com/your-org/your-repo."));
-            return new OnboardingCheckResult(githubUrl, false, findings);
+            return new OnboardingCheckResult(githubUrl, false, passed, findings);
         }
+        passed.add(PocOnboardingCheckId.REPO_URL);
 
-        checkSlug(slug, findings);
+        checkSlug(slug, passed, findings);
 
         RepoAccess access = gitHubService.checkPushAccess(repo);
         if (access != RepoAccess.OK) {
@@ -74,36 +76,50 @@ public class PocOnboardingCheckService {
             // Nothing below can run: reading poc.yaml and each Dockerfile needs the same access
             // that just failed, and a cascade of "could not read" findings would bury the one
             // problem the team actually has to fix.
-            return new OnboardingCheckResult(repo.toString(), false, findings);
+            return new OnboardingCheckResult(repo.toString(), false, passed, findings);
         }
+        passed.add(PocOnboardingCheckId.REPO_ACCESS);
+        passed.add(PocOnboardingCheckId.REPO_ARCHIVED);
+        passed.add(PocOnboardingCheckId.REPO_PUSH_ACCESS);
 
         // Checked before it reaches GitHub: the name is concatenated into the URI path there, so
         // ".." would climb out of the repository being asked about. A finding rather than an
         // exception because that is this endpoint's whole contract — it reports problems, and a
         // mistyped branch is one more thing the team can fix without asking anyone.
-        String branch = deployBranch == null || deployBranch.isBlank() ? null : deployBranch.trim();
-        if (branch != null && !GitBranchNames.isValid(branch)) {
-            findings.add(OnboardingFinding.error(PocOnboardingCheckId.REPO_ACCESS,
+        String branch = deployBranch == null ? "" : deployBranch.trim();
+        if (!GitBranchNames.isValid(branch)) {
+            findings.add(OnboardingFinding.error(PocOnboardingCheckId.DEPLOY_BRANCH,
                     "That is not a usable git branch name",
                     "'" + branch + "' is not a name git accepts as a ref.",
                     "Use something like main or release/2024 — no spaces, no '..'."));
-            return new OnboardingCheckResult(repo.toString(), false, findings);
+            return new OnboardingCheckResult(repo.toString(), false, passed, findings, branchNames(repo));
         }
 
         String commitSha;
         try {
-            // null resolves the way an unconfigured POC would: pipeline.deploy-branch if one is
-            // pinned, otherwise the repository's own default branch.
-            commitSha = gitHubService.getDeployBranchHeadSha(repo, branch);
+            commitSha = gitHubService.getBranchHeadSha(repo, branch);
         } catch (GitHubApiException e) {
-            findings.add(OnboardingFinding.error(PocOnboardingCheckId.REPO_ACCESS,
-                    "Could not read the branch this POC would deploy from",
+            // The branches that do exist come back with this, so the team picks from a list instead
+            // of guessing at a name they have already got wrong once. Best-effort: if listing fails
+            // too, the finding still stands on its own.
+            findings.add(OnboardingFinding.error(PocOnboardingCheckId.DEPLOY_BRANCH,
+                    "The branch '" + branch + "' does not exist in this repository",
                     e.getMessage(),
-                    "Make sure that branch exists and has at least one commit."));
-            return new OnboardingCheckResult(repo.toString(), false, findings);
+                    "Pick one of the repository's own branches, or push the branch you meant."));
+            return new OnboardingCheckResult(repo.toString(), false, passed, findings, branchNames(repo));
         }
+        passed.add(PocOnboardingCheckId.DEPLOY_BRANCH);
 
-        return resolveManifest(repo, commitSha, findings);
+        return resolveManifest(repo, commitSha, passed, findings);
+    }
+
+    /** Never throws: this runs while already reporting a failure, and a second one helps nobody. */
+    private List<String> branchNames(GitHubRepoRef repo) {
+        try {
+            return gitHubService.listBranches(repo).names();
+        } catch (GitHubApiException e) {
+            return List.of();
+        }
     }
 
     /**
@@ -112,6 +128,7 @@ public class PocOnboardingCheckService {
      * found, so each becomes its own finding rather than one line with semicolons in it.
      */
     private OnboardingCheckResult resolveManifest(GitHubRepoRef repo, String commitSha,
+                                                   List<PocOnboardingCheckId> passed,
                                                    List<OnboardingFinding> findings) {
         ManifestResolution resolution;
         try {
@@ -121,15 +138,20 @@ public class PocOnboardingCheckService {
                     "poc.yaml could not be parsed",
                     e.getMessage(),
                     "Check that the file is valid YAML and that 'containers' is a list."));
-            return new OnboardingCheckResult(repo.toString(), true, findings);
+            return new OnboardingCheckResult(repo.toString(), true, passed, findings);
         } catch (ManifestValidationException e) {
+            // Parsing succeeded — it is validation that failed, and saying so lets the checklist
+            // tick "my poc.yaml is valid YAML" even while the shape of it is still wrong.
+            passed.add(PocOnboardingCheckId.MANIFEST_PARSE);
             e.getViolations().forEach(violation -> findings.add(OnboardingFinding.error(
                     PocOnboardingCheckId.MANIFEST_VALIDATION,
                     "poc.yaml is invalid",
                     violation,
                     null)));
-            return new OnboardingCheckResult(repo.toString(), true, findings);
+            return new OnboardingCheckResult(repo.toString(), true, passed, findings);
         }
+        passed.add(PocOnboardingCheckId.MANIFEST_PARSE);
+        passed.add(PocOnboardingCheckId.MANIFEST_VALIDATION);
 
         boolean manifestPresent = resolution.rawYaml() != null;
         if (!manifestPresent) {
@@ -142,12 +164,21 @@ public class PocOnboardingCheckService {
                             + "the repository root, or custom resources and scaling."));
         }
 
+        int before = findings.size();
         for (ManifestContainer container : resolution.manifest().containers()) {
             checkDockerfile(repo, commitSha, container, findings);
             checkSidecarHealth(container, findings);
         }
+        // Per-container checks run over every container before reporting, so these two only count as
+        // passed when no container raised anything — one bad sidecar must not tick the row.
+        if (findings.stream().skip(before).noneMatch(f -> f.checkId() == PocOnboardingCheckId.DOCKERFILE_PRESENT)) {
+            passed.add(PocOnboardingCheckId.DOCKERFILE_PRESENT);
+        }
+        if (findings.stream().skip(before).noneMatch(f -> f.checkId() == PocOnboardingCheckId.SIDECAR_HEALTH)) {
+            passed.add(PocOnboardingCheckId.SIDECAR_HEALTH);
+        }
 
-        return new OnboardingCheckResult(repo.toString(), manifestPresent, findings);
+        return new OnboardingCheckResult(repo.toString(), manifestPresent, passed, findings);
     }
 
     /**
@@ -193,12 +224,15 @@ public class PocOnboardingCheckService {
                 "Add 'health: /healthz' to container '" + container.name() + "', served on the port it declares."));
     }
 
-    private void checkSlug(String slug, List<OnboardingFinding> findings) {
+    private void checkSlug(String slug, List<PocOnboardingCheckId> passed, List<OnboardingFinding> findings) {
+        // No slug means "not decided yet", so the check is skipped rather than failed — and skipped
+        // is not passed, so the row stays unticked instead of claiming a name was cleared.
         if (slug == null || slug.isBlank()) {
             return;
         }
         String trimmed = slug.trim();
         if (pocRepository.findBySlugAndDeletedAtIsNull(trimmed).isEmpty()) {
+            passed.add(PocOnboardingCheckId.SLUG_AVAILABLE);
             return;
         }
         findings.add(OnboardingFinding.error(PocOnboardingCheckId.SLUG_AVAILABLE,

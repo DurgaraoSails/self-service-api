@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -119,21 +120,7 @@ public class GitHubService {
      * different place for each.
      */
     public String getDeployBranchHeadSha(GitHubRepoRef repo, String pocDeployBranch) {
-        String branch;
-        String remedy;
-        if (pocDeployBranch != null && !pocDeployBranch.isBlank()) {
-            branch = pocDeployBranch.trim();
-            remedy = "This POC's deployBranch asks for that branch, so create it, point the POC at a branch "
-                    + "that exists, or clear deployBranch to deploy from the repository's own default branch.";
-        } else if (properties.hasDeployBranch()) {
-            branch = properties.deployBranch();
-            remedy = "pipeline.deploy-branch pins every POC that names no branch of its own to that branch, so "
-                    + "create it, give this POC its own deployBranch, or clear pipeline.deploy-branch to deploy "
-                    + "each repository from its own default branch.";
-        } else {
-            return getBranchHeadSha(repo, getDefaultBranch(repo));
-        }
-
+        String branch = resolveDeployBranch(repo, pocDeployBranch);
         try {
             return getBranchHeadSha(repo, branch);
         } catch (GitHubApiException e) {
@@ -141,8 +128,33 @@ public class GitHubService {
                 throw e;
             }
             throw new GitHubApiException(
-                    "Branch '" + branch + "' does not exist in " + repo + ". " + remedy, e);
+                    "Branch '" + branch + "' does not exist in " + repo + ". " + deployBranchRemedy(pocDeployBranch), e);
         }
+    }
+
+    /**
+     * The branch name half of {@link #getDeployBranchHeadSha}, split out so a caller that wants to
+     * *display* which branch was chosen (the repository status snapshot) does not have to either
+     * duplicate this resolution or pay for a branch-head read it does not need yet.
+     */
+    public String resolveDeployBranch(GitHubRepoRef repo, String pocDeployBranch) {
+        if (pocDeployBranch != null && !pocDeployBranch.isBlank()) {
+            return pocDeployBranch.trim();
+        }
+        if (properties.hasDeployBranch()) {
+            return properties.deployBranch();
+        }
+        return getDefaultBranch(repo);
+    }
+
+    private String deployBranchRemedy(String pocDeployBranch) {
+        if (pocDeployBranch != null && !pocDeployBranch.isBlank()) {
+            return "This POC's deployBranch asks for that branch, so create it, point the POC at a branch "
+                    + "that exists, or clear deployBranch to deploy from the repository's own default branch.";
+        }
+        return "pipeline.deploy-branch pins every POC that names no branch of its own to that branch, so "
+                + "create it, give this POC its own deployBranch, or clear pipeline.deploy-branch to deploy "
+                + "each repository from its own default branch.";
     }
 
     /**
@@ -187,6 +199,35 @@ public class GitHubService {
         }
 
         return new GitHubBranches(names, true);
+    }
+
+    /**
+     * The newest tags GitHub reports for this repository, capped at {@code count}.
+     *
+     * <p>GitHub documents no sort order for this endpoint — in practice it is newest-first, but
+     * that is an observation, not a contract, so the derived-version-name logic (which only needs
+     * "one plausible candidate," not "the true newest tag") is the only caller that should lean on
+     * it. A caller that needs a genuine ordering should sort by resolving each tag's commit date,
+     * which this deliberately does not do — that is one GitHub call per tag, a poor fit for a
+     * refresh button an admin can hold down.
+     */
+    public List<GitHubTag> listTags(GitHubRepoRef repo, int count) {
+        TagRef[] tags = get("/repos/{owner}/{repo}/tags?per_page={count}", TagRef[].class, repo.owner(), repo.name(), count);
+        if (tags == null) {
+            return List.of();
+        }
+        return Arrays.stream(tags).map(tag -> new GitHubTag(tag.name(), tag.commit().sha())).toList();
+    }
+
+    /**
+     * One tag's commit, by exact name — used both to verify a just-created tag
+     * ({@link #verifyExistingTagMatches}) and to resolve the commit a "deploy this existing tag"
+     * request should build, which is the tag's own commit, never the branch head (the branch may
+     * have moved on since the tag was cut).
+     */
+    public String getTagCommitSha(GitHubRepoRef repo, String tagName) {
+        return get("/repos/{owner}/{repo}/git/ref/tags/{tag}", GitRefResponse.class,
+                repo.owner(), repo.name(), tagName).object().sha();
     }
 
     /**
@@ -339,8 +380,7 @@ public class GitHubService {
     }
 
     private void verifyExistingTagMatches(GitHubRepoRef repo, String tagName, String commitSha) {
-        String existingSha = get("/repos/{owner}/{repo}/git/ref/tags/{tag}", GitRefResponse.class,
-                repo.owner(), repo.name(), tagName).object().sha();
+        String existingSha = getTagCommitSha(repo, tagName);
 
         if (!existingSha.equals(commitSha)) {
             throw new GitHubApiException(
@@ -397,6 +437,13 @@ public class GitHubService {
     }
 
     private record BranchRef(String name) {
+    }
+
+    /** GitHub's tag-list response shape — {@code commit} here has only {@code sha}/{@code url}, unlike a git-ref's {@code object}. */
+    private record TagRef(String name, TagCommitRef commit) {
+    }
+
+    private record TagCommitRef(String sha) {
     }
 
     private record GitRefResponse(String ref, GitObject object) {

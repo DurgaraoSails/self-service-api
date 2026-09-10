@@ -12,5 +12,8 @@ public interface PocVersionRepository extends JpaRepository<PocVersion, UUID> {
 
     List<PocVersion> findByPocIdOrderByMajorDescMinorDescPatchDesc(UUID pocId);
 
+    /** Find-or-create key for deploying an existing tag — version_label is the tag name, unique per POC. */
+    Optional<PocVersion> findByPocIdAndVersionLabel(UUID pocId, String versionLabel);
+
     List<PocVersion> findByIdIn(List<UUID> ids);
 }

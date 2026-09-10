@@ -1,10 +1,12 @@
 package com.sails.ai.selfserviceapi.deploypipeline;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.AsyncConfig;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PipelineProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
+import com.sails.ai.selfserviceapi.poc.service.PocRepoStatusService;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -33,24 +35,35 @@ public class PipelineRunner {
     private final GitHubService gitHubService;
     private final PipelineExecutor executor;
     private final PocDeploymentService pocDeploymentService;
+    private final PocRepoStatusService pocRepoStatusService;
     private final PipelineProperties properties;
 
     public PipelineRunner(GitHubService gitHubService, PipelineExecutor executor,
-                           PocDeploymentService pocDeploymentService, PipelineProperties properties) {
+                           PocDeploymentService pocDeploymentService, PocRepoStatusService pocRepoStatusService,
+                           PipelineProperties properties) {
         this.gitHubService = gitHubService;
         this.executor = executor;
         this.pocDeploymentService = pocDeploymentService;
+        this.pocRepoStatusService = pocRepoStatusService;
         this.properties = properties;
     }
 
     /**
      * {@code commitSha}/{@code manifest} were already resolved (and, for the manifest, validated)
-     * by {@code PocDeploymentService.deployNewVersion} before this deployment row was created —
-     * both are null exactly when {@code pipeline.executor=skip}, which never touches GitHub.
+     * by {@code PocDeploymentService} before this deployment row was created — both are null
+     * exactly when {@code pipeline.executor=skip}, which never touches GitHub.
+     *
+     * <p>{@code createTag} is false for "deploy an existing tag" (see
+     * {@code PocDeploymentService.deployExistingTag}): the tag is that request's *input*, not its
+     * output, so nothing here should write it — and requiring push access to deploy a tag someone
+     * else already created would defeat the whole point of that path (see
+     * docs/specs/poc-tag-driven-deployment.md, "Deploying an existing tag must not require push
+     * access"). {@code commitSha} in that case is the tag's own commit, resolved by the caller —
+     * never the branch head, which may have moved on since the tag was cut.
      */
-    @Async
+    @Async(AsyncConfig.PIPELINE_EXECUTOR)
     public void runBuildAndDeploy(UUID deploymentId, UUID pocId, String pocSlug, String githubUrl, String versionLabel,
-                                   String commitSha, PocManifest manifest) {
+                                   String commitSha, PocManifest manifest, boolean createTag) {
         if (properties.isSkip()) {
             skip(deploymentId, pocId, pocSlug, versionLabel);
             return;
@@ -58,15 +71,20 @@ public class PipelineRunner {
         try {
             GitHubRepoRef repo = gitHubService.parseRepoUrl(githubUrl);
 
-            // Checked before anything is tagged, cloned or submitted to Cloud Build: the very next
-            // call is a write, and a token that cannot make it fails several steps later with a
-            // raw GitHub 403 that never mentions push access. Costs one GET against a build.
-            gitHubService.requirePushAccess(repo);
+            if (createTag) {
+                // Checked before anything is tagged, cloned or submitted to Cloud Build: the very
+                // next call is a write, and a token that cannot make it fails several steps later
+                // with a raw GitHub 403 that never mentions push access. Costs one GET against a
+                // build. Skipped entirely when the tag already exists — read access, already
+                // proved by resolving its commit, is all this path needs.
+                gitHubService.requirePushAccess(repo);
 
-            // Tagging before building, and cloning the tag rather than the branch, is what makes
-            // this reproducible — the image can only ever contain the commit the tag points at.
-            gitHubService.createTagIfAbsent(repo, versionLabel, commitSha);
-            logStage("Tag " + versionLabel + " creation completed", pocId, pocSlug);
+                // Tagging before building, and cloning the tag rather than the branch, is what
+                // makes this reproducible — the image can only ever contain the commit the tag
+                // points at.
+                gitHubService.createTagIfAbsent(repo, versionLabel, commitSha);
+                logStage("Tag " + versionLabel + " creation completed", pocId, pocSlug);
+            }
 
             pocDeploymentService.reportManifestStatus(deploymentId, "BUILDING", manifest, null, null, null);
             Map<String, String> images = executor.buildAndPushImages(repo, versionLabel, pocSlug, manifest);
@@ -80,6 +98,11 @@ public class PipelineRunner {
             pocDeploymentService.reportManifestStatus(deploymentId, "SUCCEEDED", manifest, images, commitSha, hostedUrl);
             log.info("Deployment succeeded for poc: {} with poc-id: {} — version {} is live at {}",
                     pocSlug, pocId, versionLabel, hostedUrl);
+            // After reportManifestStatus's own transaction has committed, not from inside it — the
+            // tag list has certainly changed (a new tag if createTag, or simply time passing
+            // otherwise), and firing this only once the deploy is genuinely done avoids the refresh
+            // racing anything the deploy itself just wrote.
+            pocRepoStatusService.refresh(pocId);
         } catch (Exception e) {
             fail(deploymentId, pocId, pocSlug, versionLabel, e);
         }
@@ -89,7 +112,7 @@ public class PipelineRunner {
      * Rollback: every image already exists, so there is nothing to clone, tag or build — stages 2
      * through 4 (tag, build, push) never apply here, only the deploy itself does.
      */
-    @Async
+    @Async(AsyncConfig.PIPELINE_EXECUTOR)
     public void runRedeploy(UUID deploymentId, UUID pocId, String pocSlug, String versionLabel,
                              PocManifest manifest, Map<String, String> imagesByContainer) {
         if (properties.isSkip()) {
