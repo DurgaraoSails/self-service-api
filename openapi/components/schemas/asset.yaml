@@ -110,7 +110,6 @@ AssetDetailResponse:
 
         sourceUrl:
           type: string
-          format: uri
           maxLength: 2048
           description: >
             Stored only — never fetched, previewed, or proxied by the backend. Opens in a new
@@ -282,7 +281,6 @@ AssetRevisionFields:
 
     sourceUrl:
       type: string
-      format: uri
       maxLength: 2048
       example: "https://tenant.sharepoint.com/sites/ai/Shared%20Documents/radiology"
 
@@ -495,7 +493,6 @@ CreateAssetRequest:
 
     sourceUrl:
       type: string
-      format: uri
       maxLength: 2048
       example: "https://tenant.sharepoint.com/sites/ai/Shared%20Documents/radiology"
 
@@ -573,7 +570,6 @@ UpdateAssetRevisionRequest:
 
     sourceUrl:
       type: string
-      format: uri
       maxLength: 2048
       example: "https://tenant.sharepoint.com/sites/ai/Shared%20Documents/radiology"
 

@@ -25,6 +25,13 @@ import lombok.Setter;
 @Setter
 public class AssetRevision {
 
+    public static final String DRAFT = "DRAFT";
+    public static final String PENDING_REVIEW = "PENDING_REVIEW";
+    public static final String CHANGES_REQUESTED = "CHANGES_REQUESTED";
+    public static final String APPROVED = "APPROVED";
+    public static final String REJECTED = "REJECTED";
+    public static final String SUPERSEDED = "SUPERSEDED";
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", nullable = false, updatable = false)
