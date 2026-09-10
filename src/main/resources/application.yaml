@@ -217,9 +217,9 @@ brevo:
 # local development may fall back to the legacy keys in the gitignored secrets YAML.
 microsoft-sso:
   enabled: ${MICROSOFT_SSO_ENABLED:true}
-  tenant-id: ${MICROSOFT_TENANT_ID:${tenantID:}}
-  client-id: ${MICROSOFT_CLIENT_ID:${ClientID:}}
-  client-secret: ${MICROSOFT_CLIENT_SECRET:${Value/secret:}}
+  tenant-id: ${MICROSOFT_TENANT_ID}
+  client-id: ${MICROSOFT_CLIENT_ID}
+  client-secret: ${MICROSOFT_CLIENT_SECRET}
   # No fallback: unlike tenant-id/client-id/client-secret, this has no legacy secret key to fall
   # back to, and it differs per environment (localhost locally, the deployed portal origin in
   # prod) so a literal here would be wrong somewhere. Comes from the environment only — the
