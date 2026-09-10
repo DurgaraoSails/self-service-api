@@ -51,6 +51,19 @@ class UserServiceTest {
     }
 
     @Test
+    void employeesCannotUseRegistrationOrOtpOrTrialOperations() {
+        assertThatThrownBy(() -> userService.registerUser("Jane", "Doe", "Sails", "Engineer", "India", "Jane@SailsSoftware.com"))
+                .isInstanceOf(ApiException.class).hasMessageContaining("Microsoft");
+        assertThatThrownBy(() -> userService.getEligibleForOtpByEmail("Jane@SailsSoftware.com"))
+                .isInstanceOf(ApiException.class).hasMessageContaining("Microsoft");
+        User employee = new User(); employee.setAccountType(com.sails.ai.selfserviceapi.user.entity.AccountType.INTERNAL);
+        when(userRepository.findById("employee")).thenReturn(Optional.of(employee));
+        assertThatThrownBy(() -> userService.extendTrial("employee", Instant.now().plusSeconds(3600))).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> userService.revokeTrial("employee")).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> userService.requestTrialExtension("employee", "note")).isInstanceOf(ApiException.class);
+    }
+
+    @Test
     void registerUserThrowsWhenTheEmailBelongsToAVerifiedUser() {
         User verified = new User();
         verified.setId("existing-id");

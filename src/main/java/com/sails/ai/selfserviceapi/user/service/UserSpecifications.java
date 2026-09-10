@@ -23,6 +23,7 @@ final class UserSpecifications {
     static Specification<User> needsAttention(Instant now, Instant cutoff) {
         return (root, query, cb) -> cb.and(
                 cb.equal(root.get("status"), UserStatus.ACTIVE),
+                cb.equal(root.get("accountType"), com.sails.ai.selfserviceapi.user.entity.AccountType.EXTERNAL),
                 cb.or(
                         cb.between(root.get("trialEndDate"), now, cutoff),
                         cb.isNotNull(root.get("pendingExtensionRequestedAt"))

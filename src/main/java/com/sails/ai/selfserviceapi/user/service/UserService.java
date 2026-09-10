@@ -1,5 +1,7 @@
 package com.sails.ai.selfserviceapi.user.service;
 
+import com.sails.ai.selfserviceapi.auth.microsoft.EmployeeAccess;
+
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.user.config.TrialProperties;
 import com.sails.ai.selfserviceapi.user.entity.ThemeMode;
@@ -59,8 +61,10 @@ public class UserService {
      * PENDING_VERIFICATION and ACTIVE; rejects INACTIVE/SUSPENDED accounts.
      */
     public User getEligibleForOtpByEmail(String email) {
+        EmployeeAccess.requireExternal(email);
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "No account found for this email."));
+        EmployeeAccess.requireExternal(user);
         if (user.getStatus() == UserStatus.INACTIVE || user.getStatus() == UserStatus.SUSPENDED) {
             throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_INACTIVE", "This account cannot receive login codes.");
         }
@@ -76,9 +80,11 @@ public class UserService {
      */
     @Transactional
     public User registerUser(String firstName, String lastName, String companyName, String jobTitle, String country, String email) {
+        EmployeeAccess.requireExternal(email);
         emailDomainValidator.validate(email);
 
         Optional<User> existingByEmail = userRepository.findByEmail(email);
+        existingByEmail.ifPresent(EmployeeAccess::requireExternal);
         if (existingByEmail.isPresent() && existingByEmail.get().getEmailVerifiedAt() != null) {
             throw new UserAlreadyExistsException();
         }
@@ -155,6 +161,7 @@ public class UserService {
     @Transactional
     public User revokeTrial(String id) {
         User user = getById(id);
+        EmployeeAccess.requireTrialAccount(user);
         user.setTrialEndDate(Instant.now());
         clearPendingExtensionRequest(user);
         return userRepository.save(user);
@@ -171,6 +178,7 @@ public class UserService {
                     "Trial end date cannot be more than " + trialProperties.lengthDays() + " days from now.");
         }
         User user = getById(id);
+        EmployeeAccess.requireTrialAccount(user);
         user.setTrialEndDate(newTrialEndDate);
         clearPendingExtensionRequest(user);
         return userRepository.save(user);
@@ -184,6 +192,7 @@ public class UserService {
     @Transactional
     public User requestTrialExtension(String id, String note) {
         User user = getById(id);
+        EmployeeAccess.requireTrialAccount(user);
         user.setPendingExtensionNote(note);
         user.setPendingExtensionRequestedAt(Instant.now());
         return userRepository.save(user);

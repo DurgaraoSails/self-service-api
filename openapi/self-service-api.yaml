@@ -13,6 +13,60 @@ security:
 
 paths:
 
+  /auth/microsoft/start:
+    post:
+      summary: Start employee Microsoft sign-in
+      operationId: startMicrosoftLogin
+      tags: [MicrosoftAuth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/microsoft.yaml#/MicrosoftStartRequest'
+      responses:
+        '200':
+          description: Authorization URL and browser state
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/microsoft.yaml#/MicrosoftStartResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '503':
+          description: Microsoft sign-in is disabled or not configured
+
+  /auth/microsoft/complete:
+    post:
+      summary: Complete employee Microsoft sign-in
+      operationId: completeMicrosoftLogin
+      tags: [MicrosoftAuth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/microsoft.yaml#/MicrosoftCompleteRequest'
+      responses:
+        '200':
+          description: Portal token pair and employee profile
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/auth.yaml#/LoginResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
+        '502':
+          description: Microsoft or Graph request failed; restart sign-in
+        '503':
+          description: Microsoft sign-in is disabled or not configured
+
   /auth/register:
     post:
       summary: Register a new user account and send the first verification code

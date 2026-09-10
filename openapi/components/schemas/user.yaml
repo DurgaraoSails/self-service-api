@@ -64,6 +64,9 @@ UserResponse:
     theme:
       $ref: '#/ThemeMode'
 
+    accountType:
+      $ref: '#/AccountType'
+
 
 UpdateUserRequest:
   type: object
@@ -115,6 +118,8 @@ CustomerResponse:
     - roles
     - createdAt
   properties:
+    accountType:
+      $ref: '#/AccountType'
     id:
       type: string
       example: "01JABC123XYZ"
@@ -312,3 +317,8 @@ RegisterRequest:
       format: email
       description: Email address to register and verify.
       example: "jane.doe@example.com"
+
+AccountType:
+  type: string
+  description: Verified employee classification, independent of administrative roles.
+  enum: [EXTERNAL, INTERNAL]

@@ -18,6 +18,7 @@ public final class UserResponseMapper {
                 UserStatus.valueOf(user.getStatus().name()), ThemeMode.valueOf(user.getTheme().name()))
                 .displayName(user.getDisplayName())
                 .roles(user.getRoles())
+                .accountType(com.sails.ai.selfserviceapi.generated.model.AccountType.valueOf(user.getAccountType().name()))
                 .trialStartDate(toUtcOffset(user.getTrialStartDate()))
                 .trialEndDate(toUtcOffset(user.getTrialEndDate()));
     }
