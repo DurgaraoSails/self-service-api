@@ -92,7 +92,8 @@ public final class AssetResponseMapper {
                 toOffsetDateTime(approved.getUpdatedAt()),
                 approved.getSourceUrl(),
                 asset.getSubmittedByUserId(),
-                approved.getRevisionNumber());
+                approved.getRevisionNumber(),
+                asset.getVersion());
         response.ownerDisplayName(ownerDisplayName);
         response.launch(toLaunch(asset, poc));
         response.problemStatement(approved.getProblemStatement());
