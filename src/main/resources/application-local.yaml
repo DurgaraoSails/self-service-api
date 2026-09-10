@@ -10,3 +10,6 @@ MAIL_FROM_ADDRESS: no.reply.sails.poc@gmail.com
 
 PIPELINE_EXECUTOR: skip
 BUILD_SERVICE_ACCOUNT: self-service-builder
+
+# Local development has the Microsoft credentials in the gitignored secrets import above.
+MICROSOFT_SSO_ENABLED: true
