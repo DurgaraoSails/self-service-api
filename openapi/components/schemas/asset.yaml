@@ -89,6 +89,7 @@ AssetDetailResponse:
         - submittedByUserId
         - sourceUrl
         - revisionNumber
+        - assetVersion
       properties:
         problemStatement:
           type: string
@@ -124,6 +125,14 @@ AssetDetailResponse:
           type: integer
           description: Revision number of the currently approved revision.
           example: 2
+
+        assetVersion:
+          type: integer
+          format: int64
+          description: >
+            Optimistic-concurrency version of the asset row — the expectedVersion to send when
+            archiving this asset.
+          example: 1
 
 
 AssetPageResponse:
