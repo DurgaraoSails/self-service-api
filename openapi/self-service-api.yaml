@@ -2685,7 +2685,11 @@ paths:
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
         '403':
-          description: Target is not an active internal employee, or caller targeted themselves (ROLE_TARGET_MUST_BE_INTERNAL / ROLE_TARGET_MUST_BE_ACTIVE / ROLE_SELF_MANAGEMENT_FORBIDDEN).
+          description: >
+            Caller is not internal (INTERNAL_ACCOUNT_REQUIRED), caller lacks the superadmin role
+            (SUPERADMIN_REQUIRED), target is not an active internal employee
+            (ROLE_TARGET_MUST_BE_INTERNAL / ROLE_TARGET_MUST_BE_ACTIVE), or caller targeted
+            themselves (ROLE_SELF_MANAGEMENT_FORBIDDEN).
           content:
             application/json:
               schema:
