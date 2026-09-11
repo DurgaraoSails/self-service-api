@@ -2,10 +2,15 @@ spring:
   application:
     name: self-service-api
 
+  config:
+    # Loads local-dev-only secrets (BREVO_API_KEY, JWT key paths, mail sender) with no profile
+    # needed — optional, so it's silently skipped in prod/CI where the file doesn't exist.
+    import: optional:file:./secrets/application-local-secrets.yaml
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/selfservice}
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD}
+    password: ${DB_PASSWORD:admin}
 
     hikari:
       maximum-pool-size: 5
@@ -233,3 +238,12 @@ asset-hub:
   enabled: ${ASSET_HUB_ENABLED:false}
   ai-enabled: ${ASSET_HUB_AI_ENABLED:false}
   semantic-search-enabled: ${ASSET_HUB_SEMANTIC_SEARCH_ENABLED:false}
+  # Gemini on Vertex AI (docs/specs/asset-hub.md, AI Suggestion Contract). Reuses the same GCP
+  # project/region as the deploy pipeline by default — override independently only if Asset Hub's
+  # AI calls must run against a different project. Read only when ai-enabled=true; irrelevant and
+  # unvalidated otherwise.
+  ai:
+    project-id: ${ASSET_HUB_AI_PROJECT_ID:${gcp.project-id}}
+    region: ${ASSET_HUB_AI_REGION:us-central1}
+    model: ${ASSET_HUB_AI_MODEL:gemini-2.5-flash}
+    timeout-seconds: ${ASSET_HUB_AI_TIMEOUT_SECONDS:20}

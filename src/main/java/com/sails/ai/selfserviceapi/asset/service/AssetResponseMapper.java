@@ -1,9 +1,11 @@
 package com.sails.ai.selfserviceapi.asset.service;
 
 import com.sails.ai.selfserviceapi.asset.entity.Asset;
+import com.sails.ai.selfserviceapi.asset.entity.AssetAiSuggestion;
 import com.sails.ai.selfserviceapi.asset.entity.AssetFeedback;
 import com.sails.ai.selfserviceapi.asset.entity.AssetRevision;
 import com.sails.ai.selfserviceapi.asset.entity.AssetReview;
+import com.sails.ai.selfserviceapi.generated.model.AssetAiSuggestionResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetDetailResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetEditorResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetEditorResponseAsset;
@@ -242,6 +244,24 @@ public final class AssetResponseMapper {
     public static AssetReviewerDashboardResponse toDashboardResponse(long total, long approved, long inReview,
                                                                        List<AssetReviewerDashboardCategoryResponse> categories) {
         return new AssetReviewerDashboardResponse(total, approved, inReview, categories);
+    }
+
+    /** {@code suggestedTags} is already-parsed JSON — the caller owns deserializing the
+     * entity's raw column, keeping this mapper free of an ObjectMapper dependency like every
+     * other method here. */
+    public static AssetAiSuggestionResponse toAiSuggestionResponse(AssetAiSuggestion run, List<String> suggestedTags) {
+        AssetAiSuggestionResponse response = new AssetAiSuggestionResponse(
+                run.getId(), run.getRevisionId(),
+                AssetAiSuggestionResponse.StatusEnum.fromValue(run.getStatus()),
+                toOffsetDateTime(run.getCreatedAt()), toOffsetDateTime(run.getUpdatedAt()));
+        response.suggestedTitle(run.getSuggestedTitle());
+        response.suggestedSummary(run.getSuggestedSummary());
+        response.suggestedTags(suggestedTags);
+        response.provider(run.getProvider());
+        response.model(run.getModel());
+        response.schemaVersion(run.getSchemaVersion());
+        response.errorCode(run.getErrorCode());
+        return response;
     }
 
     private static List<String> tagNames(AssetRevision revision) {
