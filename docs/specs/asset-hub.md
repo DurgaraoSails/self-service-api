@@ -144,6 +144,12 @@ baseline `USER` and database-managed `SUPERADMIN`. The caller must be internal; 
 a different active internal employee. Role changes take effect in newly issued/refreshed portal
 tokens under the current JWT architecture.
 
+The existing `/users/{id}/promote-to-admin` and `/users/{id}/demote-to-user` endpoints remain
+legacy customer-administration operations for compatibility. Asset Hub does not call them. An
+`ADMIN` role granted there cannot bypass Asset Hub because every Hub operation separately requires
+an `INTERNAL` account; multi-role Asset Hub administration uses only `/employees/{userId}/roles`,
+which also enforces an active internal target, self-management restrictions, row locking, and audit.
+
 ### PostgreSQL-backed hybrid search for the POC
 
 The existing PostgreSQL database stores approved search documents. PostgreSQL full-text search
