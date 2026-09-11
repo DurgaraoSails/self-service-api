@@ -60,9 +60,11 @@ they are not duplicated and allowed to drift.
 
 ## Required implementation phases
 
-**Status (2026-09-10):** Phase 0 done (`5de7764`) and Phase 1's backend half done (`520b4ed`) — see
-`backend-api.md`'s Handoff evidence for the full exit-test verification and known gaps. Phase 1's
-portal half has not started. Phase 2/3 not started.
+**Status (2026-09-11):** Phase 0 and the manual Phase 1/2 API and portal workflows are implemented.
+API lifecycle completion is in `989e731`; portal workflow completion is in `082c4ac` and
+`0eb0538`. Dedicated
+Asset Hub test generation and accessibility verification are next. Phase 3 intelligence and
+BLOG/ARTICLE template scoring remain deliberately deferred.
 
 ### Phase 0 — contract freeze (backend owner)
 
@@ -108,28 +110,28 @@ BLOG/ARTICLE template scoring is not part of Phase 3 until the user supplies tem
 
 ## Cross-workstream acceptance
 
-- [ ] An external user receives `403` from every Asset Hub API and cannot activate Asset Hub routes.
-- [ ] An internal employee can create, edit, submit, and track their own asset.
-- [ ] A different internal `ASSET_REVIEWER` can request changes, reject, or approve the submitted
+- [x] An external user receives `403` from every Asset Hub API and cannot activate Asset Hub routes.
+- [x] An internal employee can create, edit, submit, and track their own asset.
+- [x] A different internal `ASSET_REVIEWER` can request changes, reject, or approve the submitted
       revision.
-- [ ] The submitter and revision author cannot review that revision even if they hold
+- [x] The submitter and revision author cannot review that revision even if they hold
       `ASSET_REVIEWER`.
-- [ ] Editing an approved asset creates a working revision while the approved revision remains in
+- [x] Editing an approved asset creates a working revision while the approved revision remains in
       discovery and search.
-- [ ] Only the exact approved revision becomes the new searchable revision after approval.
-- [ ] SharePoint URLs are stored and opened without any backend source fetch.
+- [x] Only the exact approved revision becomes the new searchable revision after approval.
+- [x] SharePoint URLs are stored and opened without any backend source fetch.
 - [ ] A linked, ready POC shows Launch and uses the existing launch/workspace flow; an unhosted POC
       asset remains discoverable without a misleading Launch action.
-- [ ] An internal superadmin can assign `ADMIN` and `ASSET_REVIEWER` together to an internal
+- [x] An internal superadmin can assign `ADMIN` and `ASSET_REVIEWER` together to an internal
       employee, but cannot assign `SUPERADMIN` or target an external account.
-- [ ] Removing `ASSET_REVIEWER` prevents new review operations after the role change is reflected in
+- [x] Removing `ASSET_REVIEWER` prevents new review operations after the role change is reflected in
       the user's current token.
 - [ ] Keyword and semantic searches return approved catalog metadata only.
-- [ ] AI failure leaves manual submission and review usable.
-- [ ] No screen or API exposes a reuse action or reuse metric.
+- [x] AI failure leaves manual submission and review usable.
+- [x] No screen or API exposes a reuse action or reuse metric.
 - [ ] Portal pages pass automated tests, production build, keyboard checks, WCAG AA contrast, and
       AXE checks.
-- [ ] API tests and OpenAPI generation pass from a clean checkout.
+- [x] API tests and OpenAPI generation pass from a clean checkout.
 
 ## Delivery gates
 

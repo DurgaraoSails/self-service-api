@@ -116,8 +116,10 @@ feature spec.
 - [x] Preserve the target's baseline `USER` role and any database-managed `SUPERADMIN` role.
 - [x] Reject unknown roles, duplicates after normalization, external targets, inactive policy
       violations, and self-modification.
-- [ ] Decide and document compatibility for the existing promote/demote ADMIN endpoints; do not let
+- [x] Decide and document compatibility for the existing promote/demote ADMIN endpoints; do not let
       them become a bypass around the internal-target policy for Asset Hub role administration.
+      *(They remain legacy customer-admin operations; Asset Hub never calls them and still requires
+      `INTERNAL`, while its multi-role endpoint retains stricter target/audit rules.)*
 - [x] Write `role_change_audit` in the same transaction as the role update.
 - [x] Return the authoritative updated role list.
 - [x] Document that the current JWT carries role claims and when an updated assignment becomes
@@ -211,10 +213,12 @@ Keyword-only part done this phase; semantic retrieval (RRF, `EmbeddingProvider`)
 - [ ] Require schema-validated structured suggestions for title, summary, and tags.
 - [ ] Store suggestions separately from revision metadata until explicitly accepted.
 - [ ] Record status, safe error classification, model/schema version, input checksum, and timestamps.
-- [ ] Ensure AI failure, timeout, or malformed output cannot block saving, submitting, or reviewing.
+- [x] Ensure AI failure, timeout, or malformed output cannot block saving, submitting, or reviewing.
+      *(Until provider selection, suggestion routes fail independently with `503
+      ASSET_AI_UNAVAILABLE`; the manual lifecycle has no AI dependency.)*
 - [ ] Protect prompts against instructions contained in user-entered catalog text and give the AI
       path no tools or side effects.
-- [ ] Leave template-validation interfaces unimplemented or feature-disabled until templates and
+- [x] Leave template-validation interfaces unimplemented or feature-disabled until templates and
       rubrics are supplied.
 - [ ] Test timeout, provider error, malformed output, duplicate tags, oversized input, and stale
       suggestions after an edit.
@@ -269,6 +273,8 @@ Implementation commit(s):
   5de7764  Phase 0 — contract freeze (OpenAPI, migrations V15-V24, entities, config skeleton)
   700cd02  (user) contract addition — reviewer dashboard endpoint + schema refinements
   520b4ed  Phase 1 backend — authorization and vertical slice
+  989e731  Manual workflow completion — feature gating, owner lookup, approved-edit compatibility,
+           archive concurrency version, and administrator-controlled POC unlinking
 
 Tests run:
   .\mvnw.cmd generate-sources   — clean
