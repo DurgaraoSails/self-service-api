@@ -190,7 +190,7 @@ Keyword-only part done this phase; semantic retrieval (RRF, `EmbeddingProvider`)
       using the exact reciprocal-rank-fusion algorithm in the feature spec. *(Phase 3 — not started.)*
 - [ ] Define deterministic fallback to keyword search when embeddings or the provider are
       unavailable. *(N/A until semantic search exists to fall back from; keyword search already
-      works standalone with `ASSET_SEMANTIC_SEARCH_ENABLED=false`.)*
+      works standalone with `ASSET_HUB_SEMANTIC_SEARCH_ENABLED=false`.)*
 - [x] Return a fresh opaque `searchSessionId` only for a submitted query; do not put query text into
       that identifier or persist raw query text.
 - [x] Reindex only when the approved revision or embedding model/input checksum changes. *(every

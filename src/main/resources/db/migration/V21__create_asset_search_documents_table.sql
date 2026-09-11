@@ -1,4 +1,4 @@
--- Keyword search must work on its own (ASSET_AI_ENABLED=false, ASSET_SEMANTIC_SEARCH_ENABLED=false
+-- Keyword search must work on its own (ASSET_HUB_AI_ENABLED=false, ASSET_HUB_SEMANTIC_SEARCH_ENABLED=false
 -- is a supported configuration), so this migration creates the full lexical side of the table now.
 -- The pgvector embedding column is deliberately NOT here — it lands in a separate Phase 3 migration
 -- once the local/production PostgreSQL image is swapped for a pgvector-enabled one, so the vertical

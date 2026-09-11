@@ -153,6 +153,7 @@ public final class AssetResponseMapper {
                 AssetMineSummaryResponse.AssetTypeEnum.fromValue(asset.getAssetType()),
                 title,
                 displayed.getRevisionNumber(),
+                asset.getVersion(),
                 approved != null,
                 toOffsetDateTime(displayed.getUpdatedAt()));
         if (working != null && !AssetRevision.APPROVED.equals(working.getState())) {
