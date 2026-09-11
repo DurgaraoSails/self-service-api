@@ -208,20 +208,43 @@ Keyword-only part done this phase; semantic retrieval (RRF, `EmbeddingProvider`)
 
 ## 8. AI metadata suggestions
 
-- [ ] Define an AI provider boundary separate from search embeddings.
-- [ ] Send only bounded, user-entered catalog fields; never send or fetch source URL content.
-- [ ] Require schema-validated structured suggestions for title, summary, and tags.
-- [ ] Store suggestions separately from revision metadata until explicitly accepted.
-- [ ] Record status, safe error classification, model/schema version, input checksum, and timestamps.
+- [x] Define an AI provider boundary separate from search embeddings. *(`asset/ai/AssetAiProvider`;
+      `GeminiAssetAiProvider` is the only implementation, only registered when `asset-hub.ai-enabled=true`
+      — see docs/specs/asset-hub.md's "AI metadata suggestion provider: Gemini on Vertex AI".)*
+- [x] Send only bounded, user-entered catalog fields; never send or fetch source URL content.
+      *(`AssetAiSuggestionInput`/`AssetAiSuggestionService.buildInput` — assetType, title, summary,
+      problemStatement, businessImpact, solutionOverview, normalized tags only; no sourceUrl field
+      exists on the input type at all.)*
+- [x] Require schema-validated structured suggestions for title, summary, and tags.
+      *(Vertex `generationConfig.responseSchema` + `responseMimeType=application/json`;
+      `GeminiAssetAiProvider` throws `INVALID_PROVIDER_RESPONSE` if the response doesn't parse
+      against the schema.)*
+- [x] Store suggestions separately from revision metadata until explicitly accepted.
+      *(`asset_ai_suggestions` row; nothing in `AssetAiSuggestionService` ever writes to
+      `asset_revisions` — applying a suggestion stays an ordinary draft PATCH from the portal, per
+      the AI Suggestion Contract.)*
+- [x] Record status, safe error classification, model/schema version, input checksum, and timestamps.
+      *(`AssetAiSuggestionService.runSuggestion` sets provider/model/schemaVersion/inputChecksum
+      before calling the provider, and status/errorCode from the result; checksum also gates reuse
+      of a prior `SUCCEEDED` run for the same revision/input via
+      `findFirstByRevisionIdAndInputChecksumAndProviderAndModelAndSchemaVersionAndStatusOrderByCreatedAtDesc`.)*
 - [x] Ensure AI failure, timeout, or malformed output cannot block saving, submitting, or reviewing.
-      *(Until provider selection, suggestion routes fail independently with `503
-      ASSET_AI_UNAVAILABLE`; the manual lifecycle has no AI dependency.)*
+      *(`GeminiAssetAiProvider` converts every failure mode to `AssetAiProviderException`;
+      `AssetAiSuggestionService.runSuggestion` catches it and any other `RuntimeException`, marks the
+      run `FAILED`, and returns normally — the draft/submit/review lifecycle has no AI dependency.)*
 - [ ] Protect prompts against instructions contained in user-entered catalog text and give the AI
-      path no tools or side effects.
+      path no tools or side effects. *(Partial: the Gemini call declares no tools, and the prompt
+      frames the fields as employee-entered data rather than instructions — but there is no explicit
+      delimiter/injection defense or test for adversarial catalog text. Leaving unchecked until that
+      exists.)*
 - [x] Leave template-validation interfaces unimplemented or feature-disabled until templates and
       rubrics are supplied.
 - [ ] Test timeout, provider error, malformed output, duplicate tags, oversized input, and stale
-      suggestions after an edit.
+      suggestions after an edit. *(Not done this pass — no test files added for
+      `GeminiAssetAiProvider`/`AssetAiSuggestionService`; verified only by `mvn test` — 423 existing
+      tests still pass, including full Spring context boot with `asset-hub.ai-enabled=false` — and by
+      compiling against a real Vertex AI `generateContent` call confirmed reachable from the user's
+      own GCP project during this session. No live end-to-end suggestion run was exercised.)*
 
 ## 9. Feedback and metrics
 

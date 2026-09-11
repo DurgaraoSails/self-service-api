@@ -150,6 +150,31 @@ legacy customer-administration operations for compatibility. Asset Hub does not 
 an `INTERNAL` account; multi-role Asset Hub administration uses only `/employees/{userId}/roles`,
 which also enforces an active internal target, self-management restrictions, row locking, and audit.
 
+### AI metadata suggestion provider: Gemini on Vertex AI
+
+Metadata suggestions (§8, `POST /assets/{assetId}/ai-suggestions`) call Gemini through Vertex AI's
+`generateContent` REST endpoint with a JSON `responseSchema` (structured output), authenticated
+with the same Application Default Credentials pattern the deploy pipeline already uses for Cloud
+Build/Cloud Run — no separate API key. Default model is `gemini-2.5-flash`, overridable via
+`ASSET_HUB_AI_MODEL`/`asset-hub.ai.model` without a code change. This is a single request with no
+tools and no multi-turn state, matching the "AI failure never prevents manual submission or
+review" requirement: a missing/expired `gcloud auth application-default login` or an unreachable
+Vertex AI endpoint fails only that one suggestion run (`ASSET_AI_UNAVAILABLE`/`FAILED`), not the
+surrounding draft/submit/review flow.
+
+`gemini-2.5-flash` is scheduled for retirement 2026-10-16; `asset-hub.ai.model` is a plain config
+value specifically so swapping to whatever Gemini generation is current at that time is a
+one-line change, not a code change.
+
+### Semantic search embeddings: Voyage AI (implementation pending)
+
+Semantic search (§7, deferred to Phase 3) will use Voyage AI's `voyage-4` embedding model at a
+fixed output dimension of 1024, stored in the `asset_search_documents.embedding` `vector(1024)`
+column added in the Phase 3 migration described above. Voyage AI's free tier (200M tokens on the
+voyage-4 family) covers this POC's expected volume, so no paid billing is required to ship it.
+This decision is recorded here to unblock Phase 3 but is **not yet implemented** — no
+`EmbeddingProvider`, no pgvector migration, no RRF ranking code exists yet.
+
 ### PostgreSQL-backed hybrid search for the POC
 
 The existing PostgreSQL database stores approved search documents. PostgreSQL full-text search
@@ -483,7 +508,10 @@ reuse metric, or a redundant `Published` state.
 ## Open Questions / Future Work
 
 - BLOG and ARTICLE template fields, versions, and scoring rubrics.
-- Provider and model selection for metadata suggestions and embeddings.
+- Provider and model selection for metadata suggestions and embeddings — resolved 2026-09-11, see
+  "AI metadata suggestion provider: Gemini on Vertex AI" and "Semantic search embeddings: Voyage AI
+  (implementation pending)" under Architecture Decisions. The embeddings half is a recorded
+  decision only; implementation is still open.
 - Automatic SharePoint ingestion through Microsoft Graph.
 - Whether additional source adapters need trusted preview or extraction.
 - Whether role revocation requires immediate access-token invalidation rather than taking effect on
@@ -507,3 +535,11 @@ reuse metric, or a redundant `Published` state.
   to the Error Contract table. All three were already implemented and returned by the §4 multi-role
   management endpoint (commit `1b5c305`) but were missing from this table — code review caught the
   documentation gap, not a behavior change.
+- 2026-09-11 — Resolved the AI-provider open question: Gemini on Vertex AI (default model
+  `gemini-2.5-flash`, configurable) for §8 metadata suggestions, and Voyage AI (`voyage-4`, 1024
+  dimensions) for §7 semantic-search embeddings. Both chosen because the user already holds GCP
+  credentials for Gemini (no new secret) and Voyage AI's free tier covers this POC's embedding
+  volume at no cost. `gemini-2.5-flash` retires 2026-10-16; the model name is a config value, not
+  hardcoded, so migrating to the current generation at that time needs no code change. §8 is now
+  implemented (`asset/ai/GeminiAssetAiProvider`, `asset/service/AssetAiSuggestionService`); §7
+  embeddings remain unimplemented pending the Phase 3 pgvector migration.

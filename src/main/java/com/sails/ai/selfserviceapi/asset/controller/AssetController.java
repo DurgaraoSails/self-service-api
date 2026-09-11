@@ -1,6 +1,6 @@
 package com.sails.ai.selfserviceapi.asset.controller;
 
-import com.sails.ai.selfserviceapi.asset.exception.AssetAiUnavailableException;
+import com.sails.ai.selfserviceapi.asset.service.AssetAiSuggestionService;
 import com.sails.ai.selfserviceapi.asset.service.AssetLifecycleService;
 import com.sails.ai.selfserviceapi.generated.api.AssetApi;
 import com.sails.ai.selfserviceapi.generated.model.ArchiveAssetRequest;
@@ -29,9 +29,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AssetController implements AssetApi {
 
     private final AssetLifecycleService assetLifecycleService;
+    private final AssetAiSuggestionService assetAiSuggestionService;
 
-    public AssetController(AssetLifecycleService assetLifecycleService) {
+    public AssetController(AssetLifecycleService assetLifecycleService, AssetAiSuggestionService assetAiSuggestionService) {
         this.assetLifecycleService = assetLifecycleService;
+        this.assetAiSuggestionService = assetAiSuggestionService;
     }
 
     @Override
@@ -104,15 +106,14 @@ public class AssetController implements AssetApi {
     @Override
     public ResponseEntity<AssetAiSuggestionResponse> startAssetAiSuggestions(UUID assetId) {
         CurrentUser.requireInternal();
-        // No provider integration yet (Phase 3) — always unavailable regardless of the flag's value.
-        // assetHubProperties.aiEnabled() becomes the real gate once a provider exists.
-        throw new AssetAiUnavailableException();
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(assetAiSuggestionService.startSuggestions(assetId, CurrentUser.id()));
     }
 
     @Override
     public ResponseEntity<AssetAiSuggestionResponse> getLatestAssetAiSuggestion(UUID assetId) {
         CurrentUser.requireInternal();
-        throw new AssetAiUnavailableException();
+        return ResponseEntity.ok(assetAiSuggestionService.getLatestSuggestion(assetId, CurrentUser.id()));
     }
 
     @Override
