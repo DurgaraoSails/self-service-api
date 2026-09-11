@@ -9,10 +9,12 @@ import com.sails.ai.selfserviceapi.generated.model.CreateAssetReviewRequest;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@ConditionalOnProperty(prefix = "asset-hub", name = "enabled", havingValue = "true")
 public class AssetReviewController implements AssetReviewApi {
 
     private final AssetReviewService assetReviewService;

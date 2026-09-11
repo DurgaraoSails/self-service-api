@@ -387,6 +387,7 @@ AssetMineSummaryResponse:
     - assetType
     - title
     - revisionNumber
+    - assetVersion
     - hasApprovedRevision
     - updatedAt
   properties:
@@ -409,6 +410,12 @@ AssetMineSummaryResponse:
       type: integer
       description: Working revision number if one exists, otherwise the approved revision number.
       example: 2
+
+    assetVersion:
+      type: integer
+      format: int64
+      description: Optimistic-lock version of the asset row, required by archive and other asset-level mutations.
+      example: 3
 
     workingState:
       type: string
@@ -606,8 +613,13 @@ UpdateAssetRevisionRequest:
       type: string
       format: uuid
       nullable: true
-      description: Only an internal ADMIN may set/change this.
+      description: Only an internal ADMIN may set/change this. Omit to preserve the current association.
       example: null
+
+    clearPocAssociation:
+      type: boolean
+      default: false
+      description: Only an internal ADMIN may set this true; explicitly removes the current hosted POC association.
 
     revisionExpectedVersion:
       type: integer

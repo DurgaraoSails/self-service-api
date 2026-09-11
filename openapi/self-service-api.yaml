@@ -2610,7 +2610,8 @@ paths:
 
   /employees:
     get:
-      summary: List active internal employees, for role administration (internal superadmin)
+      summary: List active internal employees, for Asset Hub ownership and role administration
+      description: Available to authenticated internal employees. Role mutations remain superadmin-only.
       operationId: listEmployees
       tags:
         - Employee

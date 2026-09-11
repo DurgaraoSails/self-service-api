@@ -93,6 +93,9 @@ public class AssetLifecycleService {
         validateSourceUrl(request.getSourceUrl());
         User owner = requireActiveInternalUser(request.getOwnerUserId());
         String assetType = request.getAssetType().getValue();
+        if (request.getPocId() != null && !CurrentUser.isAdmin()) {
+            throw new InvalidPocAssociationException("Only an internal administrator may link a hosted POC.");
+        }
         validatePocAssociation(request.getPocId(), assetType);
 
         Asset asset = new Asset();
@@ -217,7 +220,8 @@ public class AssetLifecycleService {
         }
 
         if (request.getAssetType() != null) {
-            if (asset.getApprovedRevisionId() != null) {
+            if (asset.getApprovedRevisionId() != null
+                    && !asset.getAssetType().equals(request.getAssetType().getValue())) {
                 throw new InvalidAssetTransitionException("assetType can only change before the asset has ever been approved.");
             }
             asset.setAssetType(request.getAssetType().getValue());
@@ -225,9 +229,16 @@ public class AssetLifecycleService {
         if (request.getOwnerUserId() != null) {
             asset.setOwnerUserId(requireActiveInternalUser(request.getOwnerUserId()).getId());
         }
-        if (request.getPocId() != null) {
+        if (Boolean.TRUE.equals(request.getClearPocAssociation())) {
+            if (!CurrentUser.isAdmin()) {
+                throw new InvalidPocAssociationException("Only an internal administrator may change the linked POC.");
+            }
+            asset.setPocId(null);
+        } else if (request.getPocId() != null && CurrentUser.isAdmin()) {
             validatePocAssociation(request.getPocId(), asset.getAssetType());
             asset.setPocId(request.getPocId());
+        } else if (request.getPocId() != null && !request.getPocId().equals(asset.getPocId())) {
+            throw new InvalidPocAssociationException("Only an internal administrator may change the linked POC.");
         }
 
         working.setTitle(request.getTitle());

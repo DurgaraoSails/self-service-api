@@ -413,7 +413,7 @@ separate and components must stay focused.
 ## Configuration and Safe Defaults
 
 - `ASSET_HUB_ENABLED=false` by default until migrations and both applications are deployed.
-- `ASSET_AI_ENABLED=false` and `ASSET_SEMANTIC_SEARCH_ENABLED=false` independently control optional
+- `ASSET_HUB_AI_ENABLED=false` and `ASSET_HUB_SEMANTIC_SEARCH_ENABLED=false` independently control optional
   intelligence; keyword search and manual review must work when both are false.
 - Provider secrets come from the existing deployment secret mechanism and are never committed or
   logged.
