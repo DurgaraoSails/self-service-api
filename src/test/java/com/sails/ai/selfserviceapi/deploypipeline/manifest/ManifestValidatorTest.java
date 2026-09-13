@@ -331,4 +331,81 @@ class ManifestValidatorTest {
 
         assertThat(validator.validate(manifest)).isEmpty();
     }
+
+    // --- requires: ---
+
+    private static ManifestContainer requiring(String name, ManifestRequirement... requirements) {
+        return new ManifestContainer(name, ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of(), null, null,
+                List.of(requirements));
+    }
+
+    @Test
+    void acceptsSecretRequirements() {
+        PocManifest manifest = new PocManifest(
+                List.of(requiring("app", new ManifestRequirement("OPENAI_API_KEY", true),
+                        new ManifestRequirement("DB_PASSWORD", true))),
+                new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).isEmpty();
+    }
+
+    /** Accepting one would deploy a container missing a variable it said it needed, explaining nothing. */
+    @Test
+    void rejectsARequirementThatIsNotASecret() {
+        PocManifest manifest = new PocManifest(
+                List.of(requiring("app", new ManifestRequirement("DATABASE_URL", false))), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).anySatisfy(violation -> assertThat(violation)
+                .contains("DATABASE_URL")
+                .contains("plain admin-supplied values aren't implemented yet"));
+    }
+
+    @Test
+    void rejectsARequirementOnAReservedName() {
+        PocManifest manifest = new PocManifest(
+                List.of(requiring("app", new ManifestRequirement("PLATFORM_API_URL", true))), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).anySatisfy(violation ->
+                assertThat(violation).contains("requires reserved env var 'PLATFORM_API_URL'"));
+    }
+
+    @Test
+    void rejectsARequirementOnAReservedPrefix() {
+        PocManifest manifest = new PocManifest(
+                List.of(requiring("app", new ManifestRequirement("SVC_API_URL", true))), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).anySatisfy(violation ->
+                assertThat(violation).contains("reserved prefix"));
+    }
+
+    @Test
+    void rejectsTheSameRequirementTwice() {
+        PocManifest manifest = new PocManifest(
+                List.of(requiring("app", new ManifestRequirement("API_KEY", true),
+                        new ManifestRequirement("API_KEY", true))),
+                new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).anySatisfy(violation ->
+                assertThat(violation).contains("requires 'API_KEY' more than once"));
+    }
+
+    /** One key, one source — otherwise the winner depends on flag ordering rather than on the manifest. */
+    @Test
+    void rejectsANameThatIsBothSetAndRequired() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("API_KEY", "hardcoded"), null, null, List.of(new ManifestRequirement("API_KEY", true)));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).anySatisfy(violation ->
+                assertThat(violation).contains("both sets and requires 'API_KEY'"));
+    }
+
+    @Test
+    void rejectsARequirementThatIsNotAValidEnvVarName() {
+        PocManifest manifest = new PocManifest(
+                List.of(requiring("app", new ManifestRequirement("not-a-var", true))), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).anySatisfy(violation ->
+                assertThat(violation).contains("not a valid environment variable name"));
+    }
 }

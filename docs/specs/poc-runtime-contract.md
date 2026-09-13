@@ -324,6 +324,16 @@ New configuration (`application.yaml`):
 
 ## Changelog
 
+- 2026-09-10 — **There are two supported ways to learn the serving port, not one.** This document
+  and the guide both stated the contract as "read `PORT`", which silently excluded anything that
+  decides its bind address somewhere a shell never runs. nginx is the case that matters, since a
+  single-page app is the most common POC front end and a container has to serve it somehow. A
+  manifest that declares `port:` and binds it (`APP_PORT: ${self.port}`) is now stated as equally
+  correct: the platform serves the declared port, so a config file with a fixed `listen` directive
+  and the port actually served cannot drift. `PORT` is still injected either way. This became
+  expressible only once the single-container path started emitting `--port=` for a declared port —
+  before that, declaring one produced a probe on it while Cloud Run served 8080.
+
 - 2026-09-10 — Added "A POC may receive all of this under names it chose itself". The contract's
   values are unchanged; a manifest can now bind them to the env var names an application already
   reads, so a working POC no longer needs a source change to be hosted. Platform-chosen names are

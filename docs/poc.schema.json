@@ -120,6 +120,27 @@
           },
           "additionalProperties": { "type": ["string", "number", "boolean"] }
         },
+        "requires": {
+          "type": "array",
+          "description": "Environment variables this container needs whose values the manifest deliberately does not carry. The author declares WHAT the code reads; the value is supplied outside the repository. The Secret Manager id is derived by the platform as poc-<slug>-<container>-<key lowercased, underscores to hyphens>-<environment>, never named here, so a repository stays portable and cannot reference another POC's secret. Every entry currently needs 'secret: true'.",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^(?!PORT$|POC_SLUG$|PLATFORM_API_URL$|PORTAL_ORIGIN$|SAILS_|SVC_)[A-Za-z_][A-Za-z0-9_]*$",
+                "description": "The environment variable name the container will receive. Same reservations as an 'env' key, and it may not also appear under 'env' — one variable, one source."
+              },
+              "secret": {
+                "type": "boolean",
+                "default": false,
+                "description": "Resolve from Secret Manager at container start rather than pass as a plain environment variable. Required to be true today: plain admin-supplied values are specified but not implemented, so a non-secret requirement is rejected rather than silently unsatisfied."
+              }
+            }
+          }
+        },
         "repo": {
           "type": "string",
           "description": "Rejected. Cross-repository containers are not supported; every container builds from this POC's own repository. Present in the schema so the mistake is reported rather than silently ignored."

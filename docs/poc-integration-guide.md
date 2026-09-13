@@ -354,6 +354,79 @@ The current platform API builds containers from one POC repository and deploys t
 
 Create `poc.yaml` (or `poc.yml`; both are read, `poc.yaml` first) at the repository root. Use `containers`, not an older proposed `components` schema. Paths below are examples; change them to real paths in the POC repository.
 
+### What serves a front end, and whether you need a server of your own
+
+A container on Cloud Run must bind a port and answer HTTP. It is not a static file host, so something has to serve a built single-page app. That something rarely needs to be code you write.
+
+The confusion is worth naming, because a front end deployed to a hosting product like Firebase, Netlify or Vercel needs no server at all: those are static CDNs, and the single-page-app rewrite that sends every unknown path to `index.html` is a line of their own configuration. A container has neither, so both jobs move inside the image.
+
+| Your situation | What serves it |
+|---|---|
+| Single-page app alone, no sidecars | nginx. No server of your own. |
+| Single-page app as ingress, sidecars behind plain path routing | nginx with `proxy_pass`. Still none. |
+| Ingress must merge replies, attach a credential, or transform a response | Your own server, in whatever language. |
+
+Only the third row needs code. Serving files and forwarding a path are not reasons to write a server.
+
+**nginx cannot read an environment variable in its config**, which is why it looks incompatible with a platform that supplies the port. It is not: the official image runs `envsubst` over anything in `/etc/nginx/templates` at startup, so the config can use the variables `poc.yaml` binds. `envsubst` only substitutes names present in the environment, so nginx's own `$uri` and `$host` survive it.
+
+```dockerfile
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:1.27-alpine
+# Angular 17+ emits to dist/<project>/browser; Vite and CRA usually emit dist or build.
+COPY --from=build /app/dist/my-app/browser /usr/share/nginx/html
+COPY default.conf.template /etc/nginx/templates/default.conf.template
+EXPOSE 8080
+```
+
+```nginx
+server {
+  listen ${APP_PORT};
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  location = /healthz {
+    access_log off;
+    add_header Content-Type text/plain;
+    return 200 "ok";
+  }
+
+  # Only with a sidecar. BACKEND_URL is whatever name you bound ${services.<name>.url} to.
+  location /api/ {
+    proxy_pass ${BACKEND_URL}/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+
+  # The single-page-app rewrite a static host would have done for you.
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}
+```
+
+with, in `poc.yaml`:
+
+```yaml
+containers:
+  - name: web
+    role: ingress
+    port: 8080
+    health: /healthz
+    env:
+      APP_PORT: ${self.port}
+      BACKEND_URL: ${services.api.url}
+```
+
+`APP_PORT` must be bound rather than left to `PORT`, because the config is read at startup by `envsubst` and not by a shell. Declaring `port:` also fixes the value rather than relying on the platform default, so the `listen` directive and what the service is actually served on cannot drift apart.
+
 ### Single container serving frontend and backend
 
 ```yaml
@@ -438,7 +511,36 @@ Rules and supported fields:
 
 Use production build artifacts, reproducible dependency installation, and a foreground runtime process. Include the correct runtime entrypoint and `.dockerignore`; omit local credentials and build caches. Container startup must translate environment settings into runtime configuration/proxy configuration as needed. Do not bake environment-specific portal/API hosts into the frontend bundle.
 
-Secrets provisioning for arbitrary POC containers is not guaranteed by the current manifest implementation. Obtain a supported delivery mechanism from the platform contact. Do not “solve” missing credentials by committing them or inventing a `secrets:` manifest key.
+### Secrets
+
+A value that must not be committed goes under a container's `requires:` block, never under `env:`. The manifest declares the variable name the code reads; the value lives in Secret Manager and is resolved by Cloud Run when the container starts.
+
+```yaml
+containers:
+  - name: backend
+    role: sidecar
+    port: 8081
+    env:
+      LOG_LEVEL: info
+    requires:
+      - name: DB_PASSWORD
+        secret: true
+      - name: OPENAI_API_KEY
+        secret: true
+```
+
+The container receives `DB_PASSWORD` and `OPENAI_API_KEY` as ordinary environment variables. The value never passes through the repository, the build, or the platform's database, and the deploy step's stored arguments carry only the secret's id.
+
+Rules:
+
+- **You never name the secret.** The platform derives its id from the POC slug, the container and the key. That keeps the repository portable across projects and makes it impossible to point at another POC's secret. The deploy reports the exact id it expects; the platform contact loads the value against that id.
+- **`secret: true` is required today.** Plain admin-supplied values are specified but not implemented, so a requirement without it is rejected rather than silently unsatisfied.
+- **A name goes under `env:` or under `requires:`, never both.** One variable, one source.
+- **Reserved names and prefixes apply**, exactly as they do to an `env:` key.
+- **There is no `${secrets.X}` placeholder, and there must not be.** A placeholder resolves into an `env:` value, and `env:` values are emitted through `--set-env-vars`, whose arguments are stored permanently on the Cloud Build resource. Composing a secret into a larger string is therefore not supported: make the whole string the secret instead.
+- **Removing a requirement removes the variable** on the next deploy.
+
+Do not "solve" a missing credential by committing it.
 
 ## 10. Platform launch endpoint, for context and local testing
 

@@ -46,6 +46,13 @@ containers:
       ALLOWED_ORIGIN: ${portal.origin} # the one origin allowed to frame you
       JWKS_ISSUER: ${platform.apiUrl} # where to verify a launch token
       EXPECTED_AUDIENCE: poc:${poc.slug} # your own POC's audience
+    requires:
+      # Values that must never be committed. You declare the NAME your code reads;
+      # the value is supplied outside this repository and arrives as that variable.
+      - name: DB_PASSWORD
+        secret: true
+      - name: OPENAI_API_KEY
+        secret: true
 
 # --- Applies to the ingress container. Sidecars get Cloud Run's defaults. -----
 resources:
@@ -94,10 +101,40 @@ scaling:
 #   it doesn't, it gets 8080. No two containers may use the same port — they share one
 #   network namespace.
 #
+#   Declaring the ingress port matters most for anything that cannot read PORT where it
+#   decides what to bind — nginx being the usual one, since its config is not a shell. Write
+#   the port here, bind it with APP_PORT: ${self.port}, and the config and the served port
+#   cannot drift apart. A front end usually needs nginx rather than a server of your own:
+#   see "What serves a front end" in docs/poc-integration-guide.md.
+#
+# requires: — secrets, and why they are not in env:
+#
+#   Anything under env: is committed to git in clear text, so a password or an API key
+#   cannot live there. Declare the NAME instead and leave the value out of the repository:
+#
+#     requires:
+#       - name: OPENAI_API_KEY
+#         secret: true
+#
+#   The container receives OPENAI_API_KEY as an ordinary environment variable. Cloud Run
+#   resolves it from Secret Manager when the container starts, so the value never passes
+#   through this repository, the build, or the platform's own database.
+#
+#   You never name the secret. The platform derives its id from your slug, the container
+#   and the key, which is what keeps a repository portable across projects and stops one
+#   POC pointing at another POC's secret. Ask your platform contact to load a value; the
+#   deploy tells you the exact id it expects.
+#
+#   'secret: true' is required today. A requirement without it is rejected rather than
+#   quietly unsatisfied, because nothing supplies plain values yet.
+#
+#   A name may be under env: or under requires:, never both. One variable, one source.
+#
 # what you cannot set
 #
 #   PORT, POC_SLUG, PLATFORM_API_URL and PORTAL_ORIGIN, and anything starting with SAILS_
 #   or SVC_. The platform owns those. Read them with a placeholder under your own name.
+#   The same reservations apply to a requires: name.
 #
 # every container builds from THIS repository
 #

@@ -41,7 +41,7 @@ public class ManifestParser {
             Set.of("apiVersion", "name", "description", "team", "containers", "resources", "scaling", "platform");
 
     private static final Set<String> KNOWN_CONTAINER_KEYS =
-            Set.of("name", "role", "dockerfile", "context", "port", "env", "health", "repo");
+            Set.of("name", "role", "dockerfile", "context", "port", "env", "health", "repo", "requires");
 
     @SuppressWarnings("unchecked")
     public PocManifest parse(String yaml) {
@@ -85,7 +85,43 @@ public class ManifestParser {
         Map<String, String> env = parseEnv(map.get("env"), name);
         String health = optionalString(map, "health", null);
         String repo = optionalString(map, "repo", null);
-        return new ManifestContainer(name, role, dockerfile, context, port, env, health, repo);
+        List<ManifestRequirement> requires = parseRequires(map.get("requires"), name);
+        return new ManifestContainer(name, role, dockerfile, context, port, env, health, repo, requires);
+    }
+
+    /**
+     * {@code requires:} is a list of mappings, each naming an environment variable the container
+     * needs but whose value the manifest deliberately does not carry. Shaped as a list rather than
+     * a map because an entry has properties of its own ({@code secret}), and a map of name to
+     * options reads worse than a list of named things once there is more than one option.
+     *
+     * <p>Whether a requirement is <em>satisfiable</em> is not decided here or in
+     * {@link ManifestValidator} — that depends on what exists in Secret Manager, which is state
+     * outside the manifest.
+     */
+    @SuppressWarnings("unchecked")
+    private List<ManifestRequirement> parseRequires(Object raw, String containerName) {
+        if (raw == null) {
+            return List.of();
+        }
+        if (!(raw instanceof List<?> entries)) {
+            throw new ManifestParseException("container '" + containerName + "'s 'requires' must be a list");
+        }
+        List<ManifestRequirement> requirements = new ArrayList<>();
+        for (Object entry : entries) {
+            if (!(entry instanceof Map<?, ?> map)) {
+                throw new ManifestParseException(
+                        "each entry under container '" + containerName + "'s 'requires' must be a mapping with a 'name'");
+            }
+            Map<String, Object> requirement = (Map<String, Object>) map;
+            if (!(requirement.get("name") instanceof String name) || name.isBlank()) {
+                throw new ManifestParseException("every entry under container '" + containerName
+                        + "'s 'requires' must declare a non-empty 'name'");
+            }
+            requirements.add(new ManifestRequirement(
+                    name, requirement.get("secret") instanceof Boolean secret && secret));
+        }
+        return requirements;
     }
 
     /**
