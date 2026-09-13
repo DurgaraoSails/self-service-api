@@ -68,8 +68,8 @@ Obtain the following environment-specific values from the platform contact. The 
 | `PLATFORM_API_URL` | Platform-injected API base URL, reachable from the deployed backend; also browser-reachable if the frontend calls platform file endpoints. Append `/.well-known/jwks.json` for public keys. |
 | `PORTAL_ORIGIN` | Platform-injected bare origin, e.g. `https://portal.example.com`, with no path, query, or fragment. Used for message validation, `targetOrigin`, and CSP. |
 | Expected JWT issuer | Must match the platform's configured `jwt.issuer` / `JWT_ISSUER`. Current API default is the literal string `self-service-api`, **not** the API URL. Confirm the deployment's value. |
-| `PORT` | Process listening port. Supplied to ingress by Cloud Run and injected for sidecars from their manifest port. Bind to `0.0.0.0`, using this value. |
-| `SVC_<NAME>_URL` | Platform-injected server-side URL for another sidecar, e.g. sidecar `backend` becomes `SVC_BACKEND_URL=http://localhost:8081`. Hyphens become underscores and names are uppercase. |
+| `PORT` | Process listening port. Supplied to ingress by Cloud Run and injected for sidecars from their manifest port. Bind to `0.0.0.0`, using this value. If the application already reads a different name, alias it in `poc.yaml` with `${self.port}` rather than changing the code — see section 9. |
+| `SVC_<NAME>_URL` | Platform-injected server-side URL for another sidecar, e.g. sidecar `backend` becomes `SVC_BACKEND_URL=http://localhost:8081`. Hyphens become underscores and names are uppercase. Alias it to an existing name with `${services.backend.url}` — see section 9. |
 | Business-service secrets | POC-specific server-side configuration arranged with the platform contact. Never embed in browser assets or literal manifest entries. |
 
 **Issuer configuration gap:** the current deployment code injects the slug, platform API URL, and portal origin, but does not automatically inject a JWT issuer variable. In the POC, define a backend setting such as `POC_EXPECTED_ISSUER`, document it, and have the platform contact provide the confirmed value. For the current default deployment, a non-secret manifest literal `POC_EXPECTED_ISSUER: "self-service-api"` is suitable after confirmation. This is a POC-defined setting, not an existing automatically injected platform variable.
@@ -352,7 +352,7 @@ A shared uploader UI package is not currently available in the inspected bridge.
 
 The current platform API builds containers from one POC repository and deploys them as one Cloud Run service with exactly one ingress container. Sidecars share the instance network and must use distinct listening ports. Docker Compose may be used for local testing but is not the deployment input.
 
-Create `poc.yaml` at the repository root. Use `containers`, not an older proposed `components` schema. Paths below are examples; change them to real paths in the POC repository.
+Create `poc.yaml` (or `poc.yml`; both are read, `poc.yaml` first) at the repository root. Use `containers`, not an older proposed `components` schema. Paths below are examples; change them to real paths in the POC repository.
 
 ### Single container serving frontend and backend
 
@@ -384,12 +384,48 @@ containers:
 
 Both use a root build context for clarity. Ensure every Dockerfile's COPY paths work with the declared context and build it that way locally. The frontend must actually proxy to the backend in the second example; declaring a sidecar does not create proxy routes.
 
+### Keeping the POC's own environment variable names
+
+The two examples above make a POC read `PORT` and `SVC_BACKEND_URL`, names the platform chose. An application that already worked does not have to adopt them. A `${...}` reference inside an `env:` value binds a platform value to whatever name the code already reads:
+
+```yaml
+containers:
+  - name: frontend
+    role: ingress
+    dockerfile: frontend/Dockerfile
+    context: .
+    port: 3000
+    health: /health
+    env:
+      BACKEND_API_URL: ${services.backend.url}
+      SERVER_PORT: ${self.port}
+
+  - name: backend
+    role: sidecar
+    dockerfile: backend/Dockerfile
+    context: .
+    port: 8081
+    health: /health
+    env:
+      SERVER_PORT: ${self.port}
+      ALLOWED_ORIGIN: ${portal.origin}
+      EXPECTED_AUDIENCE: poc:${poc.slug}
+```
+
+Available references: `${self.port}`, `${self.name}`, `${services.<name>.url}`, `${services.<name>.host}`, `${services.<name>.port}`, `${poc.slug}`, `${platform.apiUrl}`, `${portal.origin}`.
+
+A reference naming one of those roots must resolve or the manifest is rejected before anything is built. Any other `${...}`, such as `${HOME}`, is left as ordinary text. Write `$${` for a literal `${` that would otherwise start a known root.
+
+These are aliases, not replacements. `PORT`, `SVC_<NAME>_URL`, `POC_SLUG`, `PLATFORM_API_URL` and `PORTAL_ORIGIN` are still injected exactly as section 3 describes, so a POC already written against them needs no change.
+
+**A copy-paste starting point with every key commented is `docs/poc.yaml.template`, beside `docs/poc.schema.json`.** Referencing the schema from the top of your own `poc.yaml` gives validation and autocomplete in any editor with the YAML extension. Both files are checked against this platform's own parser and validator by an automated test, so they cannot drift from what a deploy actually accepts.
+
 Rules and supported fields:
 
 - Exactly one `role: ingress`; every other container uses `role: sidecar`.
 - Names must be unique, lowercase alphanumeric with hyphens, at most 40 characters. Default platform maximum is eight containers.
-- Ingress `port` is optional. For multi-container deployment, the platform default is 8080 and a declared ingress port takes precedence. The current single-container deploy path does not emit a port-setting flag: omit a custom ingress port there and confirm the service's actual port matches its health probe. The process must always use the supplied `PORT`.
-- Every sidecar declares its listening `port`. Choose valid, non-conflicting ports, including no collision with ingress. The platform supplies matching `PORT` and `SVC_<NAME>_URL` values.
+- Ingress `port` is optional. The platform default is 8080 and a declared ingress port takes precedence, on both the single-container and the multi-container path. The process must bind the port it will actually be given: the supplied `PORT`, or the declared port surfaced under the POC's own name with `${self.port}`.
+- Every sidecar declares its listening `port`. No two containers may use the same port, ingress included, and a manifest that reuses one is rejected before anything is built — an ingress that declares none is checked at the platform default of 8080. The platform supplies matching `PORT` and `SVC_<NAME>_URL` values.
 - `dockerfile` defaults to `Dockerfile`; `context` defaults to `.`. Declare them explicitly when the repository has multiple builds.
 - `health` is an optional per-container HTTP path used for a startup probe. Implement it if declared; prefer a small unauthenticated `200` response with no secrets. Do not make an absent user session fail health checks.
 - The ingress is configured to depend on sidecars that declare health probes. It should still handle backend unavailability gracefully.

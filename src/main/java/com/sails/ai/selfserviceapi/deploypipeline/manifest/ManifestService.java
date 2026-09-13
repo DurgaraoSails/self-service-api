@@ -21,7 +21,17 @@ public class ManifestService {
 
     /** Every container this phase builds comes from the primary repo — see ManifestContainer's javadoc. */
     private static final String DEFAULT_CONTAINER_NAME = "app";
-    private static final String MANIFEST_PATH = "poc.yaml";
+
+    /**
+     * The filenames a manifest may use, tried in this order. Both spellings are accepted because
+     * only one used to be: a repo with {@code poc.yml} silently fell through to the synthesized
+     * single-container default, so its manifest appeared to be ignored for no reason its author
+     * could discover. Public because {@code PocOnboardingCheckService} reports the same names back
+     * to a team, and two private copies of one filename are how that message drifts.
+     *
+     * <p>Two spellings, not an open set: this is a typo guard, not an invitation to invent names.
+     */
+    public static final List<String> MANIFEST_PATHS = List.of("poc.yaml", "poc.yml");
 
     private final GitHubService gitHubService;
     private final ManifestParser parser;
@@ -34,22 +44,24 @@ public class ManifestService {
     }
 
     /**
-     * Reads poc.yaml at the given commit, validates it, and fails before anything is cloned or
-     * built if it's invalid. A repo with no poc.yaml resolves to the synthesized single-container
-     * default — today's implicit behavior, made explicit.
+     * Reads the first of {@link #MANIFEST_PATHS} the repo has at the given commit, validates it, and
+     * fails before anything is cloned or built if it is invalid. A repo with neither resolves to the
+     * synthesized single-container default — today's implicit behavior, made explicit.
      */
     public ManifestResolution resolveForBuild(GitHubRepoRef repo, String ref) {
-        Optional<String> rawYaml = gitHubService.getFileContent(repo, ref, MANIFEST_PATH);
-        if (rawYaml.isEmpty()) {
-            return new ManifestResolution(null, synthesizeDefault());
+        for (String path : MANIFEST_PATHS) {
+            Optional<String> rawYaml = gitHubService.getFileContent(repo, ref, path);
+            if (rawYaml.isEmpty()) {
+                continue;
+            }
+            PocManifest manifest = parser.parse(rawYaml.get());
+            List<String> violations = validator.validate(manifest);
+            if (!violations.isEmpty()) {
+                throw new ManifestValidationException(violations);
+            }
+            return new ManifestResolution(rawYaml.get(), manifest);
         }
-
-        PocManifest manifest = parser.parse(rawYaml.get());
-        List<String> violations = validator.validate(manifest);
-        if (!violations.isEmpty()) {
-            throw new ManifestValidationException(violations);
-        }
-        return new ManifestResolution(rawYaml.get(), manifest);
+        return new ManifestResolution(null, synthesizeDefault());
     }
 
     /**

@@ -2,13 +2,18 @@ package com.sails.ai.selfserviceapi.deploypipeline.manifest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ManifestValidatorTest {
 
-    private final ManifestValidator validator = new ManifestValidator(new ManifestProperties(null, null, 0));
+    /** 8080 is the value an ingress that declares no port is checked against for collisions. */
+    private static final PocRuntimeProperties POC_RUNTIME =
+            new PocRuntimeProperties(8080, "https://api.example.com", "https://portal.example.com");
+
+    private final ManifestValidator validator = new ManifestValidator(new ManifestProperties(null, null, 0), POC_RUNTIME);
 
     private static ManifestContainer ingress(String name) {
         return new ManifestContainer(name, ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
@@ -108,7 +113,7 @@ class ManifestValidatorTest {
     @Test
     void rejectsMoreContainersThanTheConfiguredMaximum() {
         ManifestProperties tightLimit = new ManifestProperties(null, null, 1);
-        ManifestValidator validatorWithTightLimit = new ManifestValidator(tightLimit);
+        ManifestValidator validatorWithTightLimit = new ManifestValidator(tightLimit, POC_RUNTIME);
         PocManifest manifest = new PocManifest(List.of(ingress("api"), sidecar("worker", 9000)), new Resources(null, null));
 
         assertThat(validatorWithTightLimit.validate(manifest)).anySatisfy(v -> assertThat(v).contains("at most 1"));
@@ -190,6 +195,139 @@ class ManifestValidatorTest {
     @Test
     void acceptsAContainerThatDeclaresNoRepository() {
         PocManifest manifest = new PocManifest(List.of(ingress("app")), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).isEmpty();
+    }
+
+    private static ManifestContainer withEnv(String name, ContainerRole role, Integer port, Map<String, String> env) {
+        return new ManifestContainer(name, role, "Dockerfile", ".", port, env);
+    }
+
+    // --- ${...} placeholders in env values ---
+
+    @Test
+    void acceptsEveryPlaceholderRootItSupports() {
+        ManifestContainer app = withEnv("web", ContainerRole.INGRESS, null, Map.of(
+                "SELF_PORT", "${self.port}",
+                "SELF_NAME", "${self.name}",
+                "API_URL", "${services.api.url}",
+                "API_HOST", "${services.api.host}",
+                "API_PORT", "${services.api.port}",
+                "TENANT", "${poc.slug}",
+                "PLATFORM", "${platform.apiUrl}",
+                "EMBEDDER", "${portal.origin}"));
+        PocManifest manifest = new PocManifest(List.of(app, sidecar("api", 9000)), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).isEmpty();
+    }
+
+    @Test
+    void acceptsAPlaceholderComposedIntoALargerValue() {
+        ManifestContainer app = withEnv("web", ContainerRole.INGRESS, null,
+                Map.of("ASPNETCORE_URLS", "http://0.0.0.0:${self.port}", "API", "${services.api.url}/v1"));
+        PocManifest manifest = new PocManifest(List.of(app, sidecar("api", 9000)), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).isEmpty();
+    }
+
+    @Test
+    void rejectsAPlaceholderNamingAContainerTheManifestDoesNotDeclare() {
+        ManifestContainer app = withEnv("web", ContainerRole.INGRESS, null,
+                Map.of("BACKEND_URL", "${services.backedn.url}"));
+        PocManifest manifest = new PocManifest(List.of(app, sidecar("backend", 9000)), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).anySatisfy(violation -> assertThat(violation)
+                .contains("BACKEND_URL")
+                .contains("${services.backedn.url}")
+                .contains("names nothing this manifest declares"));
+    }
+
+    @Test
+    void rejectsAPlaceholderNamingAPropertyThatDoesNotExist() {
+        ManifestContainer app = withEnv("web", ContainerRole.INGRESS, null, Map.of("P", "${self.prot}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        assertThat(validator.validate(manifest))
+                .anySatisfy(violation -> assertThat(violation).contains("${self.prot}"));
+    }
+
+    /** Every unresolvable reference at once, like every other rule here — not one per retry. */
+    @Test
+    void reportsEveryUnresolvablePlaceholderInOnePass() {
+        ManifestContainer app = withEnv("web", ContainerRole.INGRESS, null,
+                Map.of("A", "${self.nope}", "B", "${services.ghost.url}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).hasSize(2);
+    }
+
+    /**
+     * The compatibility rule that makes this safe to add to a published schema: a value that merely
+     * contains ${...} names no root this platform knows, so it stays ordinary text.
+     */
+    @Test
+    void leavesAValueAloneWhenItReferencesNoKnownRoot() {
+        ManifestContainer app = withEnv("web", ContainerRole.INGRESS, null,
+                Map.of("TEMPLATE", "total is ${amount}", "HOME_DIR", "${HOME}/data"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).isEmpty();
+    }
+
+    @Test
+    void acceptsAnEscapedPlaceholderAsLiteralText() {
+        ManifestContainer app = withEnv("web", ContainerRole.INGRESS, null, Map.of("DOCS", "write $${self.port}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).isEmpty();
+    }
+
+    /** A placeholder reads a platform value; it must not become a way to set a reserved one. */
+    @Test
+    void stillRejectsAReservedNameEvenWhenItsValueIsAPlaceholder() {
+        ManifestContainer app = withEnv("web", ContainerRole.INGRESS, null, Map.of("PORT", "${self.port}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        assertThat(validator.validate(manifest))
+                .anySatisfy(violation -> assertThat(violation).contains("reserved env var 'PORT'"));
+    }
+
+    // --- port collisions ---
+
+    @Test
+    void rejectsTwoSidecarsOnTheSamePort() {
+        PocManifest manifest = new PocManifest(
+                List.of(ingress("web"), sidecar("api", 9000), sidecar("worker", 9000)), new Resources(null, null));
+
+        assertThat(validator.validate(manifest)).anySatisfy(violation -> assertThat(violation)
+                .contains("'api'")
+                .contains("'worker'")
+                .contains("port 9000"));
+    }
+
+    @Test
+    void rejectsASidecarOnTheDeclaredIngressPort() {
+        PocManifest manifest = new PocManifest(
+                List.of(ingress("web", 3000), sidecar("api", 3000)), new Resources(null, null));
+
+        assertThat(validator.validate(manifest))
+                .anySatisfy(violation -> assertThat(violation).contains("port 3000"));
+    }
+
+    /** The likeliest collision of all: the ingress simply took the platform default and nobody wrote 8080 down. */
+    @Test
+    void rejectsASidecarOnThePlatformIngressPortWhenTheIngressDeclaresNone() {
+        PocManifest manifest = new PocManifest(
+                List.of(ingress("web"), sidecar("api", 8080)), new Resources(null, null));
+
+        assertThat(validator.validate(manifest))
+                .anySatisfy(violation -> assertThat(violation).contains("port 8080"));
+    }
+
+    @Test
+    void acceptsContainersOnDistinctPorts() {
+        PocManifest manifest = new PocManifest(
+                List.of(ingress("web"), sidecar("api", 9000), sidecar("worker", 9001)), new Resources(null, null));
 
         assertThat(validator.validate(manifest)).isEmpty();
     }

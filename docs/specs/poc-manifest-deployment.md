@@ -89,6 +89,47 @@ multi-container `poc.yaml` already written against `poc-platform-sdk`'s schema; 
 own the value instead keeps those repos deploying unchanged while still giving Cloud Run the
 explicit port it needs.
 
+**What a sidecar's `port` is actually for.** It is the one thing it is never used as: a `--port=`
+flag. The name invites exactly the opposite reading, so it is stated plainly here rather than left
+to be inferred from the rule above.
+
+A sidecar's port is its *contract address* — the single number the sidecar binds, the ingress
+dials, and the probe checks. It has four live uses, all in `CloudRunDeployCommandBuilder`:
+
+1. The value of `SVC_<NAME>_URL` (`http://localhost:<port>`) injected into every other container.
+2. That sidecar's own injected `PORT`, since Cloud Run injects `PORT` into the ingress only.
+3. The `httpGet.port` of its `--startup-probe`, when it declares a `health:` path.
+4. The gate on `--depends-on=`, which lists exactly the sidecars carrying both a port and a probe.
+
+It is also persisted as `poc_version_containers.port` and returned by `GET /pocs/{id}/versions`. It
+cannot be inferred or defaulted: nothing tells the platform what port an arbitrary container image
+listens on.
+
+**Two containers on one port is a validation violation.** Two sidecars declaring 8081 would both
+resolve their `SVC_<NAME>_URL` to `http://localhost:8081`; one would win and the other would be
+unreachable, with nothing in the deploy pointing at the cause. A sidecar colliding with the ingress
+port is the same failure, since every container in a service shares one network namespace. Both are
+rejected before anything is cloned, alongside the rules that were already checked there.
+
+**A single-container manifest that declares a port now gets one.** The single-container path deploys
+through the plain `--image=` form and originally emitted no `--port=` at all, on the reasoning that
+Cloud Run defaults a lone container's port to 8080. But `--startup-probe` was already built from the
+*declared* port, so a manifest saying `port: 3000` produced a probe on 3000 while Cloud Run kept
+routing to 8080 — broken whichever port the application actually bound. `--port=` is now emitted
+when, and only when, the manifest declares one, which is what lets a repo whose app hardcodes 3000
+deploy without a source change. A manifest declaring no port produces exactly the arguments it did
+before.
+
+*The one behaviour change to know about.* A single-container manifest that declares a port the
+application does not actually bind used to work by accident — the declared port was ignored, Cloud
+Run served 8080, and an app hardcoding 8080 answered. It will now be served on the port it declared
+and stop answering. This reaches redeploy too, since a rollback re-parses its stored manifest and
+gets the same flag. That is the correct direction — the manifest is what states the contract, and a
+platform that quietly disregards it is why the probe and the route disagreed in the first place —
+but it is a change to a deploy that previously succeeded, not only to one that previously failed.
+The exposure is small: the integration guide told authors to omit a custom ingress port on this path
+precisely because it did nothing, so a manifest carrying one is already unusual.
+
 **`Resources` (cpu/memory) applies to the ingress container only.** Cloud Run bills the *sum* of
 every container's own resource limits, and `poc.yaml` has one `resources:` block for what it calls
 "the whole service." Sidecars get Cloud Run's own built-in default instead of a value invented here,
@@ -128,6 +169,71 @@ An earlier revision of this document described `SVC_<NAME>_URL` injection as alr
 code did it, and listed a `DATABASE_URL` reservation that has never existed. Both are corrected
 above.
 
+**`${...}` placeholders let a POC keep its own env var names.** Every value above arrives under a
+name the platform chose. A POC that worked before it met this platform therefore had to be edited
+to read `PORT`, `SVC_<NAME>_URL` and `POC_SLUG` — a source change made purely to be launchable, in
+a repo whose author had no other reason to touch it. A placeholder inside an `env:` value removes
+that: the author writes the name their code already reads, and the platform supplies the value.
+
+```yaml
+containers:
+  - name: frontend
+    role: ingress
+    port: 3000
+    env:
+      BACKEND_API_URL: ${services.backend.url}
+      SERVER_PORT: ${self.port}
+
+  - name: backend
+    role: sidecar
+    port: 8081
+    env:
+      SERVER_PORT: ${self.port}
+      ASPNETCORE_URLS: http://0.0.0.0:${self.port}
+```
+
+The namespace is closed. These references resolve and nothing else does:
+
+| Reference | Resolves to |
+|---|---|
+| `${self.port}` | this container's effective port — its declared `port`, or `poc-runtime.ingress-port` for an ingress that declares none |
+| `${self.name}` | this container's name |
+| `${services.<name>.url}` | `http://localhost:<that container's effective port>` |
+| `${services.<name>.host}` | `localhost` |
+| `${services.<name>.port}` | that container's effective port, bare |
+| `${poc.slug}` | the POC's slug, the same value as `POC_SLUG` |
+| `${platform.apiUrl}` | the same value as `PLATFORM_API_URL` |
+| `${portal.origin}` | the same value as `PORTAL_ORIGIN` |
+
+*Rejected: a dedicated alias key* (`urlEnv: [BACKEND_API_URL]` on the sidecar). It reads more
+plainly for the simplest case and cannot express anything past it — `ASPNETCORE_URLS` needs a URL
+built *around* the port, and an API base often needs a path appended. Reusing `env:` also means no
+new top-level key, no change to the published `poc-platform-sdk` schema, and one set of rules to
+document instead of two.
+
+**An unresolvable reference is a validation violation**, not a value passed through unchanged. A
+typo like `${services.backedn.url}` would otherwise reach a running container verbatim and surface
+as a connection error naming a host nobody wrote. `ManifestValidator` resolves every reference
+against the manifest's own container list before anything is cloned, and reports the unknown ones
+alongside every other violation.
+
+`$${` escapes to a literal `${`, matching the `$$` convention `BuildService.cloneStep` already uses
+for Cloud Build's own substitutions. A `$` not followed by `{` is left alone, so a value that merely
+contains a dollar sign needs no escaping.
+
+**Placeholders read platform values; they do not set them.** The reserved-name and reserved-prefix
+rules above are unchanged — a manifest still cannot declare `PORT` or anything `SVC_`-prefixed — and
+`SVC_<NAME>_URL` and a sidecar's injected `PORT` are still emitted exactly as before. An author who
+wants both the platform's name and their own gets both. Substitution happens in `platformEnv`, which
+already owns the port resolution and the `SVC_` values, so the numbers keep having exactly one
+source; the author's values are resolved first and the platform's are overlaid on top, as they
+already were.
+
+A reference may name the ingress container. Its address inside the instance is well defined, and a
+sidecar calling back into the ingress is a legitimate shape. This does not change `SVC_` injection,
+which still never advertises the ingress — that rule is about what a *browser* must reach through
+the ingress, not about which container may call which.
+
 **`poc_versions.manifest_yaml` stores the exact manifest a version was built with; redeploy never
 re-reads `poc.yaml` from GitHub.** A repo's `poc.yaml` can change between a version's original build
 and a later rollback to it — redeploy must reconstruct exactly what was deployed *then*.
@@ -159,12 +265,19 @@ rather than through a submitted build. It was previously shared with the local e
 /`--max-instances` are the exception: service-level, so each executor emits them before its own
 first `--container=`, at the cost of a duplicated `addScalingArgs`.)
 
-**Cross-repository containers are not modeled at all.** Every container builds from the primary
-repo. A `repo:` key in a manifest is silently ignored, like any other unrecognised key —
-`ManifestContainer` has no such field and `ManifestValidator` has no rule for it, so an author who
-writes one gets a build from the wrong source with no explanation. (An earlier revision of this
-document described the field as existing and being rejected with a clear message; it never has.
-Adding it purely so it can be rejected is still the right call, and is listed under Future Work.)
+**Cross-repository containers are not modeled, and a `repo:` key is rejected by name.** Every
+container builds from the primary repo. `ManifestContainer` carries a `repo` field parsed for the
+sole purpose of letting `ManifestValidator` refuse it with a specific message, because a key that
+silently does nothing is how an author ends up believing their second repository was built. (This
+paragraph previously said the field did not exist and that the key was silently ignored; it was
+already stale against the same pass that closed it, recorded in the 2026-09-07 changelog entry
+below.)
+
+**`poc.yml` is accepted alongside `poc.yaml`.** The filename was a literal `"poc.yaml"` duplicated
+in `ManifestService` and `PocOnboardingCheckService`, and a repo using the other spelling got the
+synthesized single-container default with no warning anywhere — a manifest that appears to be
+ignored for no reason a team could discover. Both spellings are now tried, `poc.yaml` first, from
+one shared constant. Only the two: this is a typo guard, not an invitation to invent filenames.
 
 **`platform.database`/`platform.files` parse but do nothing yet.** A manifest declaring
 `platform: {database: {enabled: true}}` validates cleanly and is stored, but nothing in the pipeline
@@ -236,15 +349,15 @@ Changelog.
 
 ## Open Questions / Future Work
 
-- **No example `poc.yaml` exists anywhere in this repo** for a POC author to copy from — only test
-  fixtures (`ManifestParserTest`, `ManifestValidatorTest`). A POC team building a multi-container
-  repo today has to reverse-engineer the schema from `ManifestContainer`/`ManifestParser` or this
-  spec. Worth a short reference doc or a `poc.yaml.example` once a real multi-container POC exists
-  to validate it against.
 - **Cross-repository containers** are unmodelled — every container still builds from the primary
-  repo, and a `repo:` key is silently ignored rather than rejected. Adding the field purely so
-  `ManifestValidator` can reject it with a specific message is the cheap first step. Supporting a second repo means `ManifestService`
-  resolving more than one `GitHubRepoRef`/commit and each executor cloning more than once.
+  repo. The `repo:` key is now rejected with a specific message rather than ignored, which was the
+  cheap first step. Supporting a second repo means `ManifestService` resolving more than one
+  `GitHubRepoRef`/commit and the build cloning more than once.
+- **The resolved environment is not visible before a deploy.** `ManifestValidator` proves every
+  placeholder *resolves*, but a team cannot see what it resolved *to* without deploying and reading
+  the container's environment. Rendering the final per-container env map on the manifest preview
+  would make placeholders debuggable in the portal; it is the natural next step now that an env
+  value is computed rather than literal.
 - **`platform.database`/`platform.files`** parse and validate but drive no behavior yet — deferred
   to whichever phase actually provisions a per-POC database or wires file storage per POC.
 - **`docs/specs/poc-deployment-pipeline.md` is now significantly stale** against the current
@@ -259,6 +372,23 @@ Changelog.
   isolation but not a real Cloud Run service coming up with a working sidecar.
 
 ## Changelog
+
+- 2026-09-10 — Added `${...}` placeholders in `env:` values, so a POC reads platform-injected values
+  under names its own code already uses and needs no source change to be launchable. Arose from
+  reviewing what a POC team actually has to do to host: adopting `PORT`, `SVC_<NAME>_URL` and
+  `POC_SLUG` was the whole of it, and none of those names existed in the application beforehand. The
+  reference namespace is closed and every reference is resolved by `ManifestValidator` before
+  anything is cloned, because a passed-through typo would fail at runtime as a connection error
+  naming a host nobody wrote. Three related gaps closed in the same pass: the single-container path
+  now emits `--port=` when the manifest declares one, which it previously never did while still
+  building the startup probe from that declared port — a manifest with `port: 3000` was broken
+  whichever port its app bound; two containers declaring the same port are now rejected instead of
+  silently resolving to one unreachable `SVC_<NAME>_URL`; and `poc.yml` is accepted alongside
+  `poc.yaml`, which previously fell through to the single-container default with no warning. A
+  commented `docs/poc.yaml.template` and a JSON Schema now ship as the schema's single source,
+  closing the "no example exists" item this document had carried under Future Work. The
+  cross-repository paragraph was corrected: it claimed `repo:` was silently ignored, which its own
+  2026-09-07 entry below had already made false.
 
 - 2026-09-07 — Corrected two things this document asserted that were never true, both found when
   the first real multi-container POC deployed successfully and could not be opened. The

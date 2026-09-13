@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sails-ai/self-service-api/docs/poc.schema.json",
+  "title": "poc.yaml",
+  "description": "Manifest for a POC hosted on the self-service portal. Optional: a repository with a root Dockerfile and no manifest deploys as one ingress container named 'app'. Generated behaviour lives in ManifestParser and ManifestValidator; docs/specs/poc-manifest-deployment.md explains why each rule exists.",
+  "type": "object",
+  "required": ["containers"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "description": "Descriptive only. Parsed and ignored."
+    },
+    "name": {
+      "type": "string",
+      "description": "Descriptive only. The POC's display name comes from the portal, not from here."
+    },
+    "description": {
+      "type": "string",
+      "description": "Descriptive only."
+    },
+    "team": {
+      "type": "string",
+      "description": "Descriptive only."
+    },
+    "containers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "Exactly one container must have role 'ingress'. Cloud Run allows at most 8 per service.",
+      "items": { "$ref": "#/$defs/container" }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Applies to the ingress container only. Sidecars use Cloud Run's own defaults, because Cloud Run bills the sum of every container's limits.",
+      "properties": {
+        "cpu": {
+          "type": "string",
+          "description": "Quote the value, so 1 is not read as a number: \"1\", \"2\", \"0.5\".",
+          "examples": ["1", "2", "0.5"]
+        },
+        "memory": {
+          "type": "string",
+          "examples": ["512Mi", "1Gi", "2Gi"]
+        }
+      }
+    },
+    "scaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Omit for Cloud Run's defaults of 0 and 100.",
+      "properties": {
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0 scales to zero when idle; the next request pays a cold start."
+        },
+        "max": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Parsed and stored, but drives nothing yet. Declaring it now means the manifest does not change shape when the capability lands.",
+      "properties": {
+        "database": { "$ref": "#/$defs/toggle" },
+        "files": { "$ref": "#/$defs/toggle" }
+      }
+    }
+  },
+  "$defs": {
+    "toggle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "container": {
+      "type": "object",
+      "required": ["name", "role"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 40,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "Lowercase alphanumeric with hyphens. Becomes part of the image path and, for a sidecar, of SVC_<NAME>_URL."
+        },
+        "role": {
+          "enum": ["ingress", "sidecar"],
+          "description": "ingress receives all external traffic and is the only container Cloud Run exposes a port for. A sidecar is reachable from the other containers at localhost, never from a browser."
+        },
+        "dockerfile": {
+          "type": "string",
+          "default": "Dockerfile",
+          "description": "Path from the REPOSITORY ROOT. Not resolved relative to 'context'."
+        },
+        "context": {
+          "type": "string",
+          "default": ".",
+          "description": "Build context, also a path from the repository root, independently of 'dockerfile'."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Required for a sidecar: the port it listens on, which is the only address anything can reach it at and the value injected as its own PORT. Optional for the ingress, which gets 8080 otherwise. No two containers may use the same port."
+        },
+        "health": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "HTTP path for a startup probe, with a 120-second budget. Strongly recommended on every container: Cloud Run only holds the ingress back for a sidecar that has one, so without it the ingress can serve before the sidecar is listening.",
+          "examples": ["/healthz", "/health", "/actuator/health"]
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment variables for this container. A value may reference a platform value with ${...} so the application keeps its own variable names: ${self.port}, ${self.name}, ${services.<name>.url}, ${services.<name>.host}, ${services.<name>.port}, ${poc.slug}, ${platform.apiUrl}, ${portal.origin}. A reference naming one of those roots must resolve or the manifest is rejected; any other ${...} is left as ordinary text. Write $${ for a literal ${. Aliases add a name and never replace one, so PORT, SVC_<NAME>_URL, POC_SLUG, PLATFORM_API_URL and PORTAL_ORIGIN are still injected.",
+          "propertyNames": {
+            "pattern": "^(?!PORT$|POC_SLUG$|PLATFORM_API_URL$|PORTAL_ORIGIN$|SAILS_|SVC_)[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": { "type": ["string", "number", "boolean"] }
+        },
+        "repo": {
+          "type": "string",
+          "description": "Rejected. Cross-repository containers are not supported; every container builds from this POC's own repository. Present in the schema so the mistake is reported rather than silently ignored."
+        }
+      }
+    }
+  }
+}

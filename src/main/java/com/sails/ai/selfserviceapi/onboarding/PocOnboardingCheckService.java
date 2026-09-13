@@ -33,7 +33,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class PocOnboardingCheckService {
 
-    private static final String MANIFEST_PATH = "poc.yaml";
+    /** Named from {@link ManifestService} rather than restated, so this message cannot claim a filename the resolver does not try. */
+    private static final String MANIFEST_PATHS = String.join(" or ", ManifestService.MANIFEST_PATHS);
 
     private final GitHubService gitHubService;
     private final ManifestService manifestService;
@@ -157,7 +158,7 @@ public class PocOnboardingCheckService {
         if (!manifestPresent) {
             findings.add(OnboardingFinding.info(PocOnboardingCheckId.MANIFEST_ABSENT,
                     "No poc.yaml, so the single-container default will be used",
-                    "This repository has no " + MANIFEST_PATH + " at the commit that would be deployed, so the "
+                    "This repository has no " + MANIFEST_PATHS + " at the commit that would be deployed, so the "
                             + "platform assumes one ingress container named 'app', built from 'Dockerfile' at the "
                             + "repository root. That is a complete, valid setup, not a problem.",
                     "Add a poc.yaml only if you need more than one container, a Dockerfile somewhere other than "
