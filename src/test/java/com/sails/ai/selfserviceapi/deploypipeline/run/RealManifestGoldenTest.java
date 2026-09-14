@@ -2,6 +2,7 @@ package com.sails.ai.selfserviceapi.deploypipeline.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.GcpProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestParser;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestProperties;
@@ -18,6 +19,8 @@ import org.junit.jupiter.api.Test;
  * with an exposed port") was only ever visible in the finished command.
  */
 class RealManifestGoldenTest {
+
+    private static final GcpProperties GCP = new GcpProperties("sails-agenthub", "us-central1", "dev");
 
     private static final String TESTBED_MANIFEST = """
             apiVersion: sails.poc/v1
@@ -54,8 +57,7 @@ class RealManifestGoldenTest {
         assertThat(new ManifestValidator(new ManifestProperties(null, null, 8),
                 new PocRuntimeProperties(8080, "https://api.example.com", "https://portal.example.com")).validate(manifest)).isEmpty();
 
-        CloudRunDeployCommandBuilder builder = new CloudRunDeployCommandBuilder(
-                new PocRuntimeProperties(8080, "https://api.example.com", "https://portal.example.com"));
+        CloudRunDeployCommandBuilder builder = new CloudRunDeployCommandBuilder(new PocRuntimeProperties(8080, "https://api.example.com", "https://portal.example.com"), GCP);
 
         List<String> service = builder.buildServiceArgs(manifest);
         List<String> args = builder.buildContainerArgs("poc-testbed-one", manifest,
@@ -116,8 +118,7 @@ class RealManifestGoldenTest {
         assertThat(new ManifestValidator(new ManifestProperties(null, null, 8),
                 new PocRuntimeProperties(8080, "https://api.example.com", "https://portal.example.com")).validate(manifest)).isEmpty();
 
-        CloudRunDeployCommandBuilder builder = new CloudRunDeployCommandBuilder(
-                new PocRuntimeProperties(8080, "https://api.example.com", "https://portal.example.com"));
+        CloudRunDeployCommandBuilder builder = new CloudRunDeployCommandBuilder(new PocRuntimeProperties(8080, "https://api.example.com", "https://portal.example.com"), GCP);
 
         List<String> args = builder.buildContainerArgs("poc-testbed-one", manifest,
                 Map.of("frontend", "img/frontend:2.0.0", "backend", "img/backend:2.0.0"));

@@ -24,6 +24,9 @@ public class ManifestValidator {
     /** Matches the poc_version_containers.name column width — not made configurable, see the plan's genericization notes. */
     private static final int MAX_NAME_LENGTH = 40;
 
+    /** What a shell and Cloud Run both accept as an environment variable name. */
+    private static final Pattern ENV_NAME_PATTERN = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]*$");
+
     private final ManifestProperties properties;
     private final PocRuntimeProperties pocRuntime;
 
@@ -61,6 +64,7 @@ public class ManifestValidator {
             validateRepo(container, violations);
             validateEnv(container, violations);
             validateEnvPlaceholders(container, containers, violations);
+            validateRequires(container, violations);
         }
 
         validatePortCollisions(containers, violations);
@@ -201,6 +205,51 @@ public class ManifestValidator {
                         + " exactly one of them");
             }
         });
+    }
+
+    /**
+     * A requirement names an environment variable, so it obeys exactly the rules an {@code env:}
+     * key does — the platform's reserved names are reserved no matter which key claims them, or an
+     * author could shadow {@code PLATFORM_API_URL} through the door {@code env:} has closed.
+     *
+     * <p>One key, one source: a name cannot be both declared in {@code env:} and required, because
+     * the two would silently race and the winner would depend on flag ordering rather than on
+     * anything written down.
+     *
+     * <p>Non-secret requirements parse but are rejected for now. The layer that supplies them —
+     * admin-set plain values, `poc_container_env` in {@code poc-container-environment.md} — is not
+     * built, so accepting one would deploy a container missing a variable it said it needed, with
+     * nothing anywhere explaining why. Rejecting by name costs one message and removes the
+     * guesswork, the same call {@link #validateRepo} makes.
+     */
+    private void validateRequires(ManifestContainer container, List<String> violations) {
+        Set<String> seen = new HashSet<>();
+        for (ManifestRequirement requirement : container.requires()) {
+            String name = requirement.name();
+            if (!ENV_NAME_PATTERN.matcher(name).matches()) {
+                violations.add("container '" + container.name() + "' requires '" + name
+                        + "', which is not a valid environment variable name");
+                continue;
+            }
+            if (!seen.add(name)) {
+                violations.add("container '" + container.name() + "' requires '" + name + "' more than once");
+            }
+            if (properties.reservedEnvNames().contains(name)) {
+                violations.add("container '" + container.name() + "' requires reserved env var '" + name + "'");
+            } else if (properties.reservedEnvPrefixes().stream().anyMatch(name::startsWith)) {
+                violations.add("container '" + container.name() + "' requires env var '" + name
+                        + "', which uses a reserved prefix");
+            }
+            if (container.env().containsKey(name)) {
+                violations.add("container '" + container.name() + "' both sets and requires '" + name
+                        + "' — a variable has one source, so declare it under 'env' or under 'requires', not both");
+            }
+            if (!requirement.secret()) {
+                violations.add("container '" + container.name() + "' requires '" + name
+                        + "' without 'secret: true' — plain admin-supplied values aren't implemented yet, so only"
+                        + " secret requirements can be satisfied today");
+            }
+        }
     }
 
     /** The port the ingress container will actually bind: its own if it named one, the platform's otherwise. */

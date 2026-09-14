@@ -402,6 +402,30 @@ following the existing tab and `?tab=` query-param pattern.
 
 ## Changelog
 
+- 2026-09-10 — **Phase 1's binding half shipped; its supply half did not.** `requires:` is parsed
+  and validated, `GcpProperties.pocSecretId` derives the id exactly as specified here, and
+  `CloudRunDeployCommandBuilder` emits container-scoped `--set-secrets=KEY=<id>:latest`. So a
+  secret now reaches a container. What is deliberately still absent is everything that lets an
+  admin *supply* the value without gcloud: `poc_container_env`, `SecretManagerService`, the three
+  endpoints and the portal tab. Until those land the value is loaded by hand
+  (`gcloud secrets create` plus one `add-iam-policy-binding` per secret), which is enough to
+  exercise the binding end to end and is what `poc-multiservice-testbed` does.
+
+  Splitting it this way was a deliberate call: the flag is the only part a hand-created secret
+  cannot substitute for, and everything else in Phase 1 is ergonomics. A manifest written against
+  today's `requires:` needs no change when the rest lands — only who types the value changes.
+
+  Two rules were added while implementing. A non-secret requirement is **rejected**, because
+  nothing supplies plain values yet and accepting one would deploy a container missing a variable
+  it declared, explaining nothing; that rule disappears with Phase 2. And a name may appear under
+  `env:` or under `requires:` but not both, since two sources for one variable would be resolved
+  by flag ordering rather than by anything written down.
+
+  **The per-POC service account did not ship, so the isolation caveat above is live.** Every POC
+  still runs as the shared `poc-runtime` identity, and a grant to it is a grant to all of them.
+  Any secret loaded today is readable by every other hosted POC, which is why the testbed's values
+  are fake and self-identifying. Phase 0 remains a prerequisite for anything real.
+
 - 2026-09-10 — Draft to In Progress, with one blocking correction. This document's Security
   Considerations claimed that one POC's runtime identity cannot read another POC's secrets; every
   POC is deployed under the same shared `poc-runtime` account, so per-secret grants accumulate onto

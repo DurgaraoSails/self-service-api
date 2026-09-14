@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.deploypipeline.manifest;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -41,8 +42,21 @@ public record ManifestContainer(
          * from the primary repo, and a key that simply vanished would leave an author guessing why
          * their intent was ignored. Rejected, never silently dropped.
          */
-        String repo
+        String repo,
+
+        /**
+         * Environment variables this container needs whose values the manifest does not carry —
+         * see {@link ManifestRequirement}. Never null; an empty list means the container is fully
+         * configured by {@code env} alone, which is every manifest written before this key existed.
+         */
+        List<ManifestRequirement> requires
 ) {
+
+    /** Pre-{@link #requires} call sites: defaults it to "declares no requirements". */
+    public ManifestContainer(String name, ContainerRole role, String dockerfile, String context, Integer port,
+                              Map<String, String> env, String health, String repo) {
+        this(name, role, dockerfile, context, port, env, health, repo, List.of());
+    }
 
     /** Pre-{@link #repo} call sites: defaults it to {@code null} (no cross-repo container declared). */
     public ManifestContainer(String name, ContainerRole role, String dockerfile, String context, Integer port,
@@ -53,5 +67,10 @@ public record ManifestContainer(
     /** Pre-{@link #health} call sites: defaults it to {@code null} (no probe declared). */
     public ManifestContainer(String name, ContainerRole role, String dockerfile, String context, Integer port, Map<String, String> env) {
         this(name, role, dockerfile, context, port, env, null, null);
+    }
+
+    /** Just the secret-backed requirements, in declaration order — what the deploy binds from Secret Manager. */
+    public List<ManifestRequirement> secretRequirements() {
+        return requires.stream().filter(ManifestRequirement::secret).toList();
     }
 }

@@ -1,9 +1,11 @@
 package com.sails.ai.selfserviceapi.deploypipeline.run;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.GcpProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.EnvPlaceholders;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestRequirement;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PlatformEnvContext;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.Resources;
@@ -54,9 +56,12 @@ public class CloudRunDeployCommandBuilder {
     private static final int PROBE_FAILURE_THRESHOLD = 12;
 
     private final PocRuntimeProperties pocRuntime;
+    private final GcpProperties gcp;
 
-    public CloudRunDeployCommandBuilder(PocRuntimeProperties pocRuntime) {
+    /** {@code gcp} is read for one thing: deriving the Secret Manager id a requirement binds to. */
+    public CloudRunDeployCommandBuilder(PocRuntimeProperties pocRuntime, GcpProperties gcp) {
         this.pocRuntime = pocRuntime;
+        this.gcp = gcp;
     }
 
     /**
@@ -116,6 +121,7 @@ public class CloudRunDeployCommandBuilder {
         addResourceArgs(resources, args);
         addStartupProbeArg(container, ingressPort(container), args);
         args.add(envArg(platformEnv(pocSlug, container, List.of(container))));
+        addSecretArgs(pocSlug, container, args);
         return args;
     }
 
@@ -152,6 +158,7 @@ public class CloudRunDeployCommandBuilder {
             }
 
             args.add(envArg(platformEnv(pocSlug, container, containers)));
+            addSecretArgs(pocSlug, container, args);
         }
         return args;
     }
@@ -321,6 +328,36 @@ public class CloudRunDeployCommandBuilder {
         if (resources.memory() != null && !resources.memory().isBlank()) {
             args.add("--memory=" + resources.memory());
         }
+    }
+
+    /**
+     * Binds each of a container's secret requirements to a Secret Manager version, resolved by
+     * Cloud Run at container start rather than by this platform at deploy time.
+     *
+     * <p>Never fetch-and-pass. A deploy step's args are stored permanently on the Cloud Build
+     * resource and echoed into its logs — the exact exposure {@code BuildService.cloneStep} already
+     * documents and avoids for the GitHub token. What lands there is a secret <em>id</em>, which is
+     * harmless, and that indirection is the whole point of the flag.
+     *
+     * <p>Container-scoped, like {@code --set-secrets}' neighbours: gcloud lists it under Container
+     * Flags, so it belongs after this container's {@code --container=} and never in
+     * {@link #buildServiceArgs}. It shares {@code --set-env-vars}' replace-not-merge semantics, so a
+     * requirement removed from the manifest actually disappears on the next deploy.
+     *
+     * <p>Omitted entirely when a container requires nothing, so every manifest written before this
+     * key existed produces byte-identical arguments.
+     */
+    private void addSecretArgs(String pocSlug, ManifestContainer container, List<String> args) {
+        List<ManifestRequirement> secrets = container.secretRequirements();
+        if (secrets.isEmpty()) {
+            return;
+        }
+        String bindings = secrets.stream()
+                .map(requirement -> requirement.name() + "="
+                        + gcp.pocSecretId(pocSlug, container.name(), requirement.name()) + ":latest")
+                .collect(Collectors.joining(";"));
+        // Same alternate-delimiter form as envArg, for the same reason.
+        args.add("--set-secrets=^;^" + bindings);
     }
 
     /**
