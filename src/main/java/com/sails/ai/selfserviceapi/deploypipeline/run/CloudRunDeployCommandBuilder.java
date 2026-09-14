@@ -121,6 +121,7 @@ public class CloudRunDeployCommandBuilder {
         addResourceArgs(resources, args);
         addStartupProbeArg(container, ingressPort(container), args);
         args.add(envArg(platformEnv(pocSlug, container, List.of(container))));
+        addSecretArgs(pocSlug, container, args);
         return args;
     }
 
@@ -157,6 +158,7 @@ public class CloudRunDeployCommandBuilder {
             }
 
             args.add(envArg(platformEnv(pocSlug, container, containers)));
+            addSecretArgs(pocSlug, container, args);
         }
         return args;
     }
