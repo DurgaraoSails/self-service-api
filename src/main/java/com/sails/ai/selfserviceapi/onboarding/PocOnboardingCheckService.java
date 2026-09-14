@@ -5,6 +5,8 @@ import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubApiException;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService.RepoAccess;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTree;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTreeEntry;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestParseException;
@@ -15,6 +17,8 @@ import com.sails.ai.selfserviceapi.generated.model.PocOnboardingCheckId;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /**
@@ -166,8 +170,13 @@ public class PocOnboardingCheckService {
         }
 
         int before = findings.size();
+        GitHubTree tree = fetchTree(repo, commitSha);
+        Set<String> blobPaths = tree.entries().stream()
+                .filter(GitHubTreeEntry::isBlob)
+                .map(GitHubTreeEntry::path)
+                .collect(Collectors.toSet());
         for (ManifestContainer container : resolution.manifest().containers()) {
-            checkDockerfile(repo, commitSha, container, findings);
+            checkDockerfile(repo, commitSha, container, blobPaths, tree.truncated(), findings);
             checkSidecarHealth(container, findings);
         }
         // Per-container checks run over every container before reporting, so these two only count as
@@ -183,13 +192,33 @@ public class PocOnboardingCheckService {
     }
 
     /**
+     * The repository's tree at the commit being checked, read once per check rather than once per
+     * container. Never throws: a tree read that fails leaves {@code checkDockerfile} to fall back to
+     * {@link GitHubService#getFileContent}, exactly as it did before the tree existed.
+     */
+    private GitHubTree fetchTree(GitHubRepoRef repo, String commitSha) {
+        try {
+            return gitHubService.listTree(repo, commitSha);
+        } catch (GitHubApiException e) {
+            return new GitHubTree(List.of(), true);
+        }
+    }
+
+    /**
      * The one precondition the validator cannot check, because it needs the repository rather than
      * the manifest: a declared Dockerfile that does not exist fails inside Cloud Build, minutes
      * into a deploy, with a message about a build context rather than about poc.yaml.
+     *
+     * <p>Answered from the tree's path set when possible — a lookup, not a download-and-decode of
+     * the whole file. A truncated tree cannot prove absence, so that case (and a tree the read above
+     * gave up on) falls back to the direct {@link GitHubService#getFileContent} read instead.
      */
     private void checkDockerfile(GitHubRepoRef repo, String commitSha, ManifestContainer container,
-                                  List<OnboardingFinding> findings) {
-        if (gitHubService.getFileContent(repo, commitSha, container.dockerfile()).isPresent()) {
+                                  Set<String> blobPaths, boolean treeTruncated, List<OnboardingFinding> findings) {
+        boolean present = treeTruncated
+                ? gitHubService.getFileContent(repo, commitSha, container.dockerfile()).isPresent()
+                : blobPaths.contains(container.dockerfile());
+        if (present) {
             return;
         }
         findings.add(OnboardingFinding.error(PocOnboardingCheckId.DOCKERFILE_PRESENT,

@@ -3,6 +3,7 @@ package com.sails.ai.selfserviceapi.deploypipeline.config;
 import com.google.auth.oauth2.GoogleCredentials;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.Duration;
 import java.util.function.Supplier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,6 +19,11 @@ import org.springframework.web.client.RestClient;
  * HttpClient — the latter opens a loopback socket for its async selector, which fails outright
  * in some sandboxed and corporate-network environments; none of these calls are frequent or
  * streaming enough for HTTP/2 to matter.
+ *
+ * <p>Each factory sets an explicit connect and read timeout ({@link #timeoutFactory()}) rather
+ * than Spring's default of "wait forever" — an endpoint reachable by any signed-in user
+ * ({@code /poc-onboarding/check}) sits behind {@code GitHubService}, and a hung connection there
+ * would otherwise block a request thread indefinitely.
  *
  * Google credentials are resolved lazily, on first use, not at startup — a developer running the
  * {@code local} executor for the queue/version logic should not need
@@ -39,7 +45,7 @@ public class PipelineRestClientConfig {
     public RestClient gitHubRestClient(PipelineProperties properties) {
         return RestClient.builder()
                 .baseUrl("https://api.github.com")
-                .requestFactory(new SimpleClientHttpRequestFactory())
+                .requestFactory(timeoutFactory())
                 .defaultHeader("Authorization", "Bearer " + properties.githubToken())
                 .defaultHeader("Accept", "application/vnd.github+json")
                 .defaultHeader("X-GitHub-Api-Version", "2022-11-28")
@@ -70,7 +76,7 @@ public class PipelineRestClientConfig {
 
         return RestClient.builder()
                 .baseUrl(baseUrl)
-                .requestFactory(new SimpleClientHttpRequestFactory())
+                .requestFactory(timeoutFactory())
                 .requestInterceptor((request, body, execution) -> {
                     GoogleCredentials resolved = credentials.get();
                     resolved.refreshIfExpired();
@@ -78,6 +84,14 @@ public class PipelineRestClientConfig {
                     return execution.execute(request, body);
                 })
                 .build();
+    }
+
+    /** 10s connect / 15s read on every client this class builds — see the class javadoc. */
+    private static SimpleClientHttpRequestFactory timeoutFactory() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(10));
+        factory.setReadTimeout(Duration.ofSeconds(15));
+        return factory;
     }
 
     private static <T> Supplier<T> lazily(Supplier<T> delegate) {

@@ -275,6 +275,35 @@
 					</execution>
 				</executions>
 			</plugin>
+			<plugin>
+				<!-- docs/poc.yaml.template lives outside src/main/resources (it is repository
+				     documentation, not application config), so it is not on the runtime classpath
+				     by default. PocManifestGenerationService's degraded path hands it back verbatim
+				     when no draft model is reachable, so a copy is placed on the classpath here
+				     instead of duplicating its text as a Java string, keeping one source of truth. -->
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>copy-poc-yaml-template</id>
+						<phase>generate-resources</phase>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${project.build.outputDirectory}/templates</outputDirectory>
+							<resources>
+								<resource>
+									<directory>${project.basedir}/docs</directory>
+									<includes>
+										<include>poc.yaml.template</include>
+									</includes>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 

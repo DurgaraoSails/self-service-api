@@ -147,3 +147,119 @@ PocOnboardingCheckId:
     - DOCKERFILE_PRESENT
     - SIDECAR_HEALTH
     - SLUG_AVAILABLE
+
+PocManifestGenerateRequest:
+  type: object
+  description: >
+    A repository a team wants a poc.yaml generated for. Same shape as PocOnboardingCheckRequest,
+    minus slug: generation reads and drafts a manifest, it does not check a name's availability.
+  required:
+    - githubUrl
+    - deployBranch
+  properties:
+    githubUrl:
+      type: string
+      maxLength: 500
+      description: HTTPS or SSH GitHub URL, with or without a trailing .git
+      example: "https://github.com/acme/contract-agent"
+
+    deployBranch:
+      type: string
+      minLength: 1
+      maxLength: 255
+      description: >
+        The branch to read poc.yaml and repository evidence from. Required, for the same reason it
+        is required on PocOnboardingCheckRequest: a manifest generated from the default branch says
+        nothing about the feature branch a team actually intends to deploy.
+      example: "main"
+
+PocManifestGenerateResponse:
+  type: object
+  description: >
+    One of three honest outcomes: the platform already covers this repository with no file needed,
+    a generated (or corrected) poc.yaml, or generation was unavailable. checkResult is always
+    present, regardless of outcome, so there is always something actionable to show.
+  required:
+    - outcome
+    - dockerfiles
+    - assumptions
+    - warnings
+    - manifestWasCorrected
+    - checkResult
+  properties:
+    outcome:
+      $ref: '#/PocManifestGenerationOutcome'
+
+    pocYaml:
+      type: string
+      nullable: true
+      description: >
+        The generated (or corrected) manifest text for outcome GENERATED; the platform's own
+        shipped poc.yaml.template for outcome UNAVAILABLE, so there is always something to copy
+        even when generation itself did not run; null for outcome NOT_NEEDED.
+
+    dockerfiles:
+      type: array
+      description: >
+        Dockerfiles proposed for containers that declared none. Advisory only — unlike pocYaml,
+        nothing validates a Dockerfile's content, so these are meant for copy-and-review, never for
+        an automatic commit. Empty outside outcome GENERATED.
+      items:
+        $ref: '#/PocGeneratedDockerfile'
+
+    assumptions:
+      type: array
+      description: What the model inferred rather than read directly from the repository. Empty outside outcome GENERATED.
+      items:
+        type: string
+
+    warnings:
+      type: array
+      description: >
+        Anything worth a team's attention that is not a manifest violation — a credential-shaped
+        literal found in the repository (never copied into the manifest), a repository tree too
+        large to read in full, or why generation was unavailable.
+      items:
+        type: string
+
+    manifestWasCorrected:
+      type: boolean
+      description: >
+        True when this repository already had a poc.yaml that failed the platform's validator and
+        this is a correction of it, rather than a manifest generated for a repository with none.
+
+    checkResult:
+      $ref: './poc-onboarding.yaml#/PocOnboardingCheckResponse'
+
+PocGeneratedDockerfile:
+  type: object
+  description: A Dockerfile proposed for a container that declared none.
+  required:
+    - path
+    - content
+    - reason
+  properties:
+    path:
+      type: string
+      description: Where it belongs in the repository, from the repository root.
+      example: "apps/api/Dockerfile"
+    content:
+      type: string
+      description: The proposed Dockerfile text.
+    reason:
+      type: string
+      description: Why this shape was proposed, and from what evidence.
+
+PocManifestGenerationOutcome:
+  type: string
+  description: >
+    NOT_NEEDED — the platform already covers this repository (a single root Dockerfile, or an
+    existing poc.yaml that already passes the checker) without a generated file.
+    GENERATED — a poc.yaml (and any proposed Dockerfiles) were produced.
+    UNAVAILABLE — no draft model was reachable, generation is turned off, the repository or branch
+    could not be read, or every repair attempt still failed validation. pocYaml carries the
+    platform's own template in this case, never a manifest that failed validation.
+  enum:
+    - NOT_NEEDED
+    - GENERATED
+    - UNAVAILABLE

@@ -1,0 +1,264 @@
+package com.sails.ai.selfserviceapi.onboarding.generate;
+
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestRequirement;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidator;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.Resources;
+import com.sails.ai.selfserviceapi.onboarding.generate.RepoInventory.EvidenceFile;
+import com.sails.ai.selfserviceapi.onboarding.generate.model.DraftModelProperties;
+import com.sails.ai.selfserviceapi.onboarding.generate.model.ManifestDraftModel;
+import com.sails.ai.selfserviceapi.onboarding.generate.model.ModelRequest;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
+
+/**
+ * Asks a {@link ManifestDraftModel} for structured JSON describing a repository's containers —
+ * never for YAML text. Java renders the YAML ({@link ManifestYamlWriter}); the model's only job is
+ * to decide facts about the repository, which a schema-constrained JSON object is far more reliable
+ * at than well-formed, correctly-commented YAML would be, especially from a modest local model.
+ *
+ * <p>Every draft is run through the real {@link ManifestValidator} before it is returned — on
+ * violations, they are sent back verbatim as part of a corrective follow-up prompt, at most twice.
+ * A draft that still fails becomes a {@link ManifestDraftValidationException}, never a manifest that
+ * did not pass the validator every other path in this platform trusts.
+ */
+@Service
+public class ManifestDraftService {
+
+    /** Initial attempt plus at most two repairs. */
+    static final int MAX_ATTEMPTS = 3;
+
+    private static final String SYSTEM_PROMPT = """
+            You design poc.yaml deployment manifests for a platform that runs repositories as \
+            Cloud Run services with one or more containers. You are given a bounded set of files \
+            read from a repository and must respond with ONLY a JSON object matching the supplied \
+            schema — no prose, no markdown fences.
+
+            Rules:
+            - Exactly one container must have role "ingress"; every other container is "sidecar".
+            - "dockerfile" and "context" are both paths from the repository root, independent of \
+            each other — "dockerfile" is never resolved relative to "context".
+            - A sidecar container must declare "port"; an ingress container's "port" is optional.
+            - Never invent a container that has no supporting evidence in the files you were shown.
+            - NEVER write the VALUE of any credential, API key, password, or token you see in the \
+            evidence into your response, under any field. If a container needs one, declare it \
+            under "requires" as {"name": "<ENV_VAR_NAME>", "secret": true} — name only, never a \
+            value. Plain (non-secret) environment variables that are not credentials go under "env".
+            - "evidence" on each container is one short sentence citing the file(s) that justified \
+            your choice of role/port/health for that container.
+            - "assumptions" lists anything you inferred rather than read directly, in plain English, \
+            one per array entry.
+            - If asked to correct a previous draft, fix every violation listed while preserving \
+            everything about the previous draft that was not named as a problem.
+            """;
+
+    private static final String JSON_SCHEMA = """
+            {
+              "type": "object",
+              "required": ["containers", "dockerfiles", "assumptions"],
+              "properties": {
+                "containers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["name", "role", "dockerfile", "context"],
+                    "properties": {
+                      "name": {"type": "string"},
+                      "role": {"type": "string", "enum": ["ingress", "sidecar"]},
+                      "dockerfile": {"type": "string"},
+                      "context": {"type": "string"},
+                      "port": {"type": ["integer", "null"]},
+                      "health": {"type": ["string", "null"]},
+                      "env": {"type": "object", "additionalProperties": {"type": "string"}},
+                      "requires": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": ["name", "secret"],
+                          "properties": {
+                            "name": {"type": "string"},
+                            "secret": {"type": "boolean"}
+                          }
+                        }
+                      },
+                      "evidence": {"type": "string"}
+                    }
+                  }
+                },
+                "dockerfiles": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["path", "content", "reason"],
+                    "properties": {
+                      "path": {"type": "string"},
+                      "content": {"type": "string"},
+                      "reason": {"type": "string"}
+                    }
+                  }
+                },
+                "assumptions": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+            """;
+
+    /** Loose, deliberately over-matching heuristic — false positives cost one extra warning line. */
+    private static final Pattern LOOKS_LIKE_A_SECRET = Pattern.compile(
+            "(?i)(api[_-]?key|secret|password|passwd|token|access[_-]?key)\\s*[:=]\\s*['\"]?[A-Za-z0-9/+_.\\-]{12,}");
+
+    private final List<ManifestDraftModel> models;
+    private final DraftModelProperties properties;
+    private final ManifestValidator validator;
+    private final ObjectMapper objectMapper;
+
+    public ManifestDraftService(List<ManifestDraftModel> models, DraftModelProperties properties,
+                                 ManifestValidator validator, ObjectMapper objectMapper) {
+        this.models = models;
+        this.properties = properties;
+        this.validator = validator;
+        this.objectMapper = objectMapper;
+    }
+
+    /** The adapter selected by {@code poc-generator.provider}, or empty if none is registered under that name. */
+    public Optional<ManifestDraftModel> selectedModel() {
+        return models.stream().filter(m -> m.name().equals(properties.provider())).findFirst();
+    }
+
+    /**
+     * @param existingManifestYaml the repo's current poc.yaml, when this is a correction rather than
+     *                             a fresh draft — included in the prompt so the model corrects it
+     *                             rather than starting over. Null for a fresh draft.
+     */
+    public ManifestDraftResult draft(RepoInventory inventory, String existingManifestYaml) {
+        ManifestDraftModel model = selectedModel()
+                .orElseThrow(() -> new IllegalStateException(
+                        "No ManifestDraftModel registered for poc-generator.provider='" + properties.provider() + "'"));
+
+        List<String> secretWarnings = findSecretLiterals(inventory);
+        List<String> violations = List.of();
+        String userPrompt = buildUserPrompt(inventory, existingManifestYaml, null);
+
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            String json = model.draft(new ModelRequest(SYSTEM_PROMPT, userPrompt, JSON_SCHEMA, properties.timeout()));
+            DraftResponse response = objectMapper.readValue(json, DraftResponse.class);
+            PocManifest manifest = toManifest(response);
+            violations = validator.validate(manifest);
+            if (violations.isEmpty()) {
+                return new ManifestDraftResult(manifest, toGeneratedDockerfiles(response), safeList(response.assumptions()),
+                        secretWarnings);
+            }
+            userPrompt = buildUserPrompt(inventory, existingManifestYaml, violations);
+        }
+        throw new ManifestDraftValidationException(violations);
+    }
+
+    private String buildUserPrompt(RepoInventory inventory, String existingManifestYaml, List<String> priorViolations) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("Repository file paths (not all shown in full below):\n");
+        inventory.tree().entries().stream().filter(e -> e.isBlob()).limit(200)
+                .forEach(entry -> prompt.append("- ").append(entry.path()).append('\n'));
+        if (inventory.treeTruncated()) {
+            prompt.append("(the file list above is truncated — this repository is larger than could be listed)\n");
+        }
+
+        prompt.append("\nFile contents:\n");
+        for (EvidenceFile file : inventory.evidenceFiles()) {
+            prompt.append("--- ").append(file.path()).append(" ---\n").append(file.content()).append("\n\n");
+        }
+
+        if (existingManifestYaml != null && !existingManifestYaml.isBlank()) {
+            prompt.append("\nThis repository already has a poc.yaml, which the platform's validator rejected. "
+                    + "Correct it rather than designing a new one from scratch:\n").append(existingManifestYaml).append('\n');
+        }
+
+        if (priorViolations != null && !priorViolations.isEmpty()) {
+            prompt.append("\nYour previous draft failed validation with these problems — fix every one:\n");
+            priorViolations.forEach(v -> prompt.append("- ").append(v).append('\n'));
+        }
+        return prompt.toString();
+    }
+
+    private List<String> findSecretLiterals(RepoInventory inventory) {
+        List<String> warnings = new ArrayList<>();
+        for (EvidenceFile file : inventory.evidenceFiles()) {
+            if (LOOKS_LIKE_A_SECRET.matcher(file.content()).find()) {
+                warnings.add("'" + file.path() + "' appears to contain a committed credential — rotate/remove it; "
+                        + "it was not copied into the generated manifest.");
+            }
+        }
+        return warnings;
+    }
+
+    private PocManifest toManifest(DraftResponse response) {
+        List<ManifestContainer> containers = safeList(response.containers()).stream()
+                .map(this::toContainer)
+                .toList();
+        return new PocManifest(containers, new Resources(null, null));
+    }
+
+    private ManifestContainer toContainer(DraftContainer draft) {
+        String dockerfile = blankToDefault(draft.dockerfile(), "Dockerfile");
+        String context = blankToDefault(draft.context(), ".");
+        ContainerRole role = parseRole(draft.role());
+        Map<String, String> env = draft.env() == null ? Map.of() : new LinkedHashMap<>(draft.env());
+        List<ManifestRequirement> requires = safeList(draft.requires()).stream()
+                .map(r -> new ManifestRequirement(r.name(), Boolean.TRUE.equals(r.secret())))
+                .toList();
+        return new ManifestContainer(draft.name(), role, dockerfile, context, draft.port(), env,
+                blankToNull(draft.health()), null, requires);
+    }
+
+    private ContainerRole parseRole(String role) {
+        try {
+            return ContainerRole.valueOf(role == null ? "" : role.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            // Feeds straight into a validator violation ("none was found" / role mismatch) rather
+            // than failing the whole attempt — the repair loop then tells the model exactly that.
+            return ContainerRole.SIDECAR;
+        }
+    }
+
+    private List<GeneratedDockerfile> toGeneratedDockerfiles(DraftResponse response) {
+        return safeList(response.dockerfiles()).stream()
+                .map(d -> new GeneratedDockerfile(d.path(), d.content(), d.reason()))
+                .toList();
+    }
+
+    private String blankToDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static <T> List<T> safeList(List<T> list) {
+        return list == null ? List.of() : list;
+    }
+
+    // --- the model's JSON response shape, mapped by hand like every other parser in this codebase --
+
+    private record DraftResponse(List<DraftContainer> containers, List<DraftDockerfile> dockerfiles,
+                                  List<String> assumptions) {
+    }
+
+    private record DraftContainer(String name, String role, String dockerfile, String context, Integer port,
+                                   String health, Map<String, String> env, List<DraftRequirement> requires,
+                                   String evidence) {
+    }
+
+    private record DraftRequirement(String name, Boolean secret) {
+    }
+
+    private record DraftDockerfile(String path, String content, String reason) {
+    }
+}

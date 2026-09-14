@@ -535,4 +535,80 @@ class GitHubServiceTest {
                         gitHubService.parseRepoUrl("git@github.com:example-org/poc_2024.git"))
                 .isEqualTo(new GitHubRepoRef("example-org", "poc_2024"));
     }
+
+    // --- reading a file at a nested path -----------------------------------------------------
+
+    /**
+     * A nested path has to reach GitHub with its slashes intact, the same hazard
+     * {@code getBranchHeadSha} already avoids for branch names: passed as a {@code {path}}
+     * template variable it would be encoded to {@code %2F}, match nothing, and 404 as though the
+     * file did not exist.
+     */
+    @Test
+    void keepsTheSlashesInANestedFilePathInsteadOfEncodingThem() {
+        server.expect(requestTo(BASE + "/repos/DurgaraoSails/dummy-poc/contents/apps/web/Dockerfile?ref=abc123"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"content":"RlJPTSBub2RlCg==","encoding":"base64"}
+                        """, MediaType.APPLICATION_JSON));
+
+        org.assertj.core.api.Assertions.assertThat(gitHubService.getFileContent(REPO, "abc123", "apps/web/Dockerfile"))
+                .contains("FROM node\n");
+
+        server.verify();
+    }
+
+    @Test
+    void aMissingFileReadsAsEmptyRatherThanThrowing() {
+        server.expect(requestTo(BASE + "/repos/DurgaraoSails/dummy-poc/contents/Dockerfile?ref=abc123"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                        .body("{\"message\":\"Not Found\"}").contentType(MediaType.APPLICATION_JSON));
+
+        org.assertj.core.api.Assertions.assertThat(gitHubService.getFileContent(REPO, "abc123", "Dockerfile"))
+                .isEmpty();
+
+        server.verify();
+    }
+
+    // --- the repository tree -----------------------------------------------------------------
+
+    private static final String TREE_URL = BASE + "/repos/DurgaraoSails/dummy-poc/git/trees/abc123?recursive=1";
+
+    @Test
+    void listsEveryBlobAndDirectoryInTheTree() {
+        server.expect(requestTo(TREE_URL)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"tree":[
+                          {"path":"Dockerfile","type":"blob","size":120},
+                          {"path":"apps","type":"tree"},
+                          {"path":"apps/web/Dockerfile","type":"blob","size":210}
+                        ],"truncated":false}
+                        """, MediaType.APPLICATION_JSON));
+
+        GitHubTree tree = gitHubService.listTree(REPO, "abc123");
+
+        org.assertj.core.api.Assertions.assertThat(tree.truncated()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(tree.entries())
+                .extracting(GitHubTreeEntry::path)
+                .containsExactly("Dockerfile", "apps", "apps/web/Dockerfile");
+        org.assertj.core.api.Assertions.assertThat(
+                        tree.entries().stream().filter(GitHubTreeEntry::isBlob).map(GitHubTreeEntry::path))
+                .containsExactlyInAnyOrder("Dockerfile", "apps/web/Dockerfile");
+
+        server.verify();
+    }
+
+    /** A repository too large for one response — surfaced, never silently dropped. */
+    @Test
+    void reportsATruncatedTreeRatherThanPresentingItAsComplete() {
+        server.expect(requestTo(TREE_URL)).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"tree":[{"path":"Dockerfile","type":"blob","size":120}],"truncated":true}
+                        """, MediaType.APPLICATION_JSON));
+
+        org.assertj.core.api.Assertions.assertThat(gitHubService.listTree(REPO, "abc123").truncated()).isTrue();
+
+        server.verify();
+    }
 }

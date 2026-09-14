@@ -16,6 +16,8 @@ import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubBranches;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService.RepoAccess;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTree;
+import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTreeEntry;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestResolution;
@@ -79,6 +81,7 @@ class PocOnboardingCheckServiceTest {
     @Test
     void reportsTheSynthesizedDefaultAsInformationNotAsAProblem() {
         reachableRepo();
+        stubTreeContaining("Dockerfile");
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution(null, singleContainerManifest()));
         when(gitHubService.getFileContent(REPO, SHA, "Dockerfile")).thenReturn(Optional.of("FROM scratch"));
@@ -98,6 +101,7 @@ class PocOnboardingCheckServiceTest {
     @Test
     void failsWhenADeclaredDockerfileDoesNotExistInTheRepo() {
         reachableRepo();
+        stubTreeContaining();
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution("containers: []", singleContainerManifest()));
         when(gitHubService.getFileContent(REPO, SHA, "Dockerfile")).thenReturn(Optional.empty());
@@ -123,6 +127,7 @@ class PocOnboardingCheckServiceTest {
                 new Resources(null, null));
         when(manifestService.resolveForBuild(REPO, SHA)).thenReturn(new ManifestResolution("yaml", manifest));
         when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
+        stubTreeContaining("Dockerfile", "api/Dockerfile");
 
         OnboardingCheckResult result = service.check(URL, BRANCH, null);
 
@@ -182,6 +187,7 @@ class PocOnboardingCheckServiceTest {
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution(null, singleContainerManifest()));
         when(gitHubService.getFileContent(REPO, SHA, "Dockerfile")).thenReturn(Optional.of("FROM scratch"));
+        stubTreeContaining("Dockerfile");
         when(pocRepository.findBySlugAndDeletedAtIsNull("contract-agent")).thenReturn(Optional.of(new Poc()));
 
         OnboardingCheckResult result = service.check(URL, BRANCH, "contract-agent");
@@ -198,6 +204,7 @@ class PocOnboardingCheckServiceTest {
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution(null, singleContainerManifest()));
         when(gitHubService.getFileContent(REPO, SHA, "Dockerfile")).thenReturn(Optional.of("FROM scratch"));
+        stubTreeContaining("Dockerfile");
 
         service.check(URL, BRANCH, "  ");
 
@@ -208,6 +215,14 @@ class PocOnboardingCheckServiceTest {
         when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.OK);
         when(gitHubService.getBranchHeadSha(REPO, BRANCH)).thenReturn(SHA);
+    }
+
+    /** checkDockerfile now answers from the tree rather than getFileContent — stub it directly. */
+    private void stubTreeContaining(String... blobPaths) {
+        List<GitHubTreeEntry> entries = java.util.Arrays.stream(blobPaths)
+                .map(path -> new GitHubTreeEntry(path, "blob", 1L))
+                .toList();
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(new GitHubTree(entries, false));
     }
 
     // --- the branch the team says they will deploy from ---------------------------------------
@@ -225,6 +240,7 @@ class PocOnboardingCheckServiceTest {
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution("containers:\n", singleContainerManifest()));
         when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
+        stubTreeContaining("Dockerfile");
 
         OnboardingCheckResult result = service.check(URL, "release/2024", null);
 
@@ -298,6 +314,7 @@ class PocOnboardingCheckServiceTest {
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution("containers:\n", singleContainerManifest()));
         when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
+        stubTreeContaining("Dockerfile");
 
         OnboardingCheckResult result = service.check(URL, BRANCH, "contract-agent");
 
@@ -321,6 +338,7 @@ class PocOnboardingCheckServiceTest {
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution("containers:\n", singleContainerManifest()));
         when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
+        stubTreeContaining("Dockerfile");
 
         OnboardingCheckResult result = service.check(URL, BRANCH, null);
 
@@ -371,6 +389,7 @@ class PocOnboardingCheckServiceTest {
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution("containers:\n", singleContainerManifest()));
         when(gitHubService.getFileContent(eq(REPO), eq(SHA), anyString())).thenReturn(Optional.of("FROM scratch"));
+        stubTreeContaining("Dockerfile");
 
         OnboardingCheckResult result = service.check(URL, BRANCH, null);
 

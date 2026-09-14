@@ -239,8 +239,12 @@ public class GitHubService {
     public Optional<String> getFileContent(GitHubRepoRef repo, String ref, String path) {
         requireToken();
         try {
+            // path is concatenated into the template text rather than passed as {path} — see
+            // getBranchHeadSha's javadoc for why: a template variable's '/' is encoded to '%2F',
+            // which matches no path at all, so every file under a subdirectory would 404 as though
+            // it did not exist.
             ContentResponse response = gitHubRestClient.get()
-                    .uri("/repos/{owner}/{repo}/contents/{path}?ref={ref}", repo.owner(), repo.name(), path, ref)
+                    .uri("/repos/{owner}/{repo}/contents/" + path + "?ref={ref}", repo.owner(), repo.name(), ref)
                     .retrieve()
                     .body(ContentResponse.class);
             if (response == null || response.content() == null) {
@@ -254,6 +258,30 @@ public class GitHubService {
             }
             throw wrap(e, "GET contents of " + path + " on " + repo + " at " + ref);
         }
+    }
+
+    /**
+     * Every file and directory in the repository at {@code sha}, in one call. The only way the
+     * platform can learn what a repository contains without already knowing a path to ask for —
+     * every other read here (poc.yaml, a declared Dockerfile) targets a path a manifest already
+     * named.
+     *
+     * <p>{@code recursive=1} asks GitHub to flatten the whole tree in one response rather than one
+     * call per directory. GitHub caps that response and reports {@code truncated: true} rather than
+     * erroring when a repository is too large for it — surfaced on {@link GitHubTree} rather than
+     * silently dropped, so a caller can say a result may be incomplete instead of presenting a
+     * partial tree as the whole repository.
+     */
+    public GitHubTree listTree(GitHubRepoRef repo, String sha) {
+        TreeResponse response = get("/repos/{owner}/{repo}/git/trees/{sha}?recursive=1", TreeResponse.class,
+                repo.owner(), repo.name(), sha);
+        if (response == null || response.tree() == null) {
+            return new GitHubTree(List.of(), false);
+        }
+        List<GitHubTreeEntry> entries = Arrays.stream(response.tree())
+                .map(entry -> new GitHubTreeEntry(entry.path(), entry.type(), entry.size()))
+                .toList();
+        return new GitHubTree(entries, Boolean.TRUE.equals(response.truncated()));
     }
 
     /**
@@ -456,5 +484,11 @@ public class GitHubService {
     }
 
     private record ContentResponse(String content, String encoding) {
+    }
+
+    private record TreeResponse(TreeEntryRef[] tree, Boolean truncated) {
+    }
+
+    private record TreeEntryRef(String path, String type, Long size) {
     }
 }
