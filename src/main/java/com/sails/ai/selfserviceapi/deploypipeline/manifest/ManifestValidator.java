@@ -1,8 +1,11 @@
 package com.sails.ai.selfserviceapi.deploypipeline.manifest;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
@@ -21,10 +24,21 @@ public class ManifestValidator {
     /** Matches the poc_version_containers.name column width — not made configurable, see the plan's genericization notes. */
     private static final int MAX_NAME_LENGTH = 40;
 
-    private final ManifestProperties properties;
+    /** What a shell and Cloud Run both accept as an environment variable name. */
+    private static final Pattern ENV_NAME_PATTERN = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]*$");
 
-    public ManifestValidator(ManifestProperties properties) {
+    private final ManifestProperties properties;
+    private final PocRuntimeProperties pocRuntime;
+
+    /**
+     * {@code pocRuntime} is read for one thing only: the ingress port an ingress container gets when
+     * it declares none. Without it the most likely port collision of all — a sidecar on 8080 beside
+     * an ingress that simply took the platform default — is the one case this validator could not
+     * see, and it would surface as two containers failing to bind rather than as a manifest error.
+     */
+    public ManifestValidator(ManifestProperties properties, PocRuntimeProperties pocRuntime) {
         this.properties = properties;
+        this.pocRuntime = pocRuntime;
     }
 
     public List<String> validate(PocManifest manifest) {
@@ -49,8 +63,11 @@ public class ManifestValidator {
             validatePort(container, violations);
             validateRepo(container, violations);
             validateEnv(container, violations);
+            validateEnvPlaceholders(container, containers, violations);
+            validateRequires(container, violations);
         }
 
+        validatePortCollisions(containers, violations);
         validateScaling(manifest.scaling(), violations);
 
         return violations;
@@ -126,5 +143,122 @@ public class ManifestValidator {
                         + "', which uses a reserved prefix");
             }
         });
+    }
+
+    /**
+     * A placeholder that names a known root but resolves to nothing is a mistake, not a literal.
+     * Left to deploy it would reach the container verbatim and fail there as a connection error
+     * naming a host nobody wrote — about as far from its cause as a symptom gets. Caught here it is
+     * one line naming the container, the variable and the reference.
+     *
+     * <p>Only known roots are checked. {@link EnvPlaceholders} leaves anything else alone, so an
+     * existing manifest whose env value merely contains {@code ${...}} does not become invalid.
+     */
+    private void validateEnvPlaceholders(ManifestContainer container, List<ManifestContainer> containers,
+                                          List<String> violations) {
+        PlatformEnvContext context = validationContext(container, containers);
+        container.env().forEach((key, value) ->
+                EnvPlaceholders.unresolvableReferences(value, context).forEach(reference ->
+                        violations.add("container '" + container.name() + "' sets env var '" + key + "' to a value"
+                                + " referencing '${" + reference + "}', which names nothing this manifest declares"
+                                + " — check the container name and property, or write '$${' to keep a literal '${'")));
+    }
+
+    /**
+     * Values here are stand-ins: this asks only whether a reference <em>resolves</em>, never to what.
+     * The slug and the platform URLs are not known at validation time and no rule depends on them.
+     * The ingress port is the exception — it is a real value, because a reference to it must agree
+     * with what the deploy will actually inject.
+     */
+    private PlatformEnvContext validationContext(ManifestContainer container, List<ManifestContainer> containers) {
+        return PlatformEnvContext.of(container, containers, ingressPort(containers), "", "", "");
+    }
+
+    /**
+     * Every container in a Cloud Run service shares one network namespace, so two containers on one
+     * port cannot both bind. Before that even matters, two sidecars on 8081 would both be advertised
+     * as {@code SVC_<NAME>_URL=http://localhost:8081}, leaving one of them permanently unreachable
+     * at an address that looks perfectly correct. Neither failure points back at the manifest.
+     *
+     * <p>An ingress declaring no port is compared at the platform's own ingress port rather than
+     * skipped. Taking that default is what most manifests do, and a sidecar on 8080 beside one is
+     * the likeliest collision there is — skipping it would leave exactly the common case unchecked.
+     */
+    private void validatePortCollisions(List<ManifestContainer> containers, List<String> violations) {
+        int ingressPort = ingressPort(containers);
+        Map<Integer, List<String>> namesByPort = new LinkedHashMap<>();
+        for (ManifestContainer container : containers) {
+            // An if, not a ternary: mixing int and Integer would unbox both branches and throw on a
+            // sidecar that declared no port — which is a violation this pass still has to report.
+            Integer port = container.port();
+            if (container.role() == ContainerRole.INGRESS) {
+                port = ingressPort;
+            }
+            if (port != null) {
+                namesByPort.computeIfAbsent(port, key -> new ArrayList<>()).add("'" + container.name() + "'");
+            }
+        }
+        namesByPort.forEach((port, names) -> {
+            if (names.size() > 1) {
+                violations.add("containers " + String.join(" and ", names) + " would both use port " + port
+                        + " — containers in one service share a network namespace, so each port belongs to"
+                        + " exactly one of them");
+            }
+        });
+    }
+
+    /**
+     * A requirement names an environment variable, so it obeys exactly the rules an {@code env:}
+     * key does — the platform's reserved names are reserved no matter which key claims them, or an
+     * author could shadow {@code PLATFORM_API_URL} through the door {@code env:} has closed.
+     *
+     * <p>One key, one source: a name cannot be both declared in {@code env:} and required, because
+     * the two would silently race and the winner would depend on flag ordering rather than on
+     * anything written down.
+     *
+     * <p>Non-secret requirements parse but are rejected for now. The layer that supplies them —
+     * admin-set plain values, `poc_container_env` in {@code poc-container-environment.md} — is not
+     * built, so accepting one would deploy a container missing a variable it said it needed, with
+     * nothing anywhere explaining why. Rejecting by name costs one message and removes the
+     * guesswork, the same call {@link #validateRepo} makes.
+     */
+    private void validateRequires(ManifestContainer container, List<String> violations) {
+        Set<String> seen = new HashSet<>();
+        for (ManifestRequirement requirement : container.requires()) {
+            String name = requirement.name();
+            if (!ENV_NAME_PATTERN.matcher(name).matches()) {
+                violations.add("container '" + container.name() + "' requires '" + name
+                        + "', which is not a valid environment variable name");
+                continue;
+            }
+            if (!seen.add(name)) {
+                violations.add("container '" + container.name() + "' requires '" + name + "' more than once");
+            }
+            if (properties.reservedEnvNames().contains(name)) {
+                violations.add("container '" + container.name() + "' requires reserved env var '" + name + "'");
+            } else if (properties.reservedEnvPrefixes().stream().anyMatch(name::startsWith)) {
+                violations.add("container '" + container.name() + "' requires env var '" + name
+                        + "', which uses a reserved prefix");
+            }
+            if (container.env().containsKey(name)) {
+                violations.add("container '" + container.name() + "' both sets and requires '" + name
+                        + "' — a variable has one source, so declare it under 'env' or under 'requires', not both");
+            }
+            if (!requirement.secret()) {
+                violations.add("container '" + container.name() + "' requires '" + name
+                        + "' without 'secret: true' — plain admin-supplied values aren't implemented yet, so only"
+                        + " secret requirements can be satisfied today");
+            }
+        }
+    }
+
+    /** The port the ingress container will actually bind: its own if it named one, the platform's otherwise. */
+    private int ingressPort(List<ManifestContainer> containers) {
+        for (ManifestContainer container : containers) {
+            if (container.role() == ContainerRole.INGRESS && container.port() != null) {
+                return container.port();
+            }
+        }
+        return pocRuntime.ingressPort();
     }
 }

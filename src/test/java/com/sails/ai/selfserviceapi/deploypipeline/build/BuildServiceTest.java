@@ -37,8 +37,7 @@ class BuildServiceTest {
             Duration.ofMinutes(20), Duration.ofSeconds(10), null);
 
     private final BuildService buildService = new BuildService(null, gcp, pipeline,
-            new CloudRunDeployCommandBuilder(
-                    new PocRuntimeProperties(8080, "https://api.example.com", "https://portal.example.com")));
+            new CloudRunDeployCommandBuilder(new PocRuntimeProperties(8080, "https://api.example.com", "https://portal.example.com"), gcp));
 
     // --- clone step: the token must not survive the step in any form ------------------------
 

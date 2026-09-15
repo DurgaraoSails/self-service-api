@@ -2,9 +2,11 @@ package com.sails.ai.selfserviceapi.deploypipeline.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.GcpProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestRequirement;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.Resources;
 import java.util.List;
@@ -13,10 +15,13 @@ import org.junit.jupiter.api.Test;
 
 class CloudRunDeployCommandBuilderTest {
 
+    /** Only the environment suffix reaches an assertion here — it is what a derived secret id ends with. */
+    private static final GcpProperties GCP = new GcpProperties("sails-agenthub", "us-central1", "dev");
+
     private final PocRuntimeProperties pocRuntime = new PocRuntimeProperties(
             8080, "https://self-service-api.example.com", "https://portal.example.com");
 
-    private final CloudRunDeployCommandBuilder builder = new CloudRunDeployCommandBuilder(pocRuntime);
+    private final CloudRunDeployCommandBuilder builder = new CloudRunDeployCommandBuilder(pocRuntime, GCP);
 
     @Test
     void aSingleDefaultContainerProducesTheSamePlainFormAsBeforeManifestSupportPlusPlatformEnv() {
@@ -256,8 +261,7 @@ class CloudRunDeployCommandBuilderTest {
     /** Nothing to inject beats injecting the empty string, which a POC would read as a real origin. */
     @Test
     void omitsPortalOriginEntirelyWhenNoneIsConfigured() {
-        CloudRunDeployCommandBuilder noOrigin = new CloudRunDeployCommandBuilder(
-                new PocRuntimeProperties(8080, "https://self-service-api.example.com", ""));
+        CloudRunDeployCommandBuilder noOrigin = new CloudRunDeployCommandBuilder(new PocRuntimeProperties(8080, "https://self-service-api.example.com", ""), GCP);
         ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
         PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
 
@@ -269,8 +273,7 @@ class CloudRunDeployCommandBuilderTest {
     /** The platform owns the ingress port; a manifest that names none gets the configured one. */
     @Test
     void usesTheConfiguredIngressPortWhenTheManifestDeclaresNone() {
-        CloudRunDeployCommandBuilder onPort9090 = new CloudRunDeployCommandBuilder(
-                new PocRuntimeProperties(9090, "https://self-service-api.example.com", "https://portal.example.com"));
+        CloudRunDeployCommandBuilder onPort9090 = new CloudRunDeployCommandBuilder(new PocRuntimeProperties(9090, "https://self-service-api.example.com", "https://portal.example.com"), GCP);
         ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
         ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
         PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
@@ -284,8 +287,7 @@ class CloudRunDeployCommandBuilderTest {
     /** A manifest that names its own ingress port still wins — poc-platform-sdk's schema allows one. */
     @Test
     void prefersTheManifestsOwnIngressPortOverTheConfiguredDefault() {
-        CloudRunDeployCommandBuilder onPort9090 = new CloudRunDeployCommandBuilder(
-                new PocRuntimeProperties(9090, "https://self-service-api.example.com", "https://portal.example.com"));
+        CloudRunDeployCommandBuilder onPort9090 = new CloudRunDeployCommandBuilder(new PocRuntimeProperties(9090, "https://self-service-api.example.com", "https://portal.example.com"), GCP);
         ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 3000, Map.of());
         ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "Dockerfile", ".", 9000, Map.of());
         PocManifest manifest = new PocManifest(List.of(api, worker), new Resources(null, null));
@@ -381,5 +383,202 @@ class CloudRunDeployCommandBuilderTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> builder.buildContainerArgs("my-poc", manifest, Map.of()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("api");
+    }
+
+    // --- a single container that declares its own port ---
+
+    /**
+     * The gap this closes: the probe was already built from the declared port while no --port was
+     * emitted at all, so Cloud Run kept serving 8080 and the two disagreed about one manifest.
+     */
+    @Test
+    void aSingleContainerDeclaringItsOwnPortGetsBothThatPortAndAProbeOnIt() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", 3000,
+                Map.of(), "/healthz");
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).containsExactly(
+                "--image=img/app:1",
+                "--port=3000",
+                "--startup-probe=httpGet.path=/healthz,httpGet.port=3000,timeoutSeconds=5,periodSeconds=10,failureThreshold=12",
+                "--set-env-vars=^;^PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com");
+    }
+
+    // --- ${...} placeholders ---
+
+    @Test
+    void resolvesASidecarUrlIntoTheEnvVarNameTheManifestChose() {
+        ManifestContainer web = new ManifestContainer("web", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("BACKEND_API_URL", "${services.api.url}"));
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "api/Dockerfile", "api", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(web, api), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("web", "img/web:1", "api", "img/api:1"));
+
+        // SVC_API_URL is still injected beside it: an alias adds a name, it never replaces one.
+        assertThat(args).contains(
+                "--set-env-vars=^;^BACKEND_API_URL=http://localhost:9000;PLATFORM_API_URL=https://self-service-api.example.com"
+                        + ";POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com;SVC_API_URL=http://localhost:9000");
+    }
+
+    @Test
+    void resolvesSelfPortToTheIngressPortTheDeployActuallyEmits() {
+        ManifestContainer web = new ManifestContainer("web", ContainerRole.INGRESS, "Dockerfile", ".", 3000,
+                Map.of("SERVER_PORT", "${self.port}"));
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "api/Dockerfile", "api", 9000, Map.of());
+        PocManifest manifest = new PocManifest(List.of(web, api), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("web", "img/web:1", "api", "img/api:1"));
+
+        assertThat(args).contains("--port=3000");
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("SERVER_PORT=3000"));
+    }
+
+    /** An ingress naming no port still resolves it — to the platform's value, not to nothing. */
+    @Test
+    void resolvesSelfPortToThePlatformDefaultWhenTheIngressDeclaresNone() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("SERVER_PORT", "${self.port}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("SERVER_PORT=8080"));
+    }
+
+    @Test
+    void resolvesASidecarOwnPortAlongsideTheInjectedPort() {
+        ManifestContainer web = new ManifestContainer("web", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "api/Dockerfile", "api", 9000,
+                Map.of("ASPNETCORE_URLS", "http://0.0.0.0:${self.port}"));
+        PocManifest manifest = new PocManifest(List.of(web, api), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("web", "img/web:1", "api", "img/api:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg)
+                .contains("ASPNETCORE_URLS=http://0.0.0.0:9000")
+                .contains("PORT=9000"));
+    }
+
+    @Test
+    void resolvesTheRemainingPlatformRoots() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("TENANT", "${poc.slug}", "API", "${platform.apiUrl}", "EMBEDDER", "${portal.origin}",
+                        "WHOAMI", "${self.name}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg)
+                .contains("TENANT=my-poc")
+                .contains("API=https://self-service-api.example.com")
+                .contains("EMBEDDER=https://portal.example.com")
+                .contains("WHOAMI=app"));
+    }
+
+    @Test
+    void leavesAValueReferencingNoKnownRootExactlyAsWritten() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("TEMPLATE", "total is ${amount}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("TEMPLATE=total is ${amount}"));
+    }
+
+    @Test
+    void unescapesADoubledDollarIntoALiteralPlaceholder() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("DOCS", "write $${self.port}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("DOCS=write ${self.port}"));
+    }
+
+    /**
+     * The redeploy path re-parses a stored manifest without revalidating, so an unresolvable
+     * reference must deploy verbatim rather than throw — a rollback cannot start failing because a
+     * rule was added after that version was built.
+     */
+    @Test
+    void leavesAnUnresolvableKnownRootVerbatimRatherThanFailingTheDeploy() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("GONE", "${services.removed.url}"));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("GONE=${services.removed.url}"));
+    }
+
+    // --- requires: binding secrets ---
+
+    /**
+     * The id is derived, never taken from the manifest, so one POC cannot name another POC's secret.
+     * What reaches Cloud Build is that id and never a value: the deploy step's args are stored
+     * permanently on the Build resource.
+     */
+    @Test
+    void bindsEachSecretRequirementToItsDerivedSecretManagerId() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of(), null, null,
+                List.of(new ManifestRequirement("OPENAI_API_KEY", true), new ManifestRequirement("DB_PASSWORD", true)));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("multiservice-testbed", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).contains("--set-secrets=^;^"
+                + "OPENAI_API_KEY=poc-multiservice-testbed-app-openai-api-key-dev:latest"
+                + ";DB_PASSWORD=poc-multiservice-testbed-app-db-password-dev:latest");
+    }
+
+    /** Container-scoped: gcloud lists --set-secrets under Container Flags, so it must follow its own --container=. */
+    @Test
+    void scopesEachContainersSecretsToThatContainer() {
+        ManifestContainer web = new ManifestContainer("web", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of(), null, null, List.of(new ManifestRequirement("SESSION_KEY", true)));
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "api/Dockerfile", "api", 9000,
+                Map.of(), null, null, List.of(new ManifestRequirement("DB_PASSWORD", true)));
+        PocManifest manifest = new PocManifest(List.of(web, api), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("demo", manifest, Map.of("web", "img/web:1", "api", "img/api:1"));
+
+        int webSecrets = args.indexOf("--set-secrets=^;^SESSION_KEY=poc-demo-web-session-key-dev:latest");
+        int apiBlock = args.indexOf("--container=api");
+        int apiSecrets = args.indexOf("--set-secrets=^;^DB_PASSWORD=poc-demo-api-db-password-dev:latest");
+
+        assertThat(webSecrets).isGreaterThan(args.indexOf("--container=web")).isLessThan(apiBlock);
+        assertThat(apiSecrets).isGreaterThan(apiBlock);
+    }
+
+    /** Every manifest written before this key existed must produce byte-identical arguments. */
+    @Test
+    void emitsNoSecretsFlagWhenAContainerRequiresNothing() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of());
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).noneSatisfy(arg -> assertThat(arg).startsWith("--set-secrets"));
+    }
+
+    /** A requirement is a name, never a value — nothing an author wrote can end up in the flag. */
+    @Test
+    void bindsOnlySecretRequirementsAndNeverAValue() {
+        ManifestContainer app = new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("LOG_LEVEL", "info"), null, null, List.of(new ManifestRequirement("API_KEY", true)));
+        PocManifest manifest = new PocManifest(List.of(app), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("demo", manifest, Map.of("app", "img/app:1"));
+
+        assertThat(args).anySatisfy(arg -> assertThat(arg)
+                .startsWith("--set-secrets=")
+                .contains("poc-demo-app-api-key-dev:latest"));
+        assertThat(args).anySatisfy(arg -> assertThat(arg).contains("LOG_LEVEL=info"));
     }
 }

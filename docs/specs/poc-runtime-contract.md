@@ -115,6 +115,29 @@ does not receive its own variable; it knows its own port from `PORT`.
 `poc-manifest-deployment.md` already described this behaviour as though it shipped. It did not.
 This spec is where it actually gets built.
 
+### A POC may receive all of this under names it chose itself
+
+Everything above arrives under a platform-chosen name, which makes the runtime contract something a
+POC has to be *modified* to satisfy: read `PORT`, read `SVC_<NAME>_URL`, read `POC_SLUG`. For a
+team whose application already worked, that is a source change whose only purpose is to be
+launchable here.
+
+A manifest may therefore ask for the same value under its own name, using a `${...}` placeholder in
+an `env:` value — `${self.port}`, `${services.<name>.url}`, `${poc.slug}`, `${platform.apiUrl}`,
+`${portal.origin}`. The full namespace and its rules live in `poc-manifest-deployment.md`; what
+matters to this contract is what does *not* change:
+
+- The platform-chosen names are still injected, always, exactly as specified above. An alias is an
+  addition, never a replacement, so anything written against this contract keeps working.
+- The reservations still hold. A manifest cannot *set* `PORT` or an `SVC_`-prefixed variable; a
+  placeholder lets it *read* one. The value still has a single source.
+- `SVC_<NAME>_URL` still names sidecars only. A placeholder may address the ingress, because that
+  is a container-to-container call with a well-defined address, and it is a separate question from
+  what a browser must reach through the ingress.
+
+The contract a POC may rely on is unchanged. What changed is that satisfying it no longer requires
+editing the POC.
+
 ### `POC_SLUG`, `PLATFORM_API_URL` and `PORTAL_ORIGIN` are platform-owned, not repo-owned
 
 All three are injected into every container, and all three are added to
@@ -300,6 +323,21 @@ New configuration (`application.yaml`):
   hand-rolled halves) is deliberately deferred.
 
 ## Changelog
+
+- 2026-09-10 — **There are two supported ways to learn the serving port, not one.** This document
+  and the guide both stated the contract as "read `PORT`", which silently excluded anything that
+  decides its bind address somewhere a shell never runs. nginx is the case that matters, since a
+  single-page app is the most common POC front end and a container has to serve it somehow. A
+  manifest that declares `port:` and binds it (`APP_PORT: ${self.port}`) is now stated as equally
+  correct: the platform serves the declared port, so a config file with a fixed `listen` directive
+  and the port actually served cannot drift. `PORT` is still injected either way. This became
+  expressible only once the single-container path started emitting `--port=` for a declared port —
+  before that, declaring one produced a probe on it while Cloud Run served 8080.
+
+- 2026-09-10 — Added "A POC may receive all of this under names it chose itself". The contract's
+  values are unchanged; a manifest can now bind them to the env var names an application already
+  reads, so a working POC no longer needs a source change to be hosted. Platform-chosen names are
+  still injected unconditionally, so nothing written against this document breaks.
 
 - 2026-09-07 — Initial draft, written after `poc-integration-testbed` deployed successfully and
   could not be opened from the portal ("refused to connect"). Covers the ingress-port inversion,
