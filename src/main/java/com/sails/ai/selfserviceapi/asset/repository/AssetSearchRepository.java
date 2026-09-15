@@ -83,17 +83,19 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
     @Modifying
     @Query(value = """
             insert into asset_search_documents (asset_id, revision_id, search_text, search_vector,
-                    embedding_provider, embedding_model, embedding_dimensions, embedding_checksum, indexed_at)
+                    embedding, embedding_provider, embedding_model, embedding_dimensions, embedding_checksum, indexed_at)
             values (:assetId, :revisionId, :searchText,
                     setweight(to_tsvector('english', :titleAndTags), 'A') ||
                     setweight(to_tsvector('english', :summary), 'B') ||
                     setweight(to_tsvector('english', :problemImpactSolution), 'C') ||
                     setweight(to_tsvector('english', :ownerName), 'D'),
+                    cast(cast(:embedding as text) as vector),
                     :embeddingProvider, :embeddingModel, :embeddingDimensions, :embeddingChecksum, now())
             on conflict (asset_id) do update set
                 revision_id = excluded.revision_id,
                 search_text = excluded.search_text,
                 search_vector = excluded.search_vector,
+                embedding = excluded.embedding,
                 embedding_provider = excluded.embedding_provider,
                 embedding_model = excluded.embedding_model,
                 embedding_dimensions = excluded.embedding_dimensions,
@@ -107,18 +109,24 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                                @Param("summary") String summary,
                                @Param("problemImpactSolution") String problemImpactSolution,
                                @Param("ownerName") String ownerName,
+                               /* pgvector literal from VectorLiteral.of, or null for a
+                                  lexical-only row. Double-cast via text because a bare
+                                  cast(? as vector) leaves Postgres nothing to infer the bind's
+                                  type from when the value is null — the same class of problem this
+                                  file's other `cast(:param as text)` guards exist for. */
+                               @Param("embedding") String embedding,
                                @Param("embeddingProvider") String embeddingProvider,
                                @Param("embeddingModel") String embeddingModel,
                                @Param("embeddingDimensions") Integer embeddingDimensions,
                                @Param("embeddingChecksum") String embeddingChecksum);
 
     /**
-     * Semantic candidates for the Search Contract's RRF merge — only ever invoked when
-     * {@code asset-hub.semantic-search-enabled=true} AND the {@code embedding} column exists (the
-     * Phase 3 migration described in docs/specs/asset-hub.md, not yet added). Not invoked by any
-     * code path today; kept here so the query shape is settled ahead of that migration rather than
-     * designed under time pressure once pgvector is finally available. {@code queryEmbedding} is a
-     * pgvector literal, e.g. {@code "[0.01,0.02,...]"}.
+     * Semantic candidates for the Search Contract's RRF merge — invoked when
+     * {@code asset-hub.semantic-search-enabled=true} and the embedding provider answered. Skips
+     * rows with no stored embedding, so assets approved before semantic search was switched on (or
+     * whose embedding call failed) simply do not contribute semantic candidates rather than
+     * sorting as maximally distant. {@code queryEmbedding} is a pgvector literal from
+     * {@link com.sails.ai.selfserviceapi.asset.search.VectorLiteral}, e.g. {@code "[0.01,0.02,...]"}.
      */
     @Query(value = """
             select a.id

@@ -1,13 +1,20 @@
 services:
 
   postgres:
-    image: postgres:17
+    # pgvector/pgvector:pg17 is postgres:17 plus the vector extension. Required since V26, which
+    # runs CREATE EXTENSION vector — a stock postgres:17 image fails that migration and the app
+    # will not start. Swapping back to postgres:17 means dropping V26 as well.
+    image: pgvector/pgvector:pg17
     container_name: self-service-postgres
     environment:
       POSTGRES_DB: selfservice
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      # Default 5432 for the team. Override with DB_HOST_PORT if a native PostgreSQL install
+      # already owns 5432 on your machine — e.g. `DB_HOST_PORT=5433 docker compose up -d` — and
+      # point DB_URL at the same port. Never hardcode a different default here: that would silently
+      # move the port for every other developer who has no such conflict.
+      - "${DB_HOST_PORT:-5432}:5432"
     volumes:
       - ./volumes/postgres:/var/lib/postgresql/data

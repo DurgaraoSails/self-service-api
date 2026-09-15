@@ -21,14 +21,12 @@ import org.springframework.stereotype.Component;
  * Builds and stores the search document for an asset's approved revision. Weighting matches the
  * Search Contract: title+tags = A, summary = B, problem/impact/solution = C, owner name = D.
  *
- * <p>When an {@link EmbeddingProvider} bean exists ({@code asset-hub.semantic-search-enabled=true}
- * — currently never true in any real deployment, see docs/specs/asset-hub.md's "Semantic search
- * embeddings: Voyage AI"), this records provider/model/dimensions/checksum metadata alongside the
- * lexical document. It does not persist the embedding vector itself: the
- * {@code asset_search_documents.embedding} column does not exist until the still-pending Phase 3
- * pgvector migration, so there is nowhere to put it yet. An embedding failure is logged and
- * swallowed, exactly like a lexical-only index today — indexing an approved revision must never
- * fail because the optional intelligence layer did.
+ * <p>When an {@link EmbeddingProvider} bean exists ({@code asset-hub.semantic-search-enabled=true}),
+ * this also embeds the same text and stores the vector in
+ * {@code asset_search_documents.embedding} (added in {@code V26}) along with
+ * provider/model/dimensions/checksum metadata. An embedding failure is logged and swallowed,
+ * leaving a lexical-only row: indexing an approved revision must never fail because the optional
+ * intelligence layer did, and {@code findSemanticCandidateIds} skips null-embedding rows.
  */
 @Component
 public class AssetSearchIndexer {
@@ -51,6 +49,7 @@ public class AssetSearchIndexer {
                 blank(approved.getProblemStatement()), blank(approved.getBusinessImpact()), blank(approved.getSolutionOverview())).trim();
         String searchText = String.join(" ", titleAndTags, approved.getSummary(), problemImpactSolution, blank(ownerDisplayName));
 
+        String embedding = null;
         String embeddingProviderName = null;
         String embeddingModel = null;
         Integer embeddingDimensions = null;
@@ -58,7 +57,7 @@ public class AssetSearchIndexer {
         EmbeddingProvider provider = embeddingProvider.getIfAvailable();
         if (provider != null) {
             try {
-                provider.embed(searchText);
+                embedding = VectorLiteral.of(provider.embed(searchText));
                 embeddingProviderName = provider.providerName();
                 embeddingModel = provider.modelName();
                 embeddingDimensions = provider.dimensions();
@@ -69,10 +68,13 @@ public class AssetSearchIndexer {
             }
         }
 
+        // A null embedding overwrites any previous one on re-approval, which is intended: the
+        // stored vector must describe the revision currently indexed, and a stale vector from the
+        // previous approved revision would keep answering semantic queries with superseded text.
         assetSearchRepository.upsertSearchDocument(
                 asset.getId(), approved.getId(), searchText,
                 titleAndTags, approved.getSummary(), problemImpactSolution, blank(ownerDisplayName),
-                embeddingProviderName, embeddingModel, embeddingDimensions, embeddingChecksum);
+                embedding, embeddingProviderName, embeddingModel, embeddingDimensions, embeddingChecksum);
     }
 
     public void remove(UUID assetId) {

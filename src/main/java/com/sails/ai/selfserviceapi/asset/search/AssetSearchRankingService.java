@@ -1,7 +1,6 @@
 package com.sails.ai.selfserviceapi.asset.search;
 
 import com.sails.ai.selfserviceapi.asset.repository.AssetSearchRepository;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -16,11 +15,11 @@ import org.springframework.stereotype.Component;
 /**
  * Reciprocal-rank-fusion merge from the Search Contract: {@code 1 / (60 + lexicalRank) +
  * 1 / (60 + semanticRank)}, a missing rank contributing zero, ties broken by approved revision
- * {@code updated_at DESC} then {@code asset_id ASC}. Only ever reached from
- * {@code AssetLifecycleService.listAssets} when a non-empty semantic candidate list exists — which,
- * per docs/specs/asset-hub.md's "Semantic search embeddings: Voyage AI", cannot happen in any
- * deployment today (no pgvector column, no embedding provider configured). Kept as its own class so
- * that pure ranking logic doesn't get buried inside the lifecycle service once it is reachable.
+ * {@code updated_at DESC} then {@code asset_id ASC}. Reached from
+ * {@code AssetLifecycleService.listAssets} when a non-empty semantic candidate list exists — that
+ * is, when {@code asset-hub.semantic-search-enabled=true}, an embedding provider is configured and
+ * responding, and at least one approved asset has a stored embedding. Otherwise the caller stays on
+ * the deterministic lexical path and this class is not involved.
  */
 @Component
 public class AssetSearchRankingService {
@@ -53,6 +52,22 @@ public class AssetSearchRankingService {
                 .toList();
     }
 
+    /**
+     * A native query's {@code timestamptz} column comes back as {@code java.sql.Timestamp} or
+     * {@code java.time.Instant} depending on the JDBC driver version, not on anything this
+     * codebase controls — the same query returned {@code Timestamp} in earlier testing and
+     * {@code Instant} once this path first ran for real against a newer driver. Handling both
+     * beats pinning to whichever one happened to be observed first.
+     */
+    private static Instant toInstant(Object value) {
+        return switch (value) {
+            case java.sql.Timestamp timestamp -> timestamp.toInstant();
+            case Instant instant -> instant;
+            default -> throw new IllegalStateException(
+                    "Unexpected timestamp type from native query: " + value.getClass());
+        };
+    }
+
     private static void addRrfScores(Map<UUID, Double> scores, List<UUID> rankedIds) {
         for (int i = 0; i < rankedIds.size(); i++) {
             scores.merge(rankedIds.get(i), 1.0 / (RRF_K + i + 1), Double::sum);
@@ -67,8 +82,7 @@ public class AssetSearchRankingService {
         Map<UUID, Instant> result = new HashMap<>();
         for (Object[] row : assetSearchRepository.findApprovedRevisionUpdatedAt(assetIdsCsv)) {
             UUID assetId = (UUID) row[0];
-            Instant updatedAt = ((Timestamp) row[1]).toInstant();
-            result.put(assetId, updatedAt);
+            result.put(assetId, toInstant(row[1]));
         }
         return result;
     }

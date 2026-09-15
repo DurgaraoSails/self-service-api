@@ -47,12 +47,12 @@ class AssetSearchIndexerTest {
         verify(assetSearchRepository).upsertSearchDocument(
                 eq(asset.getId()), eq(approved.getId()), searchText.capture(),
                 eq("Radiology Triage Healthcare"), eq("A summary"), any(), eq("Jane Doe"),
-                isNull(), isNull(), isNull(), isNull());
+                isNull(), isNull(), isNull(), isNull(), isNull());
         assertThat(searchText.getValue()).contains("Radiology Triage", "A summary", "Jane Doe");
     }
 
     @Test
-    void recordsEmbeddingMetadataWhenAProviderSucceeds() {
+    void storesTheEmbeddingVectorAndItsMetadataWhenAProviderSucceeds() {
         EmbeddingProvider provider = Mockito.mock(EmbeddingProvider.class);
         when(embeddingProvider.getIfAvailable()).thenReturn(provider);
         when(provider.embed(any())).thenReturn(new float[]{0.1f, 0.2f});
@@ -64,9 +64,12 @@ class AssetSearchIndexerTest {
 
         indexer.index(asset, approved, "Owner");
 
+        // The vector itself, not just the metadata: before V26 there was no column to put it in and
+        // the indexer discarded the provider's result, so this assertion is what distinguishes a
+        // real semantic index from the metadata-only scaffold that preceded it.
         verify(assetSearchRepository).upsertSearchDocument(
                 any(), any(), any(), any(), any(), any(), any(),
-                eq("voyage"), eq("voyage-4"), eq(1024), any());
+                eq("[0.1,0.2]"), eq("voyage"), eq("voyage-4"), eq(1024), any());
     }
 
     @Test
@@ -79,9 +82,11 @@ class AssetSearchIndexerTest {
 
         indexer.index(asset, approved, "Owner");
 
+        // Null embedding as well as null metadata: the row must still index lexically, and
+        // findSemanticCandidateIds skips null-embedding rows rather than ranking them as distant.
         verify(assetSearchRepository).upsertSearchDocument(
                 any(), any(), any(), any(), any(), any(), any(),
-                isNull(), isNull(), isNull(), isNull());
+                isNull(), isNull(), isNull(), isNull(), isNull());
     }
 
     @Test
@@ -90,7 +95,7 @@ class AssetSearchIndexerTest {
         indexer.remove(assetId);
         verify(assetSearchRepository).deleteById(assetId);
         verify(assetSearchRepository, never()).upsertSearchDocument(
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     private static Asset asset() {

@@ -21,6 +21,7 @@ import com.sails.ai.selfserviceapi.asset.repository.AssetSearchRepository;
 import com.sails.ai.selfserviceapi.asset.repository.TagRepository;
 import com.sails.ai.selfserviceapi.asset.search.AssetSearchIndexer;
 import com.sails.ai.selfserviceapi.asset.search.AssetSearchRankingService;
+import com.sails.ai.selfserviceapi.asset.search.VectorLiteral;
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.generated.model.AssetDetailResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetEditorResponse;
@@ -351,9 +352,10 @@ public class AssetLifecycleService {
         List<UUID> ids;
         long total;
         if (semanticIds.isEmpty()) {
-            // Today's only reachable path: no query, semantic search disabled, no embedding
-            // provider configured, or the provider failed — pure lexical ranking, unchanged from
-            // before the Phase 3 scaffold. See AssetSearchRankingService's Javadoc.
+            // No query, semantic search disabled, no embedding provider configured, the provider
+            // failed, or nothing indexed has an embedding yet — pure lexical ranking. This is the
+            // deterministic keyword fallback the Search Contract requires, and it keeps the same
+            // response shape as the fused path.
             ids = assetSearchRepository.findRankedAssetIds(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly, size, page * size);
             total = assetSearchRepository.countRankedAssets(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly);
         } else {
@@ -391,25 +393,13 @@ public class AssetLifecycleService {
             return List.of();
         }
         try {
-            float[] queryEmbedding = provider.embed(normalizedQ);
-            String vectorLiteral = toVectorLiteral(queryEmbedding);
+            String vectorLiteral = VectorLiteral.of(provider.embed(normalizedQ));
             return assetSearchRepository.findSemanticCandidateIds(
                     vectorLiteral, typesCsv, tagsCsv, ownerId, launchableOnly, CANDIDATE_POOL_SIZE);
         } catch (EmbeddingProviderException e) {
             log.warn("Semantic search unavailable ({}); falling back to keyword search.", e.errorCode());
             return List.of();
         }
-    }
-
-    private static String toVectorLiteral(float[] vector) {
-        StringBuilder builder = new StringBuilder("[");
-        for (int i = 0; i < vector.length; i++) {
-            if (i > 0) {
-                builder.append(',');
-            }
-            builder.append(vector[i]);
-        }
-        return builder.append(']').toString();
     }
 
     @Transactional(readOnly = true)
