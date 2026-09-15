@@ -13,12 +13,16 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Calls Gemini on Vertex AI's {@code generateContent} REST endpoint with a JSON response schema
- * (Vertex's structured-output feature — the equivalent of Anthropic's {@code output_config.format}
- * for a provider that has no dedicated SDK in this project). Single request, no tools, no
- * multi-turn: see docs/specs/asset-hub.md's AI Suggestion Contract. Authenticates with the same
- * Application Default Credentials pattern deploypipeline.config.PipelineRestClientConfig already
- * uses for Cloud Build/Cloud Run, so no separate API key is needed in a deployed environment.
+ * Calls Gemini's {@code generateContent} REST endpoint with a JSON response schema (structured
+ * output). Single request, no tools, no multi-turn: see docs/specs/asset-hub.md's AI Suggestion
+ * Contract.
+ *
+ * <p>Serves both {@link com.sails.ai.selfserviceapi.asset.config.AssetAiTransport} options from one
+ * implementation, because Vertex AI and the Google AI endpoint accept the same request body and
+ * return the same response body — they differ only in host, path, and credential. The host and
+ * credential belong to the injected client (see
+ * {@code AssetAiClientConfig}); {@link #endpoint()} is the only place the path difference is
+ * handled here.
  */
 @Component
 @ConditionalOnProperty(prefix = "asset-hub", name = "ai-enabled", havingValue = "true")
@@ -51,13 +55,13 @@ public class GeminiAssetAiProvider implements AssetAiProvider {
                             "maxItems", 10)),
             "required", List.of("suggestedTitle", "suggestedSummary", "suggestedTags"));
 
-    private final RestClient vertexAiRestClient;
+    private final RestClient geminiRestClient;
     private final AssetHubProperties properties;
     private final ObjectMapper objectMapper;
 
-    public GeminiAssetAiProvider(@Qualifier("vertexAiRestClient") RestClient vertexAiRestClient,
+    public GeminiAssetAiProvider(@Qualifier("geminiRestClient") RestClient geminiRestClient,
                                   AssetHubProperties properties, ObjectMapper objectMapper) {
-        this.vertexAiRestClient = vertexAiRestClient;
+        this.geminiRestClient = geminiRestClient;
         this.properties = properties;
         this.objectMapper = objectMapper;
     }
@@ -83,10 +87,10 @@ public class GeminiAssetAiProvider implements AssetAiProvider {
 
     private GenerateContentResponse call(AssetAiSuggestionInput input) {
         GenerateContentRequest request = buildRequest(input);
+        Endpoint endpoint = endpoint();
         try {
-            return vertexAiRestClient.post()
-                    .uri("/v1/projects/{project}/locations/{region}/publishers/google/models/{model}:generateContent",
-                            properties.ai().projectId(), properties.ai().region(), properties.ai().model())
+            return geminiRestClient.post()
+                    .uri(endpoint.uriTemplate(), endpoint.uriVariables())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(request)
                     .retrieve()
@@ -97,6 +101,23 @@ public class GeminiAssetAiProvider implements AssetAiProvider {
             throw new AssetAiProviderException("PROVIDER_ERROR",
                     "Gemini request failed with status " + e.getStatusCode().value(), e);
         }
+    }
+
+    /**
+     * The one place the two transports differ. Kept as a template plus variables rather than a
+     * formatted string so RestClient still encodes the configured model/project/region.
+     */
+    private Endpoint endpoint() {
+        AssetHubProperties.Ai ai = properties.ai();
+        if (ai.isVertexAi()) {
+            return new Endpoint(
+                    "/v1/projects/{project}/locations/{region}/publishers/google/models/{model}:generateContent",
+                    new Object[]{ai.projectId(), ai.region(), ai.model()});
+        }
+        return new Endpoint("/v1beta/models/{model}:generateContent", new Object[]{ai.model()});
+    }
+
+    private record Endpoint(String uriTemplate, Object[] uriVariables) {
     }
 
     private GenerateContentRequest buildRequest(AssetAiSuggestionInput input) {

@@ -11,6 +11,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.sails.ai.selfserviceapi.asset.config.AssetAiTransport;
 import com.sails.ai.selfserviceapi.asset.config.AssetHubProperties;
 import java.time.Duration;
 import java.util.List;
@@ -28,8 +29,11 @@ class GeminiAssetAiProviderTest {
                     + "/publishers/google/models/gemini-test:generateContent";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /** VERTEX_AI so the provider builds the aiplatform path this test's expectations assert. */
     private final AssetHubProperties properties = new AssetHubProperties(true, true, false,
-            new AssetHubProperties.Ai("test-project", "test-region", "gemini-test", 5), null);
+            new AssetHubProperties.Ai(AssetAiTransport.VERTEX_AI, "test-project", "test-region", null,
+                    "gemini-test", 5),
+            null);
 
     private RestClient.Builder restClientBuilder() {
         return RestClient.builder().baseUrl("https://test-region-aiplatform.googleapis.com");

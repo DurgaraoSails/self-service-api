@@ -17,16 +17,31 @@ public record AssetHubProperties(
 ) {
 
     /**
-     * Vertex AI Gemini config for {@code GeminiAssetAiProvider}, bound only when read — a missing
-     * or blank projectId is fine while aiEnabled is false, since no bean ever calls {@link #ai()}
-     * in that case (see AssetAiClientConfig / GeminiAssetAiProvider's ConditionalOnProperty).
+     * Gemini config for {@code GeminiAssetAiProvider}, bound only when read — missing values are
+     * fine while aiEnabled is false, since no bean ever calls {@link #ai()} in that case (see
+     * AssetAiClientConfig / GeminiAssetAiProvider's ConditionalOnProperty). When aiEnabled is true,
+     * {@code AssetAiClientConfig} validates that whichever transport is selected has the fields it
+     * needs, and fails startup naming the missing property rather than at first suggestion.
      */
     public record Ai(
+            @DefaultValue("VERTEX_AI") AssetAiTransport transport,
+
+            /** VERTEX_AI only. */
             String projectId,
-            String region,
+
+            /** VERTEX_AI only — the regional aiplatform host the request goes to. */
+            @DefaultValue("us-central1") String region,
+
+            /** GEMINI_API only. A long-lived credential: never commit it, never log it. */
+            String apiKey,
+
             @DefaultValue("gemini-2.5-flash") String model,
             @DefaultValue("20") int timeoutSeconds
     ) {
+
+        public boolean isVertexAi() {
+            return transport == AssetAiTransport.VERTEX_AI;
+        }
     }
 
     /**
