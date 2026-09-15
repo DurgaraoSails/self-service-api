@@ -109,14 +109,14 @@ class EmployeeControllerTest {
         authenticate("superadmin-1", List.of(new SimpleGrantedAuthority("ROLE_SUPERADMIN")));
         UpdateManagedRolesRequest request = new UpdateManagedRolesRequest(List.of());
         when(employeeRoleService.updateManagedRoles(eq("superadmin-1"), eq("superadmin-1"), any()))
-                .thenThrow(new ApiException(HttpStatus.FORBIDDEN, "ROLE_SELF_MANAGEMENT_FORBIDDEN",
-                        "You cannot change your own managed roles."));
+                .thenThrow(new ApiException(HttpStatus.FORBIDDEN, "ROLE_SELF_ADMIN_FORBIDDEN",
+                        "You cannot change your own ADMIN role. ASSET_REVIEWER is the only role you can manage for yourself."));
 
         mockMvc.perform(put("/employees/{userId}/roles", "superadmin-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("ROLE_SELF_MANAGEMENT_FORBIDDEN"));
+                .andExpect(jsonPath("$.code").value("ROLE_SELF_ADMIN_FORBIDDEN"));
     }
 
     private static void authenticate(String userId, List<? extends GrantedAuthority> authorities) {

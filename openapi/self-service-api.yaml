@@ -442,7 +442,10 @@ paths:
         Idempotent — a no-op if the user already has the ADMIN role. Requires the SUPERADMIN
         role, one step above ADMIN: an admin cannot create other admins, only a superadmin can.
         There is no bootstrap path for SUPERADMIN itself — it is assigned directly in the
-        database, not via config or this API.
+        database, not via config or this API. ADMIN is an internal-employee privilege: the
+        caller must be an internal account (INTERNAL_ACCOUNT_REQUIRED), and the target must be
+        an internal employee (ROLE_TARGET_MUST_BE_INTERNAL) — an external customer can never be
+        granted ADMIN.
       operationId: promoteToAdmin
       tags:
         - User
@@ -471,7 +474,9 @@ paths:
   /users/{id}/demote-to-user:
     post:
       summary: Revoke the ADMIN role from a user (superadmin only)
-      description: Idempotent — a no-op if the user does not currently have the ADMIN role.
+      description: >
+        Idempotent — a no-op if the user does not currently have the ADMIN role. Requires the
+        SUPERADMIN role and an internal caller (INTERNAL_ACCOUNT_REQUIRED).
       operationId: demoteToUser
       tags:
         - User
@@ -2709,8 +2714,9 @@ paths:
           description: >
             Caller is not internal (INTERNAL_ACCOUNT_REQUIRED), caller lacks the superadmin role
             (SUPERADMIN_REQUIRED), target is not an active internal employee
-            (ROLE_TARGET_MUST_BE_INTERNAL / ROLE_TARGET_MUST_BE_ACTIVE), or caller targeted
-            themselves (ROLE_SELF_MANAGEMENT_FORBIDDEN).
+            (ROLE_TARGET_MUST_BE_INTERNAL / ROLE_TARGET_MUST_BE_ACTIVE), or caller targeted their
+            own ADMIN role (ROLE_SELF_ADMIN_FORBIDDEN) — a superadmin may still change their own
+            ASSET_REVIEWER role.
           content:
             application/json:
               schema:

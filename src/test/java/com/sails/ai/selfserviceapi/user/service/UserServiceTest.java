@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.user.config.TrialProperties;
+import com.sails.ai.selfserviceapi.user.entity.AccountType;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.entity.UserStatus;
 import com.sails.ai.selfserviceapi.user.exception.UserAlreadyExistsException;
@@ -247,6 +248,7 @@ class UserServiceTest {
     @Test
     void promoteToAdminAddsTheAdminRole() {
         User user = userWithId("u1");
+        user.setAccountType(AccountType.INTERNAL);
         user.setRoles(new java.util.ArrayList<>(List.of("USER")));
         when(userRepository.findById("u1")).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -259,6 +261,7 @@ class UserServiceTest {
     @Test
     void promoteToAdminIsANoOpWhenAlreadyAnAdmin() {
         User user = userWithId("u1");
+        user.setAccountType(AccountType.INTERNAL);
         user.setRoles(new java.util.ArrayList<>(List.of("USER", "ADMIN")));
         when(userRepository.findById("u1")).thenReturn(Optional.of(user));
 
@@ -274,6 +277,19 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.promoteToAdmin("missing"))
                 .isInstanceOf(UserNotFoundException.class);
+    }
+
+    @Test
+    void promoteToAdminThrowsWhenTargetIsExternal() {
+        User user = userWithId("u1");
+        user.setAccountType(AccountType.EXTERNAL);
+        user.setRoles(new java.util.ArrayList<>(List.of("USER")));
+        when(userRepository.findById("u1")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> userService.promoteToAdmin("u1"))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("internal employees");
+        org.mockito.Mockito.verify(userRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test

@@ -59,12 +59,28 @@ class EmployeeRoleServiceTest {
     }
 
     @Test
-    void blocksSelfManagement() {
+    void blocksSelfAdminChange() {
+        User self = employee("same", List.of("USER", "SUPERADMIN", "ADMIN"));
+        when(userRepository.lockById("same")).thenReturn(Optional.of(self));
+
         UpdateManagedRolesRequest request = new UpdateManagedRolesRequest(List.of());
 
         assertThatThrownBy(() -> service.updateManagedRoles("same", "same", request))
                 .isInstanceOf(ApiException.class)
-                .hasMessageContaining("own managed roles");
+                .hasMessageContaining("own ADMIN role");
+    }
+
+    @Test
+    void allowsSelfAssetReviewerManagement() {
+        User self = employee("same", List.of("USER", "SUPERADMIN"));
+        when(userRepository.lockById("same")).thenReturn(Optional.of(self));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UpdateManagedRolesRequest request = new UpdateManagedRolesRequest(List.of(
+                UpdateManagedRolesRequest.RolesEnum.ASSET_REVIEWER));
+        EmployeeResponse response = service.updateManagedRoles("same", "same", request);
+
+        assertThat(response.getRoles()).containsExactly("USER", "SUPERADMIN", "ASSET_REVIEWER");
     }
 
     @Test

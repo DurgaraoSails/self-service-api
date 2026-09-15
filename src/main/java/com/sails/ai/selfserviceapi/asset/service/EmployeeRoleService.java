@@ -62,10 +62,6 @@ public class EmployeeRoleService {
     @Transactional
     public EmployeeResponse updateManagedRoles(String actorUserId, String targetUserId,
                                                  UpdateManagedRolesRequest request) {
-        if (actorUserId.equals(targetUserId)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "ROLE_SELF_MANAGEMENT_FORBIDDEN",
-                    "You cannot change your own managed roles.");
-        }
         User target = userRepository.lockById(targetUserId).orElseThrow(() -> new UserNotFoundException(targetUserId));
         if (target.getAccountType() != com.sails.ai.selfserviceapi.user.entity.AccountType.INTERNAL) {
             throw new ApiException(HttpStatus.FORBIDDEN, "ROLE_TARGET_MUST_BE_INTERNAL",
@@ -87,6 +83,14 @@ public class EmployeeRoleService {
         }
 
         List<String> before = List.copyOf(target.getRoles() == null ? List.of() : target.getRoles());
+
+        // A superadmin may manage their own ASSET_REVIEWER role, but never their own ADMIN role —
+        // self-escalation/de-escalation of ADMIN stays forbidden even for the actor's own row.
+        if (actorUserId.equals(targetUserId) && requested.contains("ADMIN") != before.contains("ADMIN")) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "ROLE_SELF_ADMIN_FORBIDDEN",
+                    "You cannot change your own ADMIN role. ASSET_REVIEWER is the only role you can manage for yourself.");
+        }
+
         LinkedHashSet<String> after = new LinkedHashSet<>();
         after.add("USER");
         if (before.contains("SUPERADMIN")) {
