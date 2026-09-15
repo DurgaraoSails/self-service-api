@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.sails.ai.selfserviceapi.asset.entity.RoleChangeAudit;
 import com.sails.ai.selfserviceapi.asset.repository.RoleChangeAuditRepository;
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
+import com.sails.ai.selfserviceapi.generated.model.EmployeePageResponse;
 import com.sails.ai.selfserviceapi.generated.model.EmployeeResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdateManagedRolesRequest;
 import com.sails.ai.selfserviceapi.user.entity.AccountType;
@@ -19,7 +20,12 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
 
 class EmployeeRoleServiceTest {
 
@@ -96,6 +102,23 @@ class EmployeeRoleServiceTest {
                         UpdateManagedRolesRequest.RolesEnum.ADMIN))))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("only once");
+    }
+
+    @Test
+    void listEmployeesReturnsAMappedPageOfActiveInternalEmployees() {
+        User employee = employee("target", List.of("USER", "ASSET_REVIEWER"));
+        Page<User> page = new PageImpl<>(List.of(employee), PageRequest.of(0, 20), 1);
+        when(userRepository.findAll(ArgumentMatchers.<Specification<User>>any(), ArgumentMatchers.any(PageRequest.class)))
+                .thenReturn(page);
+
+        EmployeePageResponse response = service.listEmployees("tar", 0, 20);
+
+        assertThat(response.getContent()).hasSize(1);
+        assertThat(response.getContent().get(0).getId()).isEqualTo("target");
+        assertThat(response.getContent().get(0).getRoles()).containsExactly("USER", "ASSET_REVIEWER");
+        assertThat(response.getPage()).isEqualTo(0);
+        assertThat(response.getSize()).isEqualTo(20);
+        assertThat(response.getTotalElements()).isEqualTo(1L);
     }
 
     private static User employee(String id, List<String> roles) {
