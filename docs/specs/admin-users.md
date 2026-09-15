@@ -52,7 +52,6 @@ No new endpoints from this spec directly (see `poc-catalog.md` for the hide/unhi
 ## Open Questions / Future Work
 
 - **Removing an email from `ADMIN_EMAILS` still doesn't revoke an already-granted `ADMIN` role.** `POST /users/{id}/demote-to-user` (below) gives a superadmin a manual way to do this now; there's still no automatic reconciliation against the allowlist.
-- **No UI yet for the new promote/demote endpoints** — the backend and API contract exist (below); the admin Customers page doesn't have the toggle control wired to them yet.
 
 ## Superadmin: promoting/demoting other users to ADMIN
 
@@ -61,10 +60,18 @@ Added 2026-09-08, closing this doc's original "no admin-management UI"/"no demot
 **A new `SUPERADMIN` role, one step above `ADMIN`, bootstrapped manually rather than by config.**
 `ADMIN` promotion needed to be gated behind something only a small, trusted set of people hold — otherwise any admin could mint more admins with no oversight. Rather than extend `AdminProperties`' `ADMIN_EMAILS` pattern with a second allowlist, `SUPERADMIN` has no bootstrap code at all: it's a role string assigned directly in the database by whoever manages the deployment. This keeps "who can create admins" off the deploy-time config surface entirely — there's no env var to leak or accidentally widen. `roles` needed no schema change for this, same as `ADMIN` originally — it's still a free-form `text[]`, `"SUPERADMIN"` is just a third possible value alongside `"USER"`/`"ADMIN"`. `SecurityConfig`'s `JwtGrantedAuthoritiesConverter` already turns every `roles` entry into a `ROLE_<value>` authority generically, so `@PreAuthorize("hasRole('SUPERADMIN')")` needed no converter changes either.
 
-**Two single-purpose endpoints, not one toggle** — `POST /users/{id}/promote-to-admin` and `POST /users/{id}/demote-to-user`, mirroring the existing hide/unhide/restore convention from `poc-catalog.md` rather than a single endpoint taking a desired-state body. Both are idempotent (promoting an existing admin, or demoting a non-admin, is a no-op — no write, same row returned) and both return `CustomerResponse`, matching `revokeTrial`/`extendTrial`'s existing shape for an admin acting on another user's account. Both require `SUPERADMIN`, not `ADMIN` — `UserService.promoteToAdmin`/`demoteToUser` only ever add/remove the `"ADMIN"` string; neither endpoint touches `SUPERADMIN` itself.
+**Two single-purpose endpoints, not one toggle** — `POST /users/{id}/promote-to-admin` and `POST /users/{id}/demote-to-user`, mirroring the existing hide/unhide/restore convention from `poc-catalog.md` rather than a single endpoint taking a desired-state body. Both are idempotent (promoting an existing admin, or demoting a non-admin, is a no-op — no write, same row returned) and both return `CustomerResponse`, matching `revokeTrial`/`extendTrial`'s existing shape for an admin acting on another user's account. Both require `SUPERADMIN`, not `ADMIN` — `UserService.promoteToAdmin`/`demoteToUser` only ever add/remove the `"ADMIN"` string; neither endpoint touches `SUPERADMIN` itself. The portal's Customers page wires both into a single visual toggle, gated in-component to `isSuperAdmin() && !isSuperAdmin(target) && target.id !== self`.
+
+## ADMIN is an internal-employee privilege, platform-wide
+
+Added 2026-09-15. `ADMIN` was originally scoped only to POC-catalog write access (see Overview), with no accountType restriction — in practice this meant a `SUPERADMIN` could promote an `EXTERNAL` (customer) account to `ADMIN` through this endpoint, which `docs/specs/asset-hub.md`'s later, stricter `/employees/{userId}/roles` endpoint never allowed (it requires `accountType=INTERNAL` on the target). That inconsistency is now closed: `promoteToAdmin`/`demoteToUser` both require the caller to be an internal account (`CurrentUser.requireInternal()`, `INTERNAL_ACCOUNT_REQUIRED`), and `promoteToAdmin` additionally rejects a non-internal target (`ROLE_TARGET_MUST_BE_INTERNAL`) — the same error code `EmployeeRoleService` already used for the same rule. `demoteToUser` (revoking) stays unrestricted by accountType, since de-escalation should never be blocked. The two endpoints remain otherwise independent of `/employees/{userId}/roles` — see `asset-hub.md`'s "Managed privileged roles" section.
 
 ## Changelog
 
+- 2026-09-15 — `ADMIN` promotion/demotion now requires an internal caller, and promotion an
+  internal target — see "ADMIN is an internal-employee privilege" above. Closes a gap where this
+  legacy endpoint could grant `ADMIN` to (or be invoked by) an external/customer account, something
+  the newer `/employees/{userId}/roles` endpoint never allowed.
 - 2026-09-08 — Added `SUPERADMIN` role and `POST /users/{id}/promote-to-admin` /
   `POST /users/{id}/demote-to-user` (see the new section above). `UserService` gained
   `promoteToAdmin`/`demoteToUser`, both idempotent. No migration — `roles` already a free-form

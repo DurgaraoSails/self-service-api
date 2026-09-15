@@ -50,9 +50,13 @@ The initial asset types are:
   `SUPERADMIN` and `ASSET_REVIEWER`.
 - `SUPERADMIN` remains database-managed. It cannot be granted or revoked through an API or portal
   control.
-- An internal superadmin can atomically assign multiple allowlisted managed roles to a different,
-  active internal employee. `SUPERADMIN` is not part of that allowlist. Duplicate requested roles
-  are rejected and the target row is locked until the matching audit record is written.
+- An internal superadmin can atomically assign multiple allowlisted managed roles to another active
+  internal employee, or to themselves. `SUPERADMIN` is not part of that allowlist. Duplicate
+  requested roles are rejected and the target row is locked until the matching audit record is
+  written.
+- A superadmin managing their own row may change their own `ASSET_REVIEWER` role, but never their
+  own `ADMIN` role — self-escalation/de-escalation of `ADMIN` is forbidden even for the actor's own
+  row (`ROLE_SELF_ADMIN_FORBIDDEN`).
 - Role changes are audited with actor, target, before/after roles, and timestamp.
 
 ### Catalog and sources
@@ -141,14 +145,17 @@ prevents search results changing before approval.
 `users.roles` remains the existing `TEXT[]` and JWT claim. A new multi-role operation manages only
 an explicit privileged-role allowlist (initially `ADMIN` and `ASSET_REVIEWER`) while preserving
 baseline `USER` and database-managed `SUPERADMIN`. The caller must be internal; the target must be
-a different active internal employee. Role changes take effect in newly issued/refreshed portal
-tokens under the current JWT architecture.
+an active internal employee, who may be the caller themselves (subject to the self-`ADMIN`
+restriction above). Role changes take effect in newly issued/refreshed portal tokens under the
+current JWT architecture.
 
 The existing `/users/{id}/promote-to-admin` and `/users/{id}/demote-to-user` endpoints remain
-legacy customer-administration operations for compatibility. Asset Hub does not call them. An
-`ADMIN` role granted there cannot bypass Asset Hub because every Hub operation separately requires
-an `INTERNAL` account; multi-role Asset Hub administration uses only `/employees/{userId}/roles`,
-which also enforces an active internal target, self-management restrictions, row locking, and audit.
+legacy customer-administration operations for compatibility. Asset Hub does not call them, but
+**`ADMIN` is an internal-employee privilege platform-wide**: both endpoints now require an internal
+caller (`INTERNAL_ACCOUNT_REQUIRED`), and `promote-to-admin` additionally requires an internal
+target (`ROLE_TARGET_MUST_BE_INTERNAL`) — an external customer can never hold `ADMIN`, through
+either surface. Multi-role Asset Hub administration uses only `/employees/{userId}/roles`, which
+also enforces an active internal target, row locking, and audit.
 
 ### AI metadata suggestion provider: Gemini on Vertex AI
 
@@ -375,7 +382,7 @@ Use the existing API error envelope and these stable codes:
 | 403 | `SELF_REVIEW_FORBIDDEN` | Reviewer submitted the asset or authored the revision. |
 | 403 | `ROLE_TARGET_MUST_BE_INTERNAL` | Role target is not an internal employee. |
 | 403 | `ROLE_TARGET_MUST_BE_ACTIVE` | Role target's account is not active. |
-| 403 | `ROLE_SELF_MANAGEMENT_FORBIDDEN` | Superadmin targeted their own role assignment. |
+| 403 | `ROLE_SELF_ADMIN_FORBIDDEN` | Superadmin targeted their own `ADMIN` role (own `ASSET_REVIEWER` is allowed). |
 | 404 | `ASSET_NOT_FOUND` | Asset is absent or not visible in this context. |
 | 404 | `ASSET_REVISION_NOT_FOUND` | Revision is absent or belongs to another asset/context. |
 | 409 | `ASSET_REVISION_STALE` | Expected optimistic version does not match. |
@@ -597,6 +604,14 @@ reuse metric, or a redundant `Published` state.
   lives in Vertex's `systemInstruction` field, and the `contents` (data) turn carries only the
   canonical catalog-field JSON, framed as untrusted data rather than task text. See Security
   Considerations and `GeminiAssetAiProvider`.
+- 2026-09-15 — A superadmin may now manage their own `ASSET_REVIEWER` role through
+  `/employees/{userId}/roles` (previously any self-targeting request was rejected outright). Their
+  own `ADMIN` role remains untouchable through this endpoint — the old `ROLE_SELF_MANAGEMENT_FORBIDDEN`
+  code is replaced by `ROLE_SELF_ADMIN_FORBIDDEN`, thrown only when a self-targeting request would
+  change `ADMIN` membership. Separately, closed a gap where `ADMIN` could be granted to or by a
+  non-employee: `/users/{id}/promote-to-admin` and `/users/{id}/demote-to-user` now require an
+  internal caller, and `promote-to-admin` additionally requires an internal target, matching the
+  rule `/employees/{userId}/roles` already enforced.
 - 2026-09-15 — Scaffolded §7 semantic search behind `asset-hub.semantic-search-enabled` (already
   `false` by default): `asset/ai/EmbeddingProvider` + `asset/ai/VoyageEmbeddingProvider`,
   `AssetHubProperties.embedding` config, and `AssetSearchRankingService`'s reciprocal-rank-fusion
