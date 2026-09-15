@@ -196,7 +196,7 @@ matching could otherwise treat them as asset IDs.
       *(2026-09-15: `asset-editor.spec.ts` — required-field/URL-pattern validation, AI
       pending/succeeded/FAILED/503-unavailable states against the real HTTP layer, and the
       stale-edit-conflict recovery message with the employee's unsaved input preserved, tested
-      against a fake `AssetStore` — see the note on NG0602 below.)*
+      against the real `AssetStore` — see the `AssetStore.track()` fix below.)*
 - [x] Test no-self-review UI behavior and backend `403`/`409` handling. *(2026-09-15:
       `asset-review-detail.spec.ts` — self-review flagging for submitter/author, the store-layer
       block even if a confirm somehow fires, and the competing-reviewer 409 recovery message with
@@ -211,7 +211,7 @@ matching could otherwise treat them as asset IDs.
 - [x] Test loading, empty, no-results, error, retry, and narrow-screen states. *(2026-09-15: added
       across all 7 new spec files for loading/empty/error/retry; narrow-screen/responsive layout
       is not covered — that needs a real viewport-driven test, tracked with AXE below.)*
-- [x] Run portal tests and production build. *(2026-09-15: `npx ng test --watch=false`: 596
+- [x] Run portal tests and production build. *(2026-09-15: `npx ng test --watch=false`: 594
       passed, 0 failed — up from 504; `npm run build` and `npm run build -- -c asset-hub` both
       pass.)*
 - [ ] Run AXE and keyboard checks on discovery, submission, detail, reviewer, and role-management
@@ -260,35 +260,45 @@ retry/pagination states that only exist in the real (non-preview) `AssetStore` p
 
 ```text
 Tests run:
-  npx ng test --watch=false  — 596 tests passed, 0 failed (up from 504; +92 new cases)
+  npx ng test --watch=false  — 594 tests passed, 0 failed (up from 504; +90 new cases)
   npm run build              — production build passed
   npm run build -- -c asset-hub — passed
 
-Real finding, not a test-writing mistake: AssetDetail, AssetEditor, and AssetReviewDetail all wrap
-  their initial load in a component-constructor effect() that calls an AssetStore method
-  (loadApproved/loadWorking/loadReview), which itself creates a fresh Angular effect() inside
-  AssetStore.track(). Driving that id-input-triggered first load through TestBed's synchronous
-  fixture.detectChanges() throws Angular's own NG0602 ("effect() cannot be called from within a
-  reactive context") — confirmed not fixable by any detectChanges()/flushEffects()/whenStable()
-  reordering tried (several were tried). This is a nested-effect-creation pattern Angular's own
-  reactivity primitives disallow; whether it also manifests in the live app (vs. only under
-  TestBed's forced-synchronous CD) was not established here and is worth the user checking. Worked
-  around by testing those 3 components' loading/error/retry/reload/stale-conflict paths against a
-  minimal hand-written fake AssetStore (plain signals + vi.fn() spies) instead of the real
-  HTTP-backed store — this avoids the nested effect() entirely since the fake never calls Angular's
-  effect() itself, at the cost of no longer exercising AssetStore's own real HTTP-error-to-signal
-  wiring in those specific component tests (that wiring is covered elsewhere by
-  asset-store.spec.ts's own preview-mode tests, and indirectly by the 4 other components' full
-  HTTP-backed suites, which don't hit this because their initial load isn't effect()-wrapped).
+Two real bugs in AssetStore.track() were caught and fixed by writing these tests, not by test-side
+  workarounds — both are production code fixes in src/app/core/asset/asset-store.ts:
+
+  1. NG0602 ("effect() cannot be called from within a reactive context"). AssetDetail, AssetEditor,
+     and AssetReviewDetail each wrap their initial id-driven load in a component-constructor
+     effect() that calls an AssetStore method (loadApproved/loadWorking/loadReview), which itself
+     creates a fresh Angular effect() inside AssetStore.track() — a nested effect() creation
+     Angular's reactivity primitives disallow, and driving it through TestBed's synchronous
+     fixture.detectChanges() throws immediately. Fixed by wrapping the effect() *creation* in
+     untracked(), which clears the active reactive consumer for that call — exactly what the
+     NG0602 assertion checks for, without changing what the new effect itself depends on.
+
+  2. A genuine infinite loop, masked by bug 1 until it was fixed: AssetReviewDetail.loadReview()'s
+     onData callback reads workingState() (via findReview(), to merge into the freshly-loaded
+     record) and then writes workingState() (via upsertWorking()) — the same signal, read then
+     written, inside one effect execution. Angular marks the effect dirty again on its own write to
+     a signal it read, and since .update() always produces a new array reference, the effect never
+     converges — it re-runs forever (confirmed via real CPU spin, not a hang waiting on something).
+     Fixed by wrapping the onData/onError callback *invocation* in untracked() too: those callbacks
+     only care about the resolved value the moment it arrives, they were never meant to be reactive
+     to whatever else they happen to read, so signal reads inside them should not become
+     dependencies of track()'s own effect.
+
+  Both fixes are the same primitive (untracked()) applied at two different points in the same
+  method; see the doc comment on AssetStore.track() for the full explanation. Confirmed fixed by
+  restoring the originally-intended real-HTTP-backed tests for all 3 components (no fake-store
+  workaround needed) and by running the full suite + both production builds clean afterward.
 
 Deferred items:
   - AXE/keyboard/narrow-layout/light-dark accessibility checks — separate follow-up, confirmed with
     the user; no tooling installed yet.
-  - The NG0602 finding above is not something this pass could resolve without touching
-    AssetStore's/the 3 components' production code, which was out of scope for a test-only pass.
 
 Known risks:
-  - The fake-store tests for AssetDetail/AssetEditor/AssetReviewDetail's HTTP-mode paths do not
-    exercise the real AssetStore.track()/apiErrorMessage() wiring end-to-end for those 3
-    components specifically — only the component's own reaction to store signals is verified.
+  - Whether bug 2 (the infinite loop) could have manifested in the live app before this fix, or was
+    only reachable once bug 1 was independently fixed, was not established — Angular's real
+    scheduler may have different iteration-limit behavior than TestBed's forced-synchronous
+    detectChanges(). Worth treating as a real fix either way, not merely a test-environment quirk.
 ```
