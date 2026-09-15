@@ -178,7 +178,8 @@ feature spec.
 
 ## 7. Discovery and hybrid search
 
-Keyword-only part done this phase; semantic retrieval (RRF, `EmbeddingProvider`) stays Phase 3.
+Keyword search shipped in Phase 1. Semantic retrieval (RRF, `EmbeddingProvider`) is now scaffolded
+(2026-09-15) but not reachable in any deployment — see the two blocked items below for why.
 
 - [x] Build the search document only from approved catalog fields and accepted tags.
 - [x] Exclude source contents, working revisions, rejected revisions, review feedback, and unaccepted
@@ -186,13 +187,32 @@ Keyword-only part done this phase; semantic retrieval (RRF, `EmbeddingProvider`)
       revision.)*
 - [x] Implement keyword search with deterministic ordering and pagination.
 - [x] Implement filters/facets for type, owner, tags, and launchable POC.
-- [ ] Define an `EmbeddingProvider` interface and store model, dimensions, input checksum, and
-      generation timestamp. *(Phase 3 — not started.)*
-- [ ] Add semantic retrieval over approved search documents and combine it with lexical ranking
-      using the exact reciprocal-rank-fusion algorithm in the feature spec. *(Phase 3 — not started.)*
-- [ ] Define deterministic fallback to keyword search when embeddings or the provider are
-      unavailable. *(N/A until semantic search exists to fall back from; keyword search already
-      works standalone with `ASSET_HUB_SEMANTIC_SEARCH_ENABLED=false`.)*
+- [x] Define an `EmbeddingProvider` interface and store model, dimensions, input checksum, and
+      generation timestamp. *(2026-09-15: `asset/ai/EmbeddingProvider` +
+      `asset/ai/VoyageEmbeddingProvider`, gated by `asset-hub.semantic-search-enabled` exactly like
+      `AssetAiProvider`/`ai-enabled`. `AssetSearchIndexer` records provider/model/dimensions/checksum
+      today; the `embedding` vector itself has nowhere to persist to until the migration below lands.)*
+- [x] Add semantic retrieval over approved search documents and combine it with lexical ranking
+      using the exact reciprocal-rank-fusion algorithm in the feature spec. *(2026-09-15:
+      `AssetSearchRepository.findSemanticCandidateIds` + `AssetSearchRankingService.merge`,
+      `1/(60+lexicalRank) + 1/(60+semanticRank)`, tie-broken by approved revision `updated_at DESC`
+      then `asset_id ASC`. Wired into `AssetLifecycleService.listAssets`. Unreachable in any
+      deployment today — see the two blockers below.)*
+- [x] Define deterministic fallback to keyword search when embeddings or the provider are
+      unavailable. *(2026-09-15: no `EmbeddingProvider` bean, an embed() failure, or an empty
+      semantic-candidate list all fall back to the pre-existing pure-lexical path in `listAssets`
+      unchanged — this is also why the fallback has never been exercised as a true fallback yet,
+      since the "enabled" branch has never had anything to fall back *from* in practice.)*
+- [ ] **Blocked, not a code gap:** the Phase 3 migration (`ALTER TABLE asset_search_documents ADD
+      COLUMN embedding vector(1024)`, `CREATE EXTENSION vector`) is deliberately not written yet.
+      This user's local PostgreSQL is a native Windows service (`postgresql-x64-18`), not the
+      `infra/selfservice_db/compose.yaml` Docker container, so "swap the local image" does not apply
+      — pgvector must be installed as a native extension first, or the migration breaks every clean
+      boot/`mvnw test` run the moment it's added. Add the migration once that installation is
+      confirmed. See docs/specs/asset-hub.md's "Semantic search embeddings: Voyage AI".
+- [ ] **Blocked, not a code gap:** no Voyage AI API key exists yet
+      (`asset-hub.embedding.api-key`), so `VoyageEmbeddingProvider` has never made a real call and
+      cannot be live-verified the way Gemini was once ADC access was confirmed.
 - [x] Return a fresh opaque `searchSessionId` only for a submitted query; do not put query text into
       that identifier or persist raw query text.
 - [x] Reindex only when the approved revision or embedding model/input checksum changes. *(every
@@ -232,36 +252,45 @@ Keyword-only part done this phase; semantic retrieval (RRF, `EmbeddingProvider`)
       *(`GeminiAssetAiProvider` converts every failure mode to `AssetAiProviderException`;
       `AssetAiSuggestionService.runSuggestion` catches it and any other `RuntimeException`, marks the
       run `FAILED`, and returns normally — the draft/submit/review lifecycle has no AI dependency.)*
-- [ ] Protect prompts against instructions contained in user-entered catalog text and give the AI
-      path no tools or side effects. *(Partial: the Gemini call declares no tools, and the prompt
-      frames the fields as employee-entered data rather than instructions — but there is no explicit
-      delimiter/injection defense or test for adversarial catalog text. Leaving unchecked until that
-      exists.)*
+- [x] Protect prompts against instructions contained in user-entered catalog text and give the AI
+      path no tools or side effects. *(2026-09-15: the task instruction now lives in Vertex's
+      `systemInstruction` field; the `contents` data turn carries only the canonical field JSON,
+      labeled as untrusted data. Catalog text has no elevated channel to reach regardless of its
+      contents. The Gemini call still declares no tools. No automated test for adversarial input yet
+      — that's Phase 2 test work, tracked separately.)*
 - [x] Leave template-validation interfaces unimplemented or feature-disabled until templates and
       rubrics are supplied.
 - [ ] Test timeout, provider error, malformed output, duplicate tags, oversized input, and stale
       suggestions after an edit. *(Not done this pass — no test files added for
-      `GeminiAssetAiProvider`/`AssetAiSuggestionService`; verified only by `mvn test` — 423 existing
-      tests still pass, including full Spring context boot with `asset-hub.ai-enabled=false` — and by
-      compiling against a real Vertex AI `generateContent` call confirmed reachable from the user's
-      own GCP project during this session. No live end-to-end suggestion run was exercised.)*
+      `GeminiAssetAiProvider`/`AssetAiSuggestionService`; verified only by `mvn test` — the existing
+      suite still passes in full (466 tests, 0 failures as of 2026-09-15), including full Spring
+      context boot with `asset-hub.ai-enabled=false` — and by compiling against a real Vertex AI
+      `generateContent` call confirmed reachable from the user's own GCP project during an earlier
+      session. No live end-to-end suggestion run was exercised for the 2026-09-15
+      systemInstruction change specifically.)*
 
 ## 9. Feedback and metrics
 
-Feedback and event *storage* landed this phase (the controller needed them to compile); metrics
-*aggregation* is still Phase 2 and not started.
+Feedback and event storage landed in Phase 1. Metrics aggregation (successful-search rate,
+time-to-useful-result, contributor adoption, review turnaround) was added 2026-09-15 — see below.
 
 - [x] Add general asset feedback distinct from reviewer feedback.
 - [x] Define privacy-minimized events for search session, detail view, source open, and POC launch.
       *(`GET /assets` records `SEARCH` without raw query text; the returned session id correlates
       subsequent detail/source/launch events.)*
 - [x] Do not add reuse events or infer that a source open means reuse.
-- [ ] Define successful-search and time-to-useful-result calculations in the living spec before
-      exposing dashboard numbers. *(not started.)*
-- [ ] Add contributor-adoption and review-turnaround queries with median/p90 behavior documented.
-      *(not started.)*
-- [ ] Set query-text retention/redaction policy before persisting raw search text. *(moot so far —
-      raw query text is never persisted anywhere; no formal policy documented.)*
+- [x] Define successful-search and time-to-useful-result calculations in the living spec before
+      exposing dashboard numbers. *(2026-09-15: defined in docs/specs/asset-hub.md's new Metrics
+      Contract section — successful-search rate and time-to-useful-result median/p90 — and exposed
+      via `GET /asset-hub/metrics` (`AssetMetricsService`, `AssetEventRepository.findSearchSuccessStats`).)*
+- [x] Add contributor-adoption and review-turnaround queries with median/p90 behavior documented.
+      *(2026-09-15: `AssetRepository.countDistinctSubmittersSince` +
+      `UserRepository.countByAccountTypeAndStatus` for contributor adoption over a rolling 90-day
+      window; `AssetReviewRepository.findReviewTurnaroundSecondsStats` for review-turnaround
+      median/p90. All exposed via `AssetMetricsService`/`GET /asset-hub/metrics`.)*
+- [x] Set query-text retention/redaction policy before persisting raw search text. *(2026-09-15:
+      formally recorded in the Metrics Contract — no raw query text is or has ever been persisted;
+      this was already true, now it's documented as policy rather than left open.)*
 - [ ] Test event ownership, accepted event types, deduplication/session behavior, and forbidden
       external submissions. *(not done — no test files this pass.)*
 
@@ -328,17 +357,22 @@ Result: pass. Four real bugs were caught and fixed by the live verification itse
     4. countByTag appended a JOIN after a shared WHERE-clause fragment — invalid SQL: rewritten as
        a self-contained query with the join correctly placed in FROM.
 
-Deferred items:
+Deferred items (as of 2026-09-15):
   - §6 partial — launch-token minting still goes entirely through the existing
     /pocs/{slug}/launch endpoint; Asset Hub only derives the read-only `launchable` flag.
-  - §7 semantic search (EmbeddingProvider, RRF) — Phase 3, blocked on the provider/model/dimension
-    decision per the spec.
-  - §8 real AI provider integration — AssetController's ai-suggestions endpoints always return
-    503 ASSET_AI_UNAVAILABLE for now (a real, spec-compliant disabled-path response, not a stub).
-  - §9 metrics aggregation (successful-search rate, time-to-useful-result, contributor adoption,
-    review turnaround) — not started; only the underlying feedback/event storage landed.
+  - §7 semantic search is now scaffolded (EmbeddingProvider/VoyageEmbeddingProvider, RRF merge in
+    AssetSearchRankingService) but blocked from real use on two external prerequisites, not code:
+    native pgvector installation on this user's local PostgreSQL, and a Voyage AI API key. Neither
+    exists yet — see §7's checklist items above and docs/specs/asset-hub.md.
+  - §8 real AI provider integration is done (Gemini on Vertex AI, `1229f4e`), including
+    prompt-injection hardening via `systemInstruction` separation (2026-09-15). No automated test
+    for adversarial input yet.
+  - §9 metrics aggregation is done (`AssetMetricsService`, `GET /asset-hub/metrics`, 2026-09-15):
+    successful-search rate, time-to-useful-result, contributor adoption, review turnaround.
   - §10's database-backed concurrency and PostgreSQL integration coverage remains deferred; unit
     coverage now protects managed-role policy/auditing, source URL validation, and search events.
+    No new automated tests were added in the 2026-09-15 pass (explicit sequencing: implementation
+    first, then a dedicated test-coverage pass) — verified by `.\mvnw.cmd compile`/`test` only.
 
 Known risks:
   - Database-backed edge coverage is still needed for concurrent reviewers, repeated decisions,
@@ -346,4 +380,7 @@ Known risks:
   - This sandbox's own embedded Tomcat could not stay up for verification (loopback-socket
     restriction) — all live verification ran against the user's own locally-run process, restarted
     several times over the course of this session.
+  - `VoyageEmbeddingProvider` and the semantic branch of `AssetLifecycleService.listAssets` have
+    never executed against a real Voyage API or a Postgres with pgvector — they are compiled and
+    reasoned about, not live-verified, unlike every other provider integration in this feature.
 ```

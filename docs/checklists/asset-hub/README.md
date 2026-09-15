@@ -60,11 +60,15 @@ they are not duplicated and allowed to drift.
 
 ## Required implementation phases
 
-**Status (2026-09-11):** Phase 0 and the manual Phase 1/2 API and portal workflows are implemented.
+**Status (2026-09-15):** Phase 0 and the manual Phase 1/2 API and portal workflows are implemented.
 API lifecycle completion is in `989e731`; portal workflow completion is in `082c4ac` and
-`0eb0538`. Dedicated
-Asset Hub test generation and accessibility verification are next. Phase 3 intelligence and
-BLOG/ARTICLE template scoring remain deliberately deferred.
+`0eb0538`. Gemini AI metadata suggestions are live (`1229f4e`), now with prompt-injection hardening.
+Phase 2 metrics aggregation (`GET /asset-hub/metrics`) is implemented. Phase 3 semantic search is
+scaffolded (`EmbeddingProvider`/`VoyageEmbeddingProvider`, RRF ranking) but not reachable in any
+deployment: it needs native pgvector on this user's local PostgreSQL and a Voyage AI API key,
+neither of which exist yet — see `docs/checklists/asset-hub/backend-api.md` §7. Dedicated Asset Hub
+test generation and accessibility verification are next. BLOG/ARTICLE template scoring remains
+deliberately deferred.
 
 ### Phase 0 — contract freeze (backend owner)
 

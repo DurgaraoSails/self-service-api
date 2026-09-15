@@ -166,14 +166,31 @@ surrounding draft/submit/review flow.
 value specifically so swapping to whatever Gemini generation is current at that time is a
 one-line change, not a code change.
 
-### Semantic search embeddings: Voyage AI (implementation pending)
+### Semantic search embeddings: Voyage AI (scaffolded, migration still pending)
 
 Semantic search (§7, deferred to Phase 3) will use Voyage AI's `voyage-4` embedding model at a
 fixed output dimension of 1024, stored in the `asset_search_documents.embedding` `vector(1024)`
 column added in the Phase 3 migration described above. Voyage AI's free tier (200M tokens on the
 voyage-4 family) covers this POC's expected volume, so no paid billing is required to ship it.
-This decision is recorded here to unblock Phase 3 but is **not yet implemented** — no
-`EmbeddingProvider`, no pgvector migration, no RRF ranking code exists yet.
+
+**2026-09-15 update:** `asset/ai/EmbeddingProvider` and `asset/ai/VoyageEmbeddingProvider` now
+exist, gated by `asset-hub.semantic-search-enabled` exactly like `GeminiAssetAiProvider` is gated by
+`asset-hub.ai-enabled` — the bean's absence is the disabled path. The RRF merge described in the
+Search Contract is implemented in `AssetSearchRankingService` and only activates when a semantic
+candidate list is non-empty. **Two things still block turning this on for real:**
+1. This user's local PostgreSQL is a **native Windows service** (`postgresql-x64-18`), not the
+   `infra/selfservice_db/compose.yaml` Docker container — "swap the local image" does not apply.
+   pgvector must be installed as a native extension into that instance before the `ALTER TABLE
+   asset_search_documents ADD COLUMN embedding vector(1024)` / `CREATE EXTENSION vector` migration
+   can be added; adding that migration before the extension exists would break every clean boot and
+   `mvnw test` run. The migration is deliberately not written yet.
+2. No Voyage AI API key exists yet. `VoyageEmbeddingProvider` has not made a real call and cannot be
+   live-verified until one is supplied (`asset-hub.embedding.api-key`).
+Until both are resolved, `AssetSearchIndexer` computes and stores only the existing metadata columns
+(`embedding_provider`/`embedding_model`/`embedding_dimensions`/`embedding_checksum`, all already
+present since the Phase 0/1 migration) when a provider bean happens to be available — it never has
+anywhere to put the actual vector, so search behavior is unchanged from today until the migration
+lands.
 
 ### PostgreSQL-backed hybrid search for the POC
 
@@ -306,6 +323,7 @@ ordering by UUID after the documented primary sort.
 | `POST /assets/{assetId}/events` | internal | `AssetEventRequest {eventType, searchSessionId?}`; only detail/source/launch types valid here. |
 | `GET /employees` | internal superadmin | Internal users only. Query: search/page/size. Returns roles needed for management. |
 | `PUT /employees/{userId}/roles` | different internal superadmin | `UpdateManagedRolesRequest {roles:[ADMIN|ASSET_REVIEWER]}`; replaces only managed roles and returns employee. |
+| `GET /asset-hub/metrics` | internal reviewer | `AssetMetricsResponse` — successful-search rate, time-to-useful-result (median/p90), contributor adoption, and review turnaround (median/p90) per the Metrics Contract. |
 
 `CreateAssetRequest` and `UpdateAssetRevisionRequest` use the same editable field group:
 
@@ -406,6 +424,31 @@ If a draft changes after a run starts, the result remains stored for audit but i
 checksum comparison and cannot be presented as current. Timeouts, provider errors, and invalid JSON
 set the run to `FAILED` with a safe error code and never alter the revision.
 
+## Metrics Contract
+
+"Feedback and measurement" (Requirements) names successful-search rate, time-to-useful-result,
+contributor adoption, and review turnaround without formulas. Defined here, per the Definition of
+Done's requirement that dashboard numbers not ship ahead of a documented calculation:
+
+- **Successful-search rate**: the share of `SEARCH` events whose `searchSessionId` has at least one
+  later `DETAIL_VIEW`, `SOURCE_OPEN`, or `POC_LAUNCH` event within 30 minutes. A search that gets no
+  follow-on engagement in that window counts as unsuccessful.
+- **Time-to-useful-result**: median and p90 elapsed time between a `SEARCH` event and its session's
+  first qualifying follow-on event (same three types as above), computed only over successful
+  sessions as defined above.
+- **Contributor adoption**: distinct internal employees with at least one submitted asset, divided by
+  the count of active internal employees, over a rolling 90-day window.
+- **Review turnaround**: median and p90 of `asset_reviews.created_at − asset_revisions.submitted_at`
+  for each revision's terminal (most recent) decision.
+- **Query-text retention**: no raw search query text is persisted anywhere in the POC (`asset_events`
+  carries only the opaque `searchSessionId`, never `q`) — this has been true since Phase 1 and is
+  recorded here as the formal policy rather than left as an open question.
+
+These are computed on demand by `AssetMetricsService` and exposed via `GET /asset-hub/metrics`
+(`ASSET_REVIEWER`-gated, same tier as `GET /asset-reviews/dashboard`). No new tables or scheduled
+aggregation job exists; every number is a live query over `asset_events`/`asset_reviews`/
+`asset_revisions`/`assets`.
+
 ## Implementation Layout
 
 Backend production code belongs under `com.sails.ai.selfserviceapi.asset`:
@@ -450,6 +493,9 @@ separate and components must stay focused.
   logged.
 - AI timeouts, maximum input length, model name, and embedding dimensions bind through validated
   `AssetHubProperties`; invalid enabled configuration fails startup.
+- Voyage AI binds through `AssetHubProperties.embedding` (`ASSET_HUB_EMBEDDING_API_KEY`,
+  `ASSET_HUB_EMBEDDING_MODEL` default `voyage-4`, `ASSET_HUB_EMBEDDING_DIMENSIONS` default `1024`),
+  read only when `asset-hub.semantic-search-enabled=true` — same lazy-binding pattern as `ai.*`.
 - Do not add any Microsoft/SharePoint credential or Graph dependency.
 - Local database setup must match production extensions before semantic search tests are enabled.
 
@@ -486,7 +532,10 @@ cross-workstream acceptance list pass, and all of the following are true:
 - Do not let role management remove a target's baseline `USER` role or alter an existing
   `SUPERADMIN` role.
 - Validate source URLs as absolute HTTP(S) URLs. Never dereference them server-side.
-- Treat catalog text as untrusted input for rendering and AI prompts.
+- Treat catalog text as untrusted input for rendering and AI prompts. Catalog field values are sent
+  to Gemini only inside the `contents` (data) turn of the request, never concatenated into the
+  `systemInstruction` (task) turn — this keeps an employee's field text from being interpreted as an
+  instruction to the model, regardless of what that text contains.
 - AI calls receive only bounded catalog fields and must return schema-validated structured output.
 - Search and detail responses must not include working revisions or review feedback unless the
   caller is explicitly authorized to see them.
@@ -510,8 +559,9 @@ reuse metric, or a redundant `Published` state.
 - BLOG and ARTICLE template fields, versions, and scoring rubrics.
 - Provider and model selection for metadata suggestions and embeddings — resolved 2026-09-11, see
   "AI metadata suggestion provider: Gemini on Vertex AI" and "Semantic search embeddings: Voyage AI
-  (implementation pending)" under Architecture Decisions. The embeddings half is a recorded
-  decision only; implementation is still open.
+  (scaffolded, migration still pending)" under Architecture Decisions. §8 is fully implemented; §7
+  is scaffolded behind `asset-hub.semantic-search-enabled=false` but blocked from real use on native
+  pgvector installation and a Voyage AI API key, neither of which exist yet.
 - Automatic SharePoint ingestion through Microsoft Graph.
 - Whether additional source adapters need trusted preview or extraction.
 - Whether role revocation requires immediate access-token invalidation rather than taking effect on
@@ -543,3 +593,17 @@ reuse metric, or a redundant `Published` state.
   hardcoded, so migrating to the current generation at that time needs no code change. §8 is now
   implemented (`asset/ai/GeminiAssetAiProvider`, `asset/service/AssetAiSuggestionService`); §7
   embeddings remain unimplemented pending the Phase 3 pgvector migration.
+- 2026-09-15 — Hardened the Gemini AI suggestion prompt against injection: the task instruction now
+  lives in Vertex's `systemInstruction` field, and the `contents` (data) turn carries only the
+  canonical catalog-field JSON, framed as untrusted data rather than task text. See Security
+  Considerations and `GeminiAssetAiProvider`.
+- 2026-09-15 — Scaffolded §7 semantic search behind `asset-hub.semantic-search-enabled` (already
+  `false` by default): `asset/ai/EmbeddingProvider` + `asset/ai/VoyageEmbeddingProvider`,
+  `AssetHubProperties.embedding` config, and `AssetSearchRankingService`'s reciprocal-rank-fusion
+  merge. The pgvector column/extension migration and a real Voyage API key are both still open —
+  see "Semantic search embeddings: Voyage AI" above for why neither is added yet. Behavior with the
+  flag off (every existing deployment) is unchanged.
+- 2026-09-15 — Defined the four open Feedback-and-measurement formulas (successful-search rate,
+  time-to-useful-result, contributor adoption, review turnaround) and the query-text retention
+  policy in the new Metrics Contract section, and added `GET /asset-hub/metrics`
+  (`AssetMetricsService`, `ASSET_REVIEWER`-gated) to expose them.
