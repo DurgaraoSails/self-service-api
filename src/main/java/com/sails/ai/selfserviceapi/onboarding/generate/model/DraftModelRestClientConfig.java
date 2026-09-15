@@ -18,7 +18,10 @@ import org.springframework.web.client.RestClient;
  * <p>Same conventions as {@code PipelineRestClientConfig}: {@link SimpleClientHttpRequestFactory}
  * rather than Spring's default JDK {@code HttpClient} (its async selector opens a loopback socket
  * that fails in some sandboxed/corporate-network environments), with an explicit connect/read
- * timeout on every client — see {@link #timeoutFactory()}.
+ * timeout on every client — see {@link #timeoutFactory}. The read timeout is
+ * {@code poc-generator.timeout} rather than a fixed constant: a model call is expected to run far
+ * longer than a plain REST call (the default is 120s), and a value hardcoded here would silently
+ * ignore whatever an operator configured.
  */
 @Configuration
 public class DraftModelRestClientConfig {
@@ -31,7 +34,7 @@ public class DraftModelRestClientConfig {
     public RestClient ollamaRestClient(DraftModelProperties properties) {
         return RestClient.builder()
                 .baseUrl(properties.ollama().baseUrl())
-                .requestFactory(timeoutFactory())
+                .requestFactory(timeoutFactory(properties.timeout()))
                 .build();
     }
 
@@ -42,7 +45,7 @@ public class DraftModelRestClientConfig {
      * this platform already authenticates to GCP the same way for Cloud Build and Cloud Run.
      */
     @Bean(VERTEX)
-    public RestClient vertexAiRestClient() {
+    public RestClient vertexAiRestClient(DraftModelProperties properties) {
         Supplier<GoogleCredentials> credentials = lazily(() -> {
             try {
                 return GoogleCredentials.getApplicationDefault()
@@ -56,7 +59,7 @@ public class DraftModelRestClientConfig {
 
         return RestClient.builder()
                 .baseUrl("https://aiplatform.googleapis.com")
-                .requestFactory(timeoutFactory())
+                .requestFactory(timeoutFactory(properties.timeout()))
                 .requestInterceptor((request, body, execution) -> {
                     GoogleCredentials resolved = credentials.get();
                     resolved.refreshIfExpired();
@@ -66,10 +69,10 @@ public class DraftModelRestClientConfig {
                 .build();
     }
 
-    private static SimpleClientHttpRequestFactory timeoutFactory() {
+    private static SimpleClientHttpRequestFactory timeoutFactory(Duration readTimeout) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
-        factory.setReadTimeout(Duration.ofSeconds(15));
+        factory.setReadTimeout(readTimeout);
         return factory;
     }
 

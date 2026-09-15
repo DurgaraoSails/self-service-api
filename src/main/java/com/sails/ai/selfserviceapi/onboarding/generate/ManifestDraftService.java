@@ -158,7 +158,18 @@ public class ManifestDraftService {
 
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             String json = model.draft(new ModelRequest(SYSTEM_PROMPT, userPrompt, JSON_SCHEMA, properties.timeout()));
-            DraftResponse response = objectMapper.readValue(json, DraftResponse.class);
+            DraftResponse response;
+            try {
+                response = objectMapper.readValue(json, DraftResponse.class);
+            } catch (RuntimeException e) {
+                // A schema-constrained model can still return text that doesn't parse (truncated
+                // output the truncation guards below missed, a stray markdown fence, etc.) — this
+                // counts as a failed attempt with a repair message, never an uncaught 500. Jackson
+                // 3's exceptions are already unchecked, so nothing has to declare this.
+                violations = List.of("the response was not valid JSON matching the schema: " + e.getMessage());
+                userPrompt = buildUserPrompt(inventory, existingManifestYaml, violations);
+                continue;
+            }
             PocManifest manifest = toManifest(response);
             violations = validator.validate(manifest);
             if (violations.isEmpty()) {

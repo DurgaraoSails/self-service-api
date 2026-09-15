@@ -9,6 +9,7 @@ import com.sails.ai.selfserviceapi.deploypipeline.manifest.Scaling;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
@@ -25,7 +26,15 @@ import org.springframework.stereotype.Component;
 public class ManifestYamlWriter {
 
     private static final Pattern SIMPLE_SCALAR = Pattern.compile("^[A-Za-z0-9._/${}-]+$");
-    private static final Pattern LOOKS_LIKE_NUMBER = Pattern.compile("^-?\\d+(\\.\\d+)?$");
+    private static final Pattern PLAIN_NUMBER = Pattern.compile("^[-+]?\\d+(\\.\\d+)?$");
+    private static final Pattern HEX_NUMBER = Pattern.compile("^[-+]?0[xX][0-9A-Fa-f]+$");
+    private static final Pattern EXPONENTIAL_NUMBER = Pattern.compile("^[-+]?\\d+(\\.\\d+)?[eE][-+]?\\d+$");
+    private static final Pattern ISO_DATE = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}([Tt ].*)?$");
+    /** YAML 1.1's core-schema boolean/null words — SnakeYAML retypes these on the round trip back through ManifestParser. */
+    private static final Set<String> YAML_11_RETYPED_WORDS =
+            Set.of("y", "n", "yes", "no", "true", "false", "on", "off", "null", "~");
+    /** A value starting with any of these is a YAML indicator in some position — quoted rather than reasoned about contextually. */
+    private static final String INDICATOR_START_CHARS = "-?:,[]{}#&*!|>'\"%@`";
 
     public String write(PocManifest manifest, List<String> assumptions) {
         StringBuilder out = new StringBuilder();
@@ -79,13 +88,13 @@ public class ManifestYamlWriter {
                 ? "# receives all external traffic"
                 : "# reachable from other containers, never from a browser";
         out.append("    role: ").append(container.role().name().toLowerCase()).append(' ').append(roleComment).append('\n');
-        out.append("    dockerfile: ").append(container.dockerfile()).append(" # path from the repository root\n");
-        out.append("    context: ").append(container.context()).append(" # also from the repository root\n");
+        out.append("    dockerfile: ").append(scalar(container.dockerfile())).append(" # path from the repository root\n");
+        out.append("    context: ").append(scalar(container.context())).append(" # also from the repository root\n");
         if (container.port() != null) {
             out.append("    port: ").append(container.port()).append('\n');
         }
         if (container.health() != null && !container.health().isBlank()) {
-            out.append("    health: ").append(container.health()).append('\n');
+            out.append("    health: ").append(scalar(container.health())).append('\n');
         }
         writeEnv(out, container.env());
         writeRequires(out, container.requires());
@@ -96,7 +105,12 @@ public class ManifestYamlWriter {
             return;
         }
         out.append("    env:\n");
-        env.forEach((key, value) -> out.append("      ").append(key).append(": ").append(scalar(value)).append('\n'));
+        // Always quoted, never conditionally — an env value is the least predictable string this
+        // writer handles (arbitrary model output or an imported literal). The cost is one pair of
+        // quote characters; the alternative is a bare value like "on" silently becoming the
+        // boolean true on the round trip back through ManifestParser, or one containing ": "
+        // silently starting a new mapping key.
+        env.forEach((key, value) -> out.append("      ").append(key).append(": ").append(quote(value)).append('\n'));
     }
 
     private void writeRequires(StringBuilder out, List<ManifestRequirement> requires) {
@@ -117,10 +131,10 @@ public class ManifestYamlWriter {
         out.append("# --- Applies to the ingress container. Sidecars get Cloud Run's defaults. -----\n");
         out.append("resources:\n");
         if (resources.cpu() != null) {
-            out.append("  cpu: \"").append(resources.cpu()).append("\"\n");
+            out.append("  cpu: ").append(quote(resources.cpu())).append('\n');
         }
         if (resources.memory() != null) {
-            out.append("  memory: ").append(resources.memory()).append('\n');
+            out.append("  memory: ").append(scalar(resources.memory())).append('\n');
         }
         out.append('\n');
     }
@@ -178,14 +192,46 @@ public class ManifestYamlWriter {
                 """);
     }
 
+    /** Bare when safe, quoted when {@link #needsQuoting} says a plain scalar would round-trip wrong. */
     private String scalar(String value) {
         if (value == null) {
             return "\"\"";
         }
-        if (!value.isEmpty() && SIMPLE_SCALAR.matcher(value).matches() && !LOOKS_LIKE_NUMBER.matcher(value).matches()) {
-            return value;
+        return needsQuoting(value) ? quote(value) : value;
+    }
+
+    /**
+     * True whenever a plain (unquoted) YAML scalar would not mean {@code value} literally: any
+     * character outside the conservative safe set, one of YAML 1.1's core-schema retyped words
+     * (SnakeYAML — which {@code ManifestParser} uses — resolves {@code on}/{@code yes}/etc. as
+     * booleans, hex/exponential numbers and ISO dates as their typed forms), or a leading character
+     * that is a YAML indicator in some position. Over-quoting costs nothing; under-quoting corrupts
+     * the value silently on the round trip back through {@code ManifestParser}.
+     */
+    private boolean needsQuoting(String value) {
+        if (value.isEmpty()) {
+            return true;
         }
-        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        if (!SIMPLE_SCALAR.matcher(value).matches()) {
+            return true;
+        }
+        if (YAML_11_RETYPED_WORDS.contains(value.toLowerCase())) {
+            return true;
+        }
+        if (PLAIN_NUMBER.matcher(value).matches() || HEX_NUMBER.matcher(value).matches()
+                || EXPONENTIAL_NUMBER.matcher(value).matches() || ISO_DATE.matcher(value).matches()) {
+            return true;
+        }
+        return INDICATOR_START_CHARS.indexOf(value.charAt(0)) >= 0;
+    }
+
+    /** Always double-quoted, with {@code \}, {@code "} and newlines escaped — see {@link #writeEnv}. */
+    private String quote(String value) {
+        if (value == null) {
+            return "\"\"";
+        }
+        String escaped = value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+        return "\"" + escaped + "\"";
     }
 
     private List<String> wrap(String text) {

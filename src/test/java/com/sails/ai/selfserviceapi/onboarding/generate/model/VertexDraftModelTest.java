@@ -80,6 +80,19 @@ class VertexDraftModelTest {
      * Simulated here with a transport failure, the closest thing MockRestServiceServer can produce
      * to the interceptor-level failure a real credential problem causes.
      */
+    /** A finishReason other than STOP (e.g. MAX_TOKENS) means the response was cut off — the JSON is truncated. */
+    @Test
+    void aTruncatedResponseBecomesAFailureNotAMalformedDraft() {
+        server.expect(requestTo(URL))
+                .andRespond(withSuccess("""
+                        {"candidates":[{"finishReason":"MAX_TOKENS","content":{"role":"model","parts":[{"text":"{\\"containers\\":["}]}}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> model.draft(new ModelRequest("s", "u", "{}", Duration.ofSeconds(30))))
+                .isInstanceOf(ManifestDraftException.class)
+                .hasMessageContaining("MAX_TOKENS");
+    }
+
     @Test
     void aTransportFailureBecomesAManifestDraftExceptionNotARawTransportError() {
         server.expect(requestTo(URL))

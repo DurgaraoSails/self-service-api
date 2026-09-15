@@ -41,6 +41,10 @@ public class RepoInventoryService {
     private static final Set<String> ENTRYPOINT_BASENAMES = Set.of(
             "main.py", "app.py", "index.js", "index.ts", "server.js", "server.ts", "main.go", "program.cs");
 
+    /** Dependency/build output a model gains nothing from reading, and that alone could exhaust the byte cap. */
+    private static final Set<String> VENDOR_DIRECTORIES = Set.of(
+            "node_modules", "vendor", "dist", "build", "target", ".venv", "venv", "__pycache__", ".next");
+
     private final GitHubService gitHubService;
 
     public RepoInventoryService(GitHubService gitHubService) {
@@ -88,11 +92,18 @@ public class RepoInventoryService {
         List<GitHubTreeEntry> entrypoints = new ArrayList<>();
 
         for (GitHubTreeEntry entry : tree.entries()) {
-            if (!entry.isBlob()) {
+            if (!entry.isBlob() || isUnderVendorDirectory(entry.path())) {
                 continue;
             }
             String basename = basename(entry.path());
             String lower = basename.toLowerCase();
+            if (isForbiddenAsRawEvidence(lower)) {
+                // cloudbuild.yaml is read by CloudBuildImporter, never pasted into a prompt raw —
+                // it routinely carries secret literals. .env*/*.pem are credential-shaped by
+                // definition. None of the buckets below should ever select one, but this is the
+                // one place that guarantees it regardless of how those buckets grow.
+                continue;
+            }
             if (lower.equals("dockerfile") || lower.startsWith("dockerfile.")) {
                 dockerfiles.add(entry);
             } else if (lower.equals("poc.yaml") || lower.equals("poc.yml")) {
@@ -124,5 +135,20 @@ public class RepoInventoryService {
     private String basename(String path) {
         int slash = path.lastIndexOf('/');
         return slash < 0 ? path : path.substring(slash + 1);
+    }
+
+    private boolean isUnderVendorDirectory(String path) {
+        String[] segments = path.split("/");
+        for (int i = 0; i < segments.length - 1; i++) {
+            if (VENDOR_DIRECTORIES.contains(segments[i])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isForbiddenAsRawEvidence(String lowerBasename) {
+        return lowerBasename.startsWith("cloudbuild") || lowerBasename.startsWith(".env")
+                || lowerBasename.endsWith(".pem");
     }
 }

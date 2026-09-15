@@ -98,6 +98,19 @@ class OllamaDraftModelTest {
      * the one type PocManifestGenerationService knows how to degrade gracefully from, not as a raw
      * RestClientException.
      */
+    /** done_reason "length" means num_predict was hit before the closing brace — the JSON is truncated. */
+    @Test
+    void aTruncatedResponseBecomesAFailureNotAMalformedDraft() {
+        server.expect(requestTo(BASE + "/api/chat"))
+                .andRespond(withSuccess("""
+                        {"message":{"role":"assistant","content":"{\\"containers\\":["},"done_reason":"length"}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> model.draft(new ModelRequest("s", "u", "{}", Duration.ofSeconds(30))))
+                .isInstanceOf(ManifestDraftException.class)
+                .hasMessageContaining("truncated");
+    }
+
     @Test
     void aConnectionFailureBecomesAManifestDraftExceptionNotARawTransportError() {
         server.expect(requestTo(BASE + "/api/chat"))

@@ -93,6 +93,34 @@ class ManifestDraftServiceTest {
         assertThat(promptsSeen).hasSize(3);
     }
 
+    /**
+     * A schema-constrained model can still return text that doesn't parse (a stray markdown fence,
+     * truncated output the adapters' own guards missed). This must count as a failed attempt with a
+     * repair message, never an uncaught 500 — the whole point of running every draft through a
+     * bounded repair loop rather than trusting the first response.
+     */
+    @Test
+    void malformedJsonIsAFailedAttemptNotAnUncaught500() {
+        List<String> promptsSeen = new ArrayList<>();
+        ManifestDraftModel model = scripted("stub", promptsSeen, "not json at all {{{", VALID_JSON);
+
+        ManifestDraftResult result = serviceWithModel(model).draft(fixtureInventory(), null);
+
+        assertThat(result.manifest().ingress().name()).isEqualTo("app");
+        assertThat(promptsSeen).hasSize(2);
+        assertThat(promptsSeen.get(1)).contains("not valid JSON");
+    }
+
+    /** Three malformed responses in a row must still give up rather than loop forever or throw an unexpected type. */
+    @Test
+    void exhaustingEveryAttemptOnMalformedJsonFailsAsAValidationException() {
+        ManifestDraftModel model = scripted("stub", new ArrayList<>(),
+                "not json", "still not json", "definitely not json");
+
+        assertThatThrownBy(() -> serviceWithModel(model).draft(fixtureInventory(), null))
+                .isInstanceOf(ManifestDraftValidationException.class);
+    }
+
     @Test
     void secretLiteralsInEvidenceBecomeWarningsNeverManifestValues() {
         GitHubTree tree = new GitHubTree(List.of(new GitHubTreeEntry(".env", "blob", 40L)), false);

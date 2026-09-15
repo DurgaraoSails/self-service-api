@@ -352,12 +352,12 @@ public class CloudRunDeployCommandBuilder {
         if (secrets.isEmpty()) {
             return;
         }
-        String bindings = secrets.stream()
-                .map(requirement -> requirement.name() + "="
-                        + gcp.pocSecretId(pocSlug, container.name(), requirement.name()) + ":latest")
-                .collect(Collectors.joining(";"));
-        // Same alternate-delimiter form as envArg, for the same reason.
-        args.add("--set-secrets=^;^" + bindings);
+        LinkedHashMap<String, String> bindings = new LinkedHashMap<>();
+        for (ManifestRequirement requirement : secrets) {
+            bindings.put(requirement.name(),
+                    gcp.pocSecretId(pocSlug, container.name(), requirement.name()) + ":latest");
+        }
+        args.add(delimitedFlag("--set-secrets=", bindings));
     }
 
     /**
@@ -366,10 +366,45 @@ public class CloudRunDeployCommandBuilder {
      * itself contain a comma.
      */
     private String envArg(Map<String, String> env) {
-        String joined = env.entrySet().stream()
+        return delimitedFlag("--set-env-vars=", new LinkedHashMap<>(env));
+    }
+
+    /** Delimiters tried after {@code ;}, in order, each one gcloud also accepts as {@code ^X^}. */
+    private static final char[] DELIMITER_FALLBACKS = {'|', '@', '~', '#'};
+
+    /**
+     * {@code ^;^} is gcloud's own escape for "my values may contain commas", which every value in
+     * this platform's env/secret args already needs — {@code ;} was picked because no manifest
+     * value has ever needed it either. A value that does contain a literal {@code ;} (free text an
+     * author wrote, or a Dockerfile/model-derived env value) would otherwise be split mid-value, so
+     * the delimiter itself falls back to the first of {@code | @ ~ #} that appears in none of the
+     * keys or values — {@code ;} remains the default specifically so every manifest written before
+     * this existed produces byte-identical arguments.
+     */
+    private String delimitedFlag(String flagPrefix, LinkedHashMap<String, String> pairs) {
+        char delimiter = chooseDelimiter(pairs);
+        String joined = pairs.entrySet().stream()
                 .map(entry -> entry.getKey() + "=" + entry.getValue())
-                .reduce((a, b) -> a + ";" + b)
-                .orElse("");
-        return "--set-env-vars=^;^" + joined;
+                .collect(Collectors.joining(String.valueOf(delimiter)));
+        return flagPrefix + "^" + delimiter + "^" + joined;
+    }
+
+    private char chooseDelimiter(Map<String, String> pairs) {
+        if (containsNoCandidate(pairs, ';')) {
+            return ';';
+        }
+        for (char candidate : DELIMITER_FALLBACKS) {
+            if (containsNoCandidate(pairs, candidate)) {
+                return candidate;
+            }
+        }
+        // Every candidate collides with some key or value — vanishingly unlikely, and ';' is no
+        // worse a choice than any other at that point.
+        return ';';
+    }
+
+    private boolean containsNoCandidate(Map<String, String> pairs, char candidate) {
+        return pairs.entrySet().stream()
+                .noneMatch(e -> e.getKey().indexOf(candidate) >= 0 || e.getValue().indexOf(candidate) >= 0);
     }
 }

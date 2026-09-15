@@ -114,4 +114,50 @@ class RepoInventoryServiceTest {
 
         assertThat(service.inventory(REPO, SHA).treeTruncated()).isTrue();
     }
+
+    /** A vendored/build-output Dockerfile (e.g. inside a checked-in node_modules) is never real evidence. */
+    @Test
+    void skipsFilesUnderVendorDirectories() {
+        GitHubTree tree = new GitHubTree(List.of(
+                new GitHubTreeEntry("node_modules/some-pkg/Dockerfile", "blob", 10L),
+                new GitHubTreeEntry("vendor/lib/package.json", "blob", 10L),
+                new GitHubTreeEntry("apps/web/dist/package.json", "blob", 10L),
+                new GitHubTreeEntry("apps/web/build/package.json", "blob", 10L),
+                new GitHubTreeEntry("target/classes/pom.xml", "blob", 10L),
+                new GitHubTreeEntry(".venv/lib/requirements.txt", "blob", 10L),
+                new GitHubTreeEntry("venv/lib/requirements.txt", "blob", 10L),
+                new GitHubTreeEntry("__pycache__/requirements.txt", "blob", 10L),
+                new GitHubTreeEntry(".next/cache/package.json", "blob", 10L),
+                new GitHubTreeEntry("package.json", "blob", 10L)), false);
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(tree);
+        stubFile("package.json", "{}");
+
+        RepoInventory inventory = service.inventory(REPO, SHA);
+
+        assertThat(inventory.evidenceFiles()).extracting(RepoInventory.EvidenceFile::path)
+                .containsExactly("package.json");
+    }
+
+    /**
+     * cloudbuild.yaml routinely carries secret literals (--set-env-vars, inline creds) and is read
+     * by the dedicated importer, never pasted raw into a model prompt. Dotenv files and PEM files
+     * are credential-shaped by definition.
+     */
+    @Test
+    void neverSelectsCloudbuildDotenvOrPemFilesAsRawEvidence() {
+        GitHubTree tree = new GitHubTree(List.of(
+                new GitHubTreeEntry("cloudbuild.yaml", "blob", 10L),
+                new GitHubTreeEntry("cloudbuild-prod.yml", "blob", 10L),
+                new GitHubTreeEntry(".env", "blob", 10L),
+                new GitHubTreeEntry(".env.local", "blob", 10L),
+                new GitHubTreeEntry("secrets/service-account.pem", "blob", 10L),
+                new GitHubTreeEntry("package.json", "blob", 10L)), false);
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(tree);
+        stubFile("package.json", "{}");
+
+        RepoInventory inventory = service.inventory(REPO, SHA);
+
+        assertThat(inventory.evidenceFiles()).extracting(RepoInventory.EvidenceFile::path)
+                .containsExactly("package.json");
+    }
 }

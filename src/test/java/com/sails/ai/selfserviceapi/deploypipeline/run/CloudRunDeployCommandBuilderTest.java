@@ -127,6 +127,27 @@ class CloudRunDeployCommandBuilderTest {
                 "--set-env-vars=^;^LOG_LEVEL=info;PLATFORM_API_URL=https://self-service-api.example.com;POC_SLUG=my-poc;PORTAL_ORIGIN=https://portal.example.com");
     }
 
+    /**
+     * A value containing the delimiter itself would otherwise be split mid-value by gcloud's
+     * {@code ^;^} alternate-delimiter parsing — the fallback exists for exactly this env value
+     * shape (free text with a semicolon in it, e.g. a User-Agent string or a SQL DSN option list).
+     */
+    @Test
+    void anEnvValueContainingTheDelimiterFallsBackToAnUnusedOne() {
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", null,
+                Map.of("USER_AGENT", "MyApp/1.0; +https://example.com"));
+        PocManifest manifest = new PocManifest(List.of(api), new Resources(null, null));
+
+        List<String> args = builder.buildContainerArgs("my-poc", manifest, Map.of("api", "img/api:1"));
+
+        assertThat(args).anySatisfy(arg -> {
+            assertThat(arg).startsWith("--set-env-vars=^|^");
+            assertThat(arg).contains("USER_AGENT=MyApp/1.0; +https://example.com");
+            // Every other pair still uses the same chosen delimiter, not the default.
+            assertThat(arg).doesNotContain("^;^");
+        });
+    }
+
     @Test
     void aSidecarGetsNoSvcUrlForItselfOnlyForOtherSidecars() {
         ManifestContainer api = new ManifestContainer("api", ContainerRole.INGRESS, "Dockerfile", ".", 8080, Map.of());

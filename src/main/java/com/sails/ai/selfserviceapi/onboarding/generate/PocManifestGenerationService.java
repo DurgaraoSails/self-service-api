@@ -87,7 +87,26 @@ public class PocManifestGenerationService {
         return generateForCommit(repo.get(), sha, checkResult);
     }
 
+    /**
+     * A GitHub read can fail transiently anywhere past the initial branch-head check above (rate
+     * limit, a momentary 5xx) — {@code resolveForBuild}, the tree/evidence reads, or the raw
+     * poc.yaml re-read on the correction path all reach GitHub again. Every one of those failures
+     * degrades the same way an unreachable draft model does, rather than escaping as this
+     * endpoint's own 502 the way it used to.
+     */
     private PocManifestGenerationResult generateForCommit(GitHubRepoRef repo, String sha, OnboardingCheckResult checkResult) {
+        try {
+            return generateForCommitOrThrow(repo, sha, checkResult);
+        } catch (GitHubApiException e) {
+            log.debug("GitHub read failed mid-generation for {}: {}", repo, e.getMessage());
+            return PocManifestGenerationResult.unavailable(checkResult,
+                    "The repository could not be fully read (" + e.getMessage() + "). Here is the platform's "
+                            + "own poc.yaml template instead.", loadTemplate());
+        }
+    }
+
+    private PocManifestGenerationResult generateForCommitOrThrow(GitHubRepoRef repo, String sha,
+                                                                   OnboardingCheckResult checkResult) {
         String existingManifestYaml = null;
         boolean correcting = false;
 

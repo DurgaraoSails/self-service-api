@@ -22,6 +22,9 @@ public class VertexDraftModel implements ManifestDraftModel {
     private static final Logger log = LoggerFactory.getLogger(VertexDraftModel.class);
     private static final String NAME = "vertex";
 
+    /** Same rationale as {@code OllamaDraftModel.MAX_OUTPUT_TOKENS} — a poc.yaml draft is a few KB of JSON at most. */
+    private static final int MAX_OUTPUT_TOKENS = 8192;
+
     private final RestClient restClient;
     private final DraftModelProperties properties;
 
@@ -71,14 +74,28 @@ public class VertexDraftModel implements ManifestDraftModel {
                     .body(new GenerateContentRequest(
                             List.of(new Content("user", List.of(new Part(request.userPrompt())))),
                             new SystemInstruction(List.of(new Part(request.systemPrompt()))),
-                            new GenerationConfig("application/json", request.jsonSchema(), 0)))
+                            new GenerationConfig("application/json", request.jsonSchema(), 0, MAX_OUTPUT_TOKENS)))
                     .retrieve()
                     .body(GenerateContentResponse.class);
         } catch (RuntimeException e) {
             throw new ManifestDraftException("Vertex AI call failed: " + e.getMessage(), e);
         }
 
-        String text = firstTextPart(response);
+        Candidate candidate = firstCandidate(response);
+        if (candidate == null) {
+            throw new ManifestDraftException("Vertex AI returned no candidates");
+        }
+        // MAX_TOKENS (and anything else other than STOP) means the response was cut off before the
+        // model finished — the JSON is truncated and therefore unparseable, so this fails the
+        // attempt (feeding the repair loop) rather than handing malformed output onward. A blank
+        // finishReason is treated as STOP: older API responses may omit it on a normal completion.
+        String finishReason = candidate.finishReason();
+        if (finishReason != null && !finishReason.isBlank() && !"STOP".equals(finishReason)) {
+            throw new ManifestDraftException("Vertex AI response did not finish normally (finishReason="
+                    + finishReason + ")");
+        }
+
+        String text = firstTextPart(candidate);
         if (text == null) {
             throw new ManifestDraftException("Vertex AI returned no candidates");
         }
@@ -91,11 +108,15 @@ public class VertexDraftModel implements ManifestDraftModel {
                 .formatted(vertex.project(), vertex.location(), vertex.model());
     }
 
-    private String firstTextPart(GenerateContentResponse response) {
+    private Candidate firstCandidate(GenerateContentResponse response) {
         if (response == null || response.candidates() == null || response.candidates().isEmpty()) {
             return null;
         }
-        Content content = response.candidates().get(0).content();
+        return response.candidates().get(0);
+    }
+
+    private String firstTextPart(Candidate candidate) {
+        Content content = candidate.content();
         if (content == null || content.parts() == null || content.parts().isEmpty()) {
             return null;
         }
@@ -121,12 +142,12 @@ public class VertexDraftModel implements ManifestDraftModel {
      */
     private record GenerationConfig(@JsonProperty("responseMimeType") String responseMimeType,
                                      @JsonProperty("responseSchema") @JsonRawValue String responseSchema,
-                                     double temperature) {
+                                     double temperature, @JsonProperty("maxOutputTokens") int maxOutputTokens) {
     }
 
     private record GenerateContentResponse(List<Candidate> candidates) {
     }
 
-    private record Candidate(Content content) {
+    private record Candidate(Content content, @JsonProperty("finishReason") String finishReason) {
     }
 }

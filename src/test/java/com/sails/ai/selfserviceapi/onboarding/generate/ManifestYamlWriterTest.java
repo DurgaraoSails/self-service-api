@@ -89,6 +89,43 @@ class ManifestYamlWriterTest {
         assertThat(reparsed.ingress().env().get("ALLOWED_ORIGIN")).isEqualTo("https://example.com:8443/path");
     }
 
+    /**
+     * SnakeYAML's default resolver implements YAML 1.1's core schema, which retypes several bare
+     * words and number shapes on the way back through {@code ManifestParser} — "on" becomes the
+     * boolean true, "0x1F" becomes the integer 31, "1e3" becomes the float 1000.0, and an ISO date
+     * becomes a java.util.Date. Each must survive the round trip as the exact literal string.
+     */
+    @Test
+    void everyValueYaml11WouldRetypeSurvivesTheRoundTrip() {
+        assertEnvValueRoundTrips("yes");
+        assertEnvValueRoundTrips("no");
+        assertEnvValueRoundTrips("on");
+        assertEnvValueRoundTrips("0x1F");
+        assertEnvValueRoundTrips("1e3");
+        assertEnvValueRoundTrips("2026-09-15");
+    }
+
+    /** {, :, and # are YAML-significant in ways that corrupt structure, not just type, if left bare. */
+    @Test
+    void aValueContainingYamlSignificantCharactersSurvivesTheRoundTrip() {
+        assertEnvValueRoundTrips("{a}");
+        assertEnvValueRoundTrips("a: b");
+        assertEnvValueRoundTrips("x #y");
+    }
+
+    private void assertEnvValueRoundTrips(String value) {
+        Map<String, String> env = Map.of("VALUE", value);
+        PocManifest manifest = new PocManifest(
+                List.of(new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null, env)),
+                new Resources(null, null));
+
+        String yaml = writer.write(manifest, List.of());
+        PocManifest reparsed = parser.parse(yaml);
+
+        assertThat(validator.validate(reparsed)).isEmpty();
+        assertThat(reparsed.ingress().env().get("VALUE")).isEqualTo(value);
+    }
+
     @Test
     void assumptionsAppearOnlyAsComments() {
         PocManifest manifest = new PocManifest(

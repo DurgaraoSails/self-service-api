@@ -190,6 +190,23 @@ class PocManifestGenerationServiceTest {
         assertThat(result.warnings()).anySatisfy(w -> assertThat(w).contains("Connection refused"));
     }
 
+    /**
+     * A GitHub read past the initial branch-head check (resolveForBuild, tree/evidence reads) can
+     * still fail transiently — a rate limit, a momentary 5xx. This used to escape as this
+     * endpoint's own 502; it must degrade the same way an unreachable draft model does instead.
+     */
+    @Test
+    void aGitHubFailureMidGenerationDegradesToUnavailableRatherThanEscaping() {
+        when(manifestService.resolveForBuild(REPO, SHA))
+                .thenThrow(new GitHubApiException("rate limited"));
+
+        PocManifestGenerationResult result = service.generate(URL, BRANCH);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.UNAVAILABLE);
+        assertThat(result.pocYaml()).contains("yaml-language-server");
+        assertThat(result.warnings()).anySatisfy(w -> assertThat(w).contains("rate limited"));
+    }
+
     @Test
     void repositoryAccessProblemsSkipGenerationEntirely() {
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.NO_PUSH);

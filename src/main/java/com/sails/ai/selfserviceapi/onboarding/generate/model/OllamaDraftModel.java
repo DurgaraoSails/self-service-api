@@ -27,6 +27,13 @@ public class OllamaDraftModel implements ManifestDraftModel {
     private static final Logger log = LoggerFactory.getLogger(OllamaDraftModel.class);
     private static final String NAME = "ollama";
 
+    /**
+     * A poc.yaml draft is small — a few KB of JSON at most. Capping generation this low is a second,
+     * independent guard (alongside schema constraining) against a model that runs away rather than
+     * emitting the closing brace, which would otherwise tie up the connection until the read timeout.
+     */
+    private static final int MAX_OUTPUT_TOKENS = 8192;
+
     private final RestClient restClient;
     private final DraftModelProperties properties;
 
@@ -73,7 +80,8 @@ public class OllamaDraftModel implements ManifestDraftModel {
                                     new Message("user", request.userPrompt())),
                             false,
                             request.jsonSchema(),
-                            new Options(properties.ollama().numCtx(), 0)))
+                            new Options(properties.ollama().numCtx(), MAX_OUTPUT_TOKENS,
+                                    properties.ollama().temperature())))
                     .retrieve()
                     .body(ChatResponse.class);
         } catch (RestClientException e) {
@@ -81,6 +89,13 @@ public class OllamaDraftModel implements ManifestDraftModel {
         }
         if (response == null || response.message() == null || response.message().content() == null) {
             throw new ManifestDraftException("Ollama returned an empty response");
+        }
+        // "length" means num_predict was hit before the model reached its closing brace — the JSON
+        // is truncated and therefore unparseable, so this fails the attempt (feeding the repair
+        // loop) rather than handing ManifestDraftService malformed output to puzzle over.
+        if ("length".equals(response.doneReason())) {
+            throw new ManifestDraftException("Ollama's response was truncated at " + MAX_OUTPUT_TOKENS
+                    + " tokens before finishing");
         }
         return response.message().content();
     }
@@ -98,10 +113,10 @@ public class OllamaDraftModel implements ManifestDraftModel {
     private record Message(String role, String content) {
     }
 
-    /** {@code temperature: 0} — a repair loop asking the same question twice wants the same answer. */
-    private record Options(@JsonProperty("num_ctx") int numCtx, double temperature) {
+    private record Options(@JsonProperty("num_ctx") int numCtx, @JsonProperty("num_predict") int numPredict,
+                            double temperature) {
     }
 
-    private record ChatResponse(Message message) {
+    private record ChatResponse(Message message, @JsonProperty("done_reason") String doneReason) {
     }
 }
