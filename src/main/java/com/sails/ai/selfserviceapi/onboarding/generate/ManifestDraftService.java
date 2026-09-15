@@ -61,6 +61,15 @@ public class ManifestDraftService {
             everything about the previous draft that was not named as a problem.
             """;
 
+    /**
+     * {@code port}/{@code health} are deliberately plain, single-typed schemas rather than JSON
+     * Schema's {@code {"type": ["integer","null"]}} union form. Vertex's {@code responseSchema} is
+     * a proto-backed {@code Schema} whose {@code type} field is a single scalar, not a repeated
+     * one, and rejects an array there outright ("Proto field is not repeating, cannot start list") —
+     * confirmed by a real 400 from Vertex naming exactly these two fields by index. Neither is in
+     * {@code required} below, so the model omits the field entirely to mean "no value" instead of
+     * writing an explicit null — which every provider's schema dialect agrees on, unlike nullability.
+     */
     private static final String JSON_SCHEMA = """
             {
               "type": "object",
@@ -76,8 +85,8 @@ public class ManifestDraftService {
                       "role": {"type": "string", "enum": ["ingress", "sidecar"]},
                       "dockerfile": {"type": "string"},
                       "context": {"type": "string"},
-                      "port": {"type": ["integer", "null"]},
-                      "health": {"type": ["string", "null"]},
+                      "port": {"type": "integer"},
+                      "health": {"type": "string"},
                       "env": {"type": "object", "additionalProperties": {"type": "string"}},
                       "requires": {
                         "type": "array",

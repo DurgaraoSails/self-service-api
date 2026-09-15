@@ -106,6 +106,40 @@ class ManifestDraftServiceTest {
         assertThat(result.manifest().ingress().env()).doesNotContainKey("OPENAI_API_KEY");
     }
 
+    /**
+     * Vertex's {@code responseSchema} is a proto-backed {@code Schema} whose {@code type} field is
+     * a single scalar, not a repeated one — it rejects JSON Schema's {@code {"type": ["integer",
+     * "null"]}} union form outright with a 400 ("Proto field is not repeating, cannot start list"),
+     * confirmed against a real Vertex call. Regression guard: the one schema shared by every
+     * provider must never reintroduce a type array.
+     */
+    @Test
+    void theSchemaNeverUsesAJsonSchemaTypeArrayVertexCannotAccept() {
+        List<String> schemasSeen = new ArrayList<>();
+        ManifestDraftModel model = new ManifestDraftModel() {
+            @Override
+            public String name() {
+                return "stub";
+            }
+
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+
+            @Override
+            public String draft(ModelRequest request) {
+                schemasSeen.add(request.jsonSchema());
+                return VALID_JSON;
+            }
+        };
+
+        serviceWithModel(model).draft(fixtureInventory(), null);
+
+        assertThat(schemasSeen).singleElement().satisfies(schema ->
+                assertThat(schema).doesNotContain("\"type\": [").doesNotContain("\"type\":["));
+    }
+
     private static ManifestDraftModel scripted(String name, List<String> promptsSeen, String... responses) {
         Deque<String> queue = new ArrayDeque<>(List.of(responses));
         return new ManifestDraftModel() {
