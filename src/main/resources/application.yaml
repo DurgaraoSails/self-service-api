@@ -186,6 +186,38 @@ manifest:
   # gcloud error partway through a deploy.
   max-containers: ${MANIFEST_MAX_CONTAINERS:8}
 
+# Drafts a poc.yaml (and missing Dockerfiles) from a repository via an LLM, behind
+# /poc-onboarding/generate. Every draft still passes through the real ManifestValidator before it
+# reaches a caller, so nothing here can weaken what a manifest is allowed to look like.
+poc-generator:
+  # False turns the model call off outright — the endpoint still answers, but always with outcome
+  # UNAVAILABLE and the platform's own poc.yaml.template, never a hard failure.
+  enabled: ${POC_GENERATOR_ENABLED:false}
+  # 'ollama' (a local, unauthenticated daemon — nothing leaves the machine) or 'vertex' (this
+  # platform's existing GCP ADC auth, the same credential Cloud Build/Cloud Run already use, so no
+  # new secret to manage). Matched against each ManifestDraftModel's own name().
+  provider: ${POC_GENERATOR_PROVIDER:ollama}
+  # A model call is expected to run far longer than a plain REST call — independent of the
+  # adapters' own connect/read timeouts.
+  timeout: ${POC_GENERATOR_TIMEOUT:120s}
+  ollama:
+    base-url: ${POC_GENERATOR_OLLAMA_BASE_URL:http://localhost:11434}
+    # Needs a code-capable model with real context — a small general-purpose model both hallucinates
+    # manifest shapes more freely and has less context to lose to truncation.
+    model: ${POC_GENERATOR_OLLAMA_MODEL:qwen2.5-coder:32b}
+    # Always set explicitly — Ollama's own default context is small in many builds and silently
+    # truncates long input, which here means a manifest confidently drafted from half a repository.
+    num-ctx: ${POC_GENERATOR_OLLAMA_NUM_CTX:32000}
+    temperature: ${POC_GENERATOR_OLLAMA_TEMPERATURE:0}
+  vertex:
+    # The GCP project Vertex AI calls are billed and quota'd against. Required when provider=vertex;
+    # blank leaves the adapter reporting itself unavailable rather than failing every call.
+    project: ${POC_GENERATOR_VERTEX_PROJECT:}
+    location: ${POC_GENERATOR_VERTEX_LOCATION:us-central1}
+    # Vertex serves both Gemini and Claude models behind the same generateContent shape this
+    # adapter calls, so trying a different model is a config change here, never a code change.
+    model: ${POC_GENERATOR_VERTEX_MODEL:gemini-2.0-flash-001}
+
 app:
   mail:
     from-address: ${MAIL_FROM_ADDRESS}

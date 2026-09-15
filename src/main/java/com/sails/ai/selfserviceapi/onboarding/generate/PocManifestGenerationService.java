@@ -13,6 +13,7 @@ import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidationExc
 import com.sails.ai.selfserviceapi.onboarding.OnboardingCheckResult;
 import com.sails.ai.selfserviceapi.onboarding.PocOnboardingCheckService;
 import com.sails.ai.selfserviceapi.onboarding.generate.model.DraftModelProperties;
+import com.sails.ai.selfserviceapi.onboarding.generate.model.ManifestDraftException;
 import com.sails.ai.selfserviceapi.onboarding.generate.model.ManifestDraftModel;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -136,6 +137,16 @@ public class PocManifestGenerationService {
             return PocManifestGenerationResult.unavailable(checkResult,
                     "The draft model could not produce a manifest that passes the platform's validator: "
                             + String.join("; ", e.violations()), loadTemplate());
+        } catch (ManifestDraftException e) {
+            // The provider passed isAvailable() (Ollama's own reachability probe can flip between
+            // that check and this call; Vertex's only checks that a project is configured, not that
+            // credentials actually work) but the real call still failed — a local checkout with
+            // neither Ollama running nor GCP credentials set up is exactly this case. Degrades the
+            // same way an unavailable provider does, rather than letting the page fail.
+            log.debug("Draft model call failed for {}: {}", repo, e.getMessage());
+            return PocManifestGenerationResult.unavailable(checkResult,
+                    "The draft model could not be reached (" + e.getMessage() + "). Here is the platform's "
+                            + "own poc.yaml template instead.", loadTemplate());
         }
 
         List<String> warnings = new ArrayList<>(draft.secretWarnings());

@@ -14,3 +14,10 @@ BUILD_SERVICE_ACCOUNT: self-service-builder
 # Local development has the Microsoft credentials in the gitignored secrets import above.
 microsoft-sso:
   enabled: true
+
+# Uncomment to test poc.yaml generation against Vertex AI locally. Needs
+# `gcloud auth application-default login` and roles/aiplatform.user on the project — the same ADC
+# this app already uses for Cloud Build/Cloud Run, no new credential to set up.
+# POC_GENERATOR_ENABLED: true
+# POC_GENERATOR_PROVIDER: vertex
+# POC_GENERATOR_VERTEX_PROJECT: your-gcp-project-id

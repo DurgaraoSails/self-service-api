@@ -165,6 +165,31 @@ class PocManifestGenerationServiceTest {
         assertThat(result.pocYaml()).contains("yaml-language-server");
     }
 
+    /**
+     * The provider looked available (Ollama's probe can flip between the check and the real call;
+     * Vertex's only checks that a project id is configured, not that credentials work) but the real
+     * call still failed — a local checkout with neither model actually reachable is exactly this
+     * case, and it must degrade the same way "no model configured" does, never fail the page.
+     */
+    @Test
+    void aDraftModelCallFailureFallsBackToTheShippedTemplateRatherThanFailingThePage() {
+        when(manifestService.resolveForBuild(REPO, SHA))
+                .thenReturn(new ManifestResolution(null, singleContainerManifest()));
+        RepoInventory inventory = new RepoInventory(
+                treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"), List.of(), false);
+        when(inventoryService.inventory(REPO, SHA)).thenReturn(inventory);
+        when(draftService.selectedModel()).thenReturn(Optional.of(availableModel()));
+        when(draftService.draft(inventory, null))
+                .thenThrow(new com.sails.ai.selfserviceapi.onboarding.generate.model.ManifestDraftException(
+                        "Connection refused"));
+
+        PocManifestGenerationResult result = service.generate(URL, BRANCH);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.UNAVAILABLE);
+        assertThat(result.pocYaml()).contains("yaml-language-server");
+        assertThat(result.warnings()).anySatisfy(w -> assertThat(w).contains("Connection refused"));
+    }
+
     @Test
     void repositoryAccessProblemsSkipGenerationEntirely() {
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.NO_PUSH);

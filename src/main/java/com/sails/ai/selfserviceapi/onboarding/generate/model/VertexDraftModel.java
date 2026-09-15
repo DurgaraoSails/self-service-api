@@ -51,16 +51,32 @@ public class VertexDraftModel implements ManifestDraftModel {
         return configured;
     }
 
+    /**
+     * The transport call is wrapped separately from the empty-response check below, and deliberately
+     * catches {@link RuntimeException} rather than only {@link org.springframework.web.client.RestClientException}:
+     * a missing/invalid credential fails inside the request interceptor as an unchecked
+     * {@code UncheckedIOException} from {@code GoogleCredentials.getApplicationDefault()}, which
+     * {@code RestClient} does not itself wrap the way it wraps a transport {@code IOException}. Since
+     * {@link #isAvailable()} can only check that {@code poc-generator.vertex.project} is set — there
+     * is no cheap way to verify credentials without spending a real call — this catch is what actually
+     * makes "configured but not authenticated" (the common local-checkout case) degrade to
+     * {@code PocManifestGenerationService}'s graceful UNAVAILABLE outcome instead of a 500.
+     */
     @Override
     public String draft(ModelRequest request) {
-        GenerateContentResponse response = restClient.post()
-                .uri(generateContentPath())
-                .body(new GenerateContentRequest(
-                        List.of(new Content("user", List.of(new Part(request.userPrompt())))),
-                        new SystemInstruction(List.of(new Part(request.systemPrompt()))),
-                        new GenerationConfig("application/json", request.jsonSchema(), 0)))
-                .retrieve()
-                .body(GenerateContentResponse.class);
+        GenerateContentResponse response;
+        try {
+            response = restClient.post()
+                    .uri(generateContentPath())
+                    .body(new GenerateContentRequest(
+                            List.of(new Content("user", List.of(new Part(request.userPrompt())))),
+                            new SystemInstruction(List.of(new Part(request.systemPrompt()))),
+                            new GenerationConfig("application/json", request.jsonSchema(), 0)))
+                    .retrieve()
+                    .body(GenerateContentResponse.class);
+        } catch (RuntimeException e) {
+            throw new ManifestDraftException("Vertex AI call failed: " + e.getMessage(), e);
+        }
 
         String text = firstTextPart(response);
         if (text == null) {

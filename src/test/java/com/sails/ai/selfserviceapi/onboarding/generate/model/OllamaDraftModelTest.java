@@ -91,4 +91,22 @@ class OllamaDraftModelTest {
         assertThatThrownBy(() -> model.draft(new ModelRequest("s", "u", "{}", Duration.ofSeconds(30))))
                 .isInstanceOf(ManifestDraftException.class);
     }
+
+    /**
+     * The normal shape of "Ollama isn't running" — a local checkout with nothing configured, the
+     * scenario poc-generator must never fail the page for. Must surface as ManifestDraftException,
+     * the one type PocManifestGenerationService knows how to degrade gracefully from, not as a raw
+     * RestClientException.
+     */
+    @Test
+    void aConnectionFailureBecomesAManifestDraftExceptionNotARawTransportError() {
+        server.expect(requestTo(BASE + "/api/chat"))
+                .andRespond(request -> {
+                    throw new java.io.IOException("Connection refused");
+                });
+
+        assertThatThrownBy(() -> model.draft(new ModelRequest("s", "u", "{}", Duration.ofSeconds(30))))
+                .isInstanceOf(ManifestDraftException.class)
+                .hasMessageContaining("Ollama call failed");
+    }
 }

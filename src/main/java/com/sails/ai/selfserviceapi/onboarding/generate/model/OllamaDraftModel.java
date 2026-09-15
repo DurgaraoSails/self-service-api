@@ -53,20 +53,32 @@ public class OllamaDraftModel implements ManifestDraftModel {
         }
     }
 
+    /**
+     * The transport call is wrapped separately from the empty-response check below: a connection
+     * failure (Ollama not running — the normal case in a local checkout with nothing configured)
+     * must reach {@code PocManifestGenerationService} as a {@link ManifestDraftException}, the one
+     * type it knows how to degrade gracefully from, rather than as a raw
+     * {@link RestClientException} that would surface as a 500.
+     */
     @Override
     public String draft(ModelRequest request) {
-        ChatResponse response = restClient.post()
-                .uri("/api/chat")
-                .body(new ChatRequest(
-                        properties.ollama().model(),
-                        List.of(
-                                new Message("system", request.systemPrompt()),
-                                new Message("user", request.userPrompt())),
-                        false,
-                        request.jsonSchema(),
-                        new Options(properties.ollama().numCtx(), 0)))
-                .retrieve()
-                .body(ChatResponse.class);
+        ChatResponse response;
+        try {
+            response = restClient.post()
+                    .uri("/api/chat")
+                    .body(new ChatRequest(
+                            properties.ollama().model(),
+                            List.of(
+                                    new Message("system", request.systemPrompt()),
+                                    new Message("user", request.userPrompt())),
+                            false,
+                            request.jsonSchema(),
+                            new Options(properties.ollama().numCtx(), 0)))
+                    .retrieve()
+                    .body(ChatResponse.class);
+        } catch (RestClientException e) {
+            throw new ManifestDraftException("Ollama call failed: " + e.getMessage(), e);
+        }
         if (response == null || response.message() == null || response.message().content() == null) {
             throw new ManifestDraftException("Ollama returned an empty response");
         }

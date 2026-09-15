@@ -70,4 +70,25 @@ class VertexDraftModelTest {
         assertThatThrownBy(() -> model.draft(new ModelRequest("s", "u", "{}", Duration.ofSeconds(30))))
                 .isInstanceOf(ManifestDraftException.class);
     }
+
+    /**
+     * isAvailable() only checks that a project id is configured — it cannot cheaply verify
+     * credentials without spending a real call. A missing/invalid credential (the common local
+     * checkout case: a project id is set somewhere but `gcloud auth application-default login`
+     * never ran) fails inside the request interceptor, so draft() must still turn that into a
+     * ManifestDraftException on its own rather than letting an unchecked failure escape as a 500.
+     * Simulated here with a transport failure, the closest thing MockRestServiceServer can produce
+     * to the interceptor-level failure a real credential problem causes.
+     */
+    @Test
+    void aTransportFailureBecomesAManifestDraftExceptionNotARawTransportError() {
+        server.expect(requestTo(URL))
+                .andRespond(request -> {
+                    throw new java.io.IOException("Connection refused");
+                });
+
+        assertThatThrownBy(() -> model.draft(new ModelRequest("s", "u", "{}", Duration.ofSeconds(30))))
+                .isInstanceOf(ManifestDraftException.class)
+                .hasMessageContaining("Vertex AI call failed");
+    }
 }
