@@ -1,5 +1,7 @@
 package com.sails.ai.selfserviceapi.asset.service;
 
+import com.sails.ai.selfserviceapi.asset.ai.EmbeddingProvider;
+import com.sails.ai.selfserviceapi.asset.ai.EmbeddingProviderException;
 import com.sails.ai.selfserviceapi.asset.entity.Asset;
 import com.sails.ai.selfserviceapi.asset.entity.AssetEvent;
 import com.sails.ai.selfserviceapi.asset.entity.AssetFeedback;
@@ -18,6 +20,7 @@ import com.sails.ai.selfserviceapi.asset.repository.AssetRevisionRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetSearchRepository;
 import com.sails.ai.selfserviceapi.asset.repository.TagRepository;
 import com.sails.ai.selfserviceapi.asset.search.AssetSearchIndexer;
+import com.sails.ai.selfserviceapi.asset.search.AssetSearchRankingService;
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.generated.model.AssetDetailResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetEditorResponse;
@@ -53,12 +56,20 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AssetLifecycleService {
+
+    private static final Logger log = LoggerFactory.getLogger(AssetLifecycleService.class);
+
+    /** Lexical/semantic candidate pool size per the Search Contract's RRF pipeline. */
+    private static final int CANDIDATE_POOL_SIZE = 100;
 
     private final AssetRepository assetRepository;
     private final AssetRevisionRepository assetRevisionRepository;
@@ -70,12 +81,16 @@ public class AssetLifecycleService {
     private final AssetEventRepository assetEventRepository;
     private final AssetReviewRepository assetReviewRepository;
     private final AssetSearchIndexer assetSearchIndexer;
+    private final AssetSearchRankingService assetSearchRankingService;
+    private final ObjectProvider<EmbeddingProvider> embeddingProvider;
 
     public AssetLifecycleService(AssetRepository assetRepository, AssetRevisionRepository assetRevisionRepository,
                                   AssetSearchRepository assetSearchRepository, TagRepository tagRepository,
                                   UserRepository userRepository, PocRepository pocRepository,
                                   AssetFeedbackRepository assetFeedbackRepository, AssetEventRepository assetEventRepository,
-                                  AssetReviewRepository assetReviewRepository, AssetSearchIndexer assetSearchIndexer) {
+                                  AssetReviewRepository assetReviewRepository, AssetSearchIndexer assetSearchIndexer,
+                                  AssetSearchRankingService assetSearchRankingService,
+                                  ObjectProvider<EmbeddingProvider> embeddingProvider) {
         this.assetRepository = assetRepository;
         this.assetRevisionRepository = assetRevisionRepository;
         this.assetSearchRepository = assetSearchRepository;
@@ -86,6 +101,8 @@ public class AssetLifecycleService {
         this.assetEventRepository = assetEventRepository;
         this.assetReviewRepository = assetReviewRepository;
         this.assetSearchIndexer = assetSearchIndexer;
+        this.assetSearchRankingService = assetSearchRankingService;
+        this.embeddingProvider = embeddingProvider;
     }
 
     @Transactional
@@ -328,8 +345,26 @@ public class AssetLifecycleService {
         String tagsCsv = csv(tags == null ? null : tags.stream().map(AssetLifecycleService::normalizeTagName).toList());
         boolean launchableOnly = Boolean.TRUE.equals(launchable);
 
-        List<UUID> ids = assetSearchRepository.findRankedAssetIds(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly, size, page * size);
-        long total = assetSearchRepository.countRankedAssets(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly);
+        List<UUID> semanticIds = normalizedQ != null
+                ? findSemanticCandidates(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly) : List.of();
+
+        List<UUID> ids;
+        long total;
+        if (semanticIds.isEmpty()) {
+            // Today's only reachable path: no query, semantic search disabled, no embedding
+            // provider configured, or the provider failed — pure lexical ranking, unchanged from
+            // before the Phase 3 scaffold. See AssetSearchRankingService's Javadoc.
+            ids = assetSearchRepository.findRankedAssetIds(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly, size, page * size);
+            total = assetSearchRepository.countRankedAssets(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly);
+        } else {
+            List<UUID> lexicalIds = assetSearchRepository.findRankedAssetIds(
+                    normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly, CANDIDATE_POOL_SIZE, 0);
+            List<UUID> merged = assetSearchRankingService.merge(lexicalIds, semanticIds);
+            total = merged.size();
+            int from = Math.min(page * size, merged.size());
+            int to = Math.min(from + size, merged.size());
+            ids = merged.subList(from, to);
+        }
 
         List<AssetSummaryResponse> content = hydrateSummaries(ids);
         UUID searchSessionId = normalizedQ != null ? UUID.randomUUID() : null;
@@ -341,6 +376,40 @@ public class AssetLifecycleService {
             assetEventRepository.save(event);
         }
         return AssetResponseMapper.toPageResponse(content, page, size, total, searchSessionId);
+    }
+
+    /**
+     * Empty whenever semantic search should not affect ranking: no {@link EmbeddingProvider} bean
+     * (semantic search disabled — every deployment today, see AssetSearchRankingService's Javadoc),
+     * or the embedding call itself failed. Either way {@link #listAssets} falls back to pure
+     * lexical ranking, matching "AI failure never prevents manual submission or review" for search.
+     */
+    private List<UUID> findSemanticCandidates(String normalizedQ, String typesCsv, String tagsCsv,
+                                               String ownerId, boolean launchableOnly) {
+        EmbeddingProvider provider = embeddingProvider.getIfAvailable();
+        if (provider == null) {
+            return List.of();
+        }
+        try {
+            float[] queryEmbedding = provider.embed(normalizedQ);
+            String vectorLiteral = toVectorLiteral(queryEmbedding);
+            return assetSearchRepository.findSemanticCandidateIds(
+                    vectorLiteral, typesCsv, tagsCsv, ownerId, launchableOnly, CANDIDATE_POOL_SIZE);
+        } catch (EmbeddingProviderException e) {
+            log.warn("Semantic search unavailable ({}); falling back to keyword search.", e.errorCode());
+            return List.of();
+        }
+    }
+
+    private static String toVectorLiteral(float[] vector) {
+        StringBuilder builder = new StringBuilder("[");
+        for (int i = 0; i < vector.length; i++) {
+            if (i > 0) {
+                builder.append(',');
+            }
+            builder.append(vector[i]);
+        }
+        return builder.append(']').toString();
     }
 
     @Transactional(readOnly = true)

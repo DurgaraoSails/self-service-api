@@ -959,6 +959,64 @@ AssetReviewerDashboardResponse:
         $ref: '#/AssetReviewerDashboardCategoryResponse'
 
 
+AssetMetricsResponse:
+  type: object
+  description: >
+    Live-computed Asset Hub metrics per docs/specs/asset-hub.md's Metrics Contract. Rate fields are
+    fractions between 0 and 1; percentile fields are seconds and are omitted when there is no
+    qualifying data yet (e.g. zero successful searches).
+  required:
+    - totalSearches
+    - successfulSearches
+    - successfulSearchRate
+    - contributingEmployees
+    - activeInternalEmployees
+    - contributorAdoptionRate
+  properties:
+    totalSearches:
+      type: integer
+      format: int64
+      minimum: 0
+    successfulSearches:
+      type: integer
+      format: int64
+      minimum: 0
+    successfulSearchRate:
+      type: number
+      format: double
+      minimum: 0
+      maximum: 1
+    timeToUsefulResultMedianSeconds:
+      type: number
+      format: double
+      minimum: 0
+    timeToUsefulResultP90Seconds:
+      type: number
+      format: double
+      minimum: 0
+    contributingEmployees:
+      type: integer
+      format: int64
+      minimum: 0
+    activeInternalEmployees:
+      type: integer
+      format: int64
+      minimum: 0
+    contributorAdoptionRate:
+      type: number
+      format: double
+      minimum: 0
+      maximum: 1
+    reviewTurnaroundMedianSeconds:
+      type: number
+      format: double
+      minimum: 0
+    reviewTurnaroundP90Seconds:
+      type: number
+      format: double
+      minimum: 0
+
+
 AssetReviewDecisionResponse:
   type: object
   description: One append-only review decision.

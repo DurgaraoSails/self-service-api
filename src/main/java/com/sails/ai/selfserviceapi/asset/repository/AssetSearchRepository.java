@@ -82,17 +82,22 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
 
     @Modifying
     @Query(value = """
-            insert into asset_search_documents (asset_id, revision_id, search_text, search_vector, indexed_at)
+            insert into asset_search_documents (asset_id, revision_id, search_text, search_vector,
+                    embedding_provider, embedding_model, embedding_dimensions, embedding_checksum, indexed_at)
             values (:assetId, :revisionId, :searchText,
                     setweight(to_tsvector('english', :titleAndTags), 'A') ||
                     setweight(to_tsvector('english', :summary), 'B') ||
                     setweight(to_tsvector('english', :problemImpactSolution), 'C') ||
                     setweight(to_tsvector('english', :ownerName), 'D'),
-                    now())
+                    :embeddingProvider, :embeddingModel, :embeddingDimensions, :embeddingChecksum, now())
             on conflict (asset_id) do update set
                 revision_id = excluded.revision_id,
                 search_text = excluded.search_text,
                 search_vector = excluded.search_vector,
+                embedding_provider = excluded.embedding_provider,
+                embedding_model = excluded.embedding_model,
+                embedding_dimensions = excluded.embedding_dimensions,
+                embedding_checksum = excluded.embedding_checksum,
                 indexed_at = excluded.indexed_at
             """, nativeQuery = true)
     void upsertSearchDocument(@Param("assetId") UUID assetId,
@@ -101,7 +106,59 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                                @Param("titleAndTags") String titleAndTags,
                                @Param("summary") String summary,
                                @Param("problemImpactSolution") String problemImpactSolution,
-                               @Param("ownerName") String ownerName);
+                               @Param("ownerName") String ownerName,
+                               @Param("embeddingProvider") String embeddingProvider,
+                               @Param("embeddingModel") String embeddingModel,
+                               @Param("embeddingDimensions") Integer embeddingDimensions,
+                               @Param("embeddingChecksum") String embeddingChecksum);
+
+    /**
+     * Semantic candidates for the Search Contract's RRF merge — only ever invoked when
+     * {@code asset-hub.semantic-search-enabled=true} AND the {@code embedding} column exists (the
+     * Phase 3 migration described in docs/specs/asset-hub.md, not yet added). Not invoked by any
+     * code path today; kept here so the query shape is settled ahead of that migration rather than
+     * designed under time pressure once pgvector is finally available. {@code queryEmbedding} is a
+     * pgvector literal, e.g. {@code "[0.01,0.02,...]"}.
+     */
+    @Query(value = """
+            select a.id
+            from assets a
+            join asset_revisions r on r.id = a.approved_revision_id
+            join asset_search_documents sd on sd.asset_id = a.id
+            where a.archived_at is null
+              and a.approved_revision_id is not null
+              and sd.embedding is not null
+              and (cast(:typesCsv as text) is null or a.asset_type = any(string_to_array(:typesCsv, ',')))
+              and (cast(:ownerId as text) is null or a.owner_user_id = :ownerId)
+              and (cast(:tagsCsv as text) is null or exists (
+                    select 1 from asset_revision_tags art
+                    join tags t on t.id = art.tag_id
+                    where art.revision_id = r.id and t.normalized_name = any(string_to_array(:tagsCsv, ','))))
+              and (:launchableOnly = false or (a.poc_id is not null and exists (
+                    select 1 from pocs p where p.id = a.poc_id and p.deleted_at is null
+                      and p.visibility_status = 'ACTIVE' and p.app_url is not null and p.app_url <> '')))
+            order by sd.embedding <=> cast(:queryEmbedding as vector)
+            limit :limit
+            """, nativeQuery = true)
+    List<UUID> findSemanticCandidateIds(@Param("queryEmbedding") String queryEmbedding,
+                                         @Param("typesCsv") String typesCsv,
+                                         @Param("tagsCsv") String tagsCsv,
+                                         @Param("ownerId") String ownerId,
+                                         @Param("launchableOnly") boolean launchableOnly,
+                                         @Param("limit") int limit);
+
+    /**
+     * Tie-break data for the RRF merge (approved revision {@code updated_at DESC, asset_id ASC}).
+     * {@code assetIdsCsv} follows this file's established comma-separated-string convention rather
+     * than a true array parameter (see class Javadoc).
+     */
+    @Query(value = """
+            select a.id, r.updated_at
+            from assets a
+            join asset_revisions r on r.id = a.approved_revision_id
+            where a.id = any(string_to_array(:assetIdsCsv, ',')::uuid[])
+            """, nativeQuery = true)
+    List<Object[]> findApprovedRevisionUpdatedAt(@Param("assetIdsCsv") String assetIdsCsv);
 
     /** Facet counts share the same WHERE clause as {@link #findRankedAssetIds}, minus ranking/paging. */
     String FACET_BASE = """

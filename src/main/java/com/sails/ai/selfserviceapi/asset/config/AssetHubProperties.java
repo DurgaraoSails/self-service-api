@@ -12,7 +12,8 @@ public record AssetHubProperties(
         boolean enabled,
         boolean aiEnabled,
         boolean semanticSearchEnabled,
-        Ai ai
+        Ai ai,
+        Embedding embedding
 ) {
 
     /**
@@ -24,6 +25,22 @@ public record AssetHubProperties(
             String projectId,
             String region,
             @DefaultValue("gemini-2.5-flash") String model,
+            @DefaultValue("20") int timeoutSeconds
+    ) {
+    }
+
+    /**
+     * Voyage AI config for {@code VoyageEmbeddingProvider}, bound only when read — a missing/blank
+     * apiKey is fine while semanticSearchEnabled is false, since no bean ever calls
+     * {@link #embedding()} in that case (see AssetEmbeddingClientConfig /
+     * VoyageEmbeddingProvider's ConditionalOnProperty). Dimensions must match the fixed dimension
+     * of {@code model} — see docs/specs/asset-hub.md's "Semantic search embeddings" decision.
+     */
+    public record Embedding(
+            String apiKey,
+            @DefaultValue("https://api.voyageai.com") String baseUrl,
+            @DefaultValue("voyage-4") String model,
+            @DefaultValue("1024") int dimensions,
             @DefaultValue("20") int timeoutSeconds
     ) {
     }

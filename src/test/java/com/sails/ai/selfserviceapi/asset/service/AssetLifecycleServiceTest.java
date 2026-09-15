@@ -14,8 +14,10 @@ import com.sails.ai.selfserviceapi.asset.repository.AssetRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetReviewRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetRevisionRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetSearchRepository;
+import com.sails.ai.selfserviceapi.asset.ai.EmbeddingProvider;
 import com.sails.ai.selfserviceapi.asset.repository.TagRepository;
 import com.sails.ai.selfserviceapi.asset.search.AssetSearchIndexer;
+import com.sails.ai.selfserviceapi.asset.search.AssetSearchRankingService;
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.generated.model.AssetPageResponse;
 import com.sails.ai.selfserviceapi.generated.model.CreateAssetRequest;
@@ -26,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.beans.factory.ObjectProvider;
 
 class AssetLifecycleServiceTest {
 
@@ -45,9 +48,12 @@ class AssetLifecycleServiceTest {
         assetEventRepository = Mockito.mock(AssetEventRepository.class);
         AssetReviewRepository assetReviewRepository = Mockito.mock(AssetReviewRepository.class);
         AssetSearchIndexer assetSearchIndexer = Mockito.mock(AssetSearchIndexer.class);
+        AssetSearchRankingService assetSearchRankingService = Mockito.mock(AssetSearchRankingService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<EmbeddingProvider> embeddingProvider = Mockito.mock(ObjectProvider.class);
         service = new AssetLifecycleService(assetRepository, assetRevisionRepository, assetSearchRepository,
                 tagRepository, userRepository, pocRepository, assetFeedbackRepository, assetEventRepository,
-                assetReviewRepository, assetSearchIndexer);
+                assetReviewRepository, assetSearchIndexer, assetSearchRankingService, embeddingProvider);
     }
 
     @Test

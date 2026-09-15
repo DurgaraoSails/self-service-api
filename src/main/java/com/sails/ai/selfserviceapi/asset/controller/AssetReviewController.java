@@ -1,7 +1,9 @@
 package com.sails.ai.selfserviceapi.asset.controller;
 
+import com.sails.ai.selfserviceapi.asset.service.AssetMetricsService;
 import com.sails.ai.selfserviceapi.asset.service.AssetReviewService;
 import com.sails.ai.selfserviceapi.generated.api.AssetReviewApi;
+import com.sails.ai.selfserviceapi.generated.model.AssetMetricsResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetReviewDetailResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetReviewQueuePageResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetReviewerDashboardResponse;
@@ -18,9 +20,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AssetReviewController implements AssetReviewApi {
 
     private final AssetReviewService assetReviewService;
+    private final AssetMetricsService assetMetricsService;
 
-    public AssetReviewController(AssetReviewService assetReviewService) {
+    public AssetReviewController(AssetReviewService assetReviewService, AssetMetricsService assetMetricsService) {
         this.assetReviewService = assetReviewService;
+        this.assetMetricsService = assetMetricsService;
     }
 
     @Override
@@ -49,5 +53,12 @@ public class AssetReviewController implements AssetReviewApi {
         CurrentUser.requireInternal();
         CurrentUser.requireAssetReviewer();
         return ResponseEntity.ok(assetReviewService.createAssetReviewDecision(revisionId, CurrentUser.id(), createAssetReviewRequest));
+    }
+
+    @Override
+    public ResponseEntity<AssetMetricsResponse> getAssetHubMetrics() {
+        CurrentUser.requireInternal();
+        CurrentUser.requireAssetReviewer();
+        return ResponseEntity.ok(assetMetricsService.getMetrics());
     }
 }

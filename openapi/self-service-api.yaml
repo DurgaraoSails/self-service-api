@@ -2529,6 +2529,26 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /asset-hub/metrics:
+    get:
+      summary: Get live Asset Hub adoption and workflow metrics
+      operationId: getAssetHubMetrics
+      tags:
+        - AssetReview
+      responses:
+        '200':
+          description: Successful-search rate, time-to-useful-result, contributor adoption, and review turnaround, per the Metrics Contract
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/asset.yaml#/AssetMetricsResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /asset-reviews/{revisionId}:
     get:
       summary: Get a revision's frozen review detail (internal reviewer)
