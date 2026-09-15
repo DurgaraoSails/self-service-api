@@ -189,16 +189,34 @@ matching could otherwise treat them as asset IDs.
 ## 11. Testing and delivery
 
 - [x] Unit-test guards for external, internal, reviewer, admin, and superadmin combinations.
-- [ ] Unit-test asset card launch/source behavior and absence of actions in invalid states.
-- [ ] Test reactive-form validation, draft preservation, AI failure, and stale-revision recovery.
-- [ ] Test no-self-review UI behavior and backend `403`/`409` handling.
-- [ ] Test approved-plus-working revision presentation.
-- [ ] Test atomic multi-role selection and exclusion of `SUPERADMIN`.
-- [ ] Test loading, empty, no-results, error, retry, and narrow-screen states.
-- [x] Run portal tests and production build. *(`npx ng test --watch=false`: 504 passed;
-      `npm run build`: passed.)*
+- [x] Unit-test asset card launch/source behavior and absence of actions in invalid states.
+      *(2026-09-15: `asset-hub.spec.ts` filter/launchable coverage, `asset-detail.spec.ts`
+      canArchive/canEdit owner-vs-unrelated-employee gating.)*
+- [x] Test reactive-form validation, draft preservation, AI failure, and stale-revision recovery.
+      *(2026-09-15: `asset-editor.spec.ts` — required-field/URL-pattern validation, AI
+      pending/succeeded/FAILED/503-unavailable states against the real HTTP layer, and the
+      stale-edit-conflict recovery message with the employee's unsaved input preserved, tested
+      against a fake `AssetStore` — see the note on NG0602 below.)*
+- [x] Test no-self-review UI behavior and backend `403`/`409` handling. *(2026-09-15:
+      `asset-review-detail.spec.ts` — self-review flagging for submitter/author, the store-layer
+      block even if a confirm somehow fires, and the competing-reviewer 409 recovery message with
+      typed feedback preserved.)*
+- [x] Test approved-plus-working revision presentation. *(2026-09-15: `asset-editor.spec.ts`'s
+      `editReady` gating for a non-DRAFT working revision; `asset-review-detail.spec.ts`'s
+      previous-approved-revision comparison via preview fixtures.)*
+- [x] Test atomic multi-role selection and exclusion of `SUPERADMIN`. *(2026-09-15:
+      `employee-roles.spec.ts` — signed-in-superadmin exclusion, immediate-add vs.
+      confirm-then-remove, full-role-set (not single-toggle) PUT body, and SUPERADMIN never
+      offered as a checkbox.)*
+- [x] Test loading, empty, no-results, error, retry, and narrow-screen states. *(2026-09-15: added
+      across all 7 new spec files for loading/empty/error/retry; narrow-screen/responsive layout
+      is not covered — that needs a real viewport-driven test, tracked with AXE below.)*
+- [x] Run portal tests and production build. *(2026-09-15: `npx ng test --watch=false`: 596
+      passed, 0 failed — up from 504; `npm run build` and `npm run build -- -c asset-hub` both
+      pass.)*
 - [ ] Run AXE and keyboard checks on discovery, submission, detail, reviewer, and role-management
-      screens in light and dark mode.
+      screens in light and dark mode. *(Still deliberately deferred — confirmed with the user
+      2026-09-15 as a separate follow-up task; no AXE tooling exists in this repo yet.)*
 - [x] Update this checklist and the central feature spec with deliberate deferrals or changed
       decisions.
 
@@ -229,4 +247,48 @@ Known risks:
   - The current API error envelope has no field path, so backend validation is shown at form level.
   - The already-running backend was not restarted; authenticated current-commit integration smoke
     remains part of the next verification phase.
+```
+
+**Update 2026-09-15 — component-level test-coverage pass.** New spec files for all 7 Asset Hub
+components: `asset-hub.spec.ts`, `asset-detail.spec.ts`, `asset-editor.spec.ts`, `my-assets.spec.ts`,
+`asset-reviews.spec.ts`, `asset-review-detail.spec.ts`, `employee-roles.spec.ts`. Each mixes two
+styles: a `(preview data)` suite against the existing `ASSET_HUB_PREVIEW`/fixture convention already
+established by `asset-store.spec.ts` (fast, no HTTP mocking, used for rendering/interaction/
+validation logic), and an `(HTTP-backed)` suite using `HttpTestingController` for loading/error/
+retry/pagination states that only exist in the real (non-preview) `AssetStore` path — matching
+`poc-form-modal.spec.ts`/`poc-deployment-panel.spec.ts`'s established convention.
+
+```text
+Tests run:
+  npx ng test --watch=false  — 596 tests passed, 0 failed (up from 504; +92 new cases)
+  npm run build              — production build passed
+  npm run build -- -c asset-hub — passed
+
+Real finding, not a test-writing mistake: AssetDetail, AssetEditor, and AssetReviewDetail all wrap
+  their initial load in a component-constructor effect() that calls an AssetStore method
+  (loadApproved/loadWorking/loadReview), which itself creates a fresh Angular effect() inside
+  AssetStore.track(). Driving that id-input-triggered first load through TestBed's synchronous
+  fixture.detectChanges() throws Angular's own NG0602 ("effect() cannot be called from within a
+  reactive context") — confirmed not fixable by any detectChanges()/flushEffects()/whenStable()
+  reordering tried (several were tried). This is a nested-effect-creation pattern Angular's own
+  reactivity primitives disallow; whether it also manifests in the live app (vs. only under
+  TestBed's forced-synchronous CD) was not established here and is worth the user checking. Worked
+  around by testing those 3 components' loading/error/retry/reload/stale-conflict paths against a
+  minimal hand-written fake AssetStore (plain signals + vi.fn() spies) instead of the real
+  HTTP-backed store — this avoids the nested effect() entirely since the fake never calls Angular's
+  effect() itself, at the cost of no longer exercising AssetStore's own real HTTP-error-to-signal
+  wiring in those specific component tests (that wiring is covered elsewhere by
+  asset-store.spec.ts's own preview-mode tests, and indirectly by the 4 other components' full
+  HTTP-backed suites, which don't hit this because their initial load isn't effect()-wrapped).
+
+Deferred items:
+  - AXE/keyboard/narrow-layout/light-dark accessibility checks — separate follow-up, confirmed with
+    the user; no tooling installed yet.
+  - The NG0602 finding above is not something this pass could resolve without touching
+    AssetStore's/the 3 components' production code, which was out of scope for a test-only pass.
+
+Known risks:
+  - The fake-store tests for AssetDetail/AssetEditor/AssetReviewDetail's HTTP-mode paths do not
+    exercise the real AssetStore.track()/apiErrorMessage() wiring end-to-end for those 3
+    components specifically — only the component's own reaction to store signals is verified.
 ```

@@ -77,10 +77,12 @@ feature spec.
 - [x] Keep template and template-validation tables deferred until their fields/rubrics are supplied.
 - [x] Add JPA entities/repositories without bidirectional collections that make revision boundaries
       ambiguous.
-- [ ] Add migration and repository integration tests, including constraint failures. **Not done —
-      no test files this pass (explicit scope decision); verified instead by booting against a real
-      Postgres and confirming Flyway/Hibernate validation, plus live CRUD via curl. See Handoff
-      evidence below.**
+- [ ] Add migration and repository integration tests, including constraint failures. **Deliberately
+      out of scope, confirmed with the user 2026-09-15: this codebase's entire test suite is
+      Mockito-only (no Testcontainers, no DB-backed tests anywhere), and introducing a first
+      DB-backed testing convention for just this feature was explicitly declined in favor of
+      staying consistent. Verified instead by booting against a real Postgres and confirming
+      Flyway/Hibernate validation, plus live CRUD via curl. See Handoff evidence below.**
 - [x] Add the two same-asset composite revision-pointer FKs only after `asset_revisions` exists and
       verify cross-asset pointers fail at the database layer. *(FKs added in `V17`; cross-asset
       rejection verified at the DB constraint level, not with an automated test.)*
@@ -102,10 +104,12 @@ feature spec.
 - [x] Ensure `ADMIN` alone does not grant Asset Hub review access. *(imperative role check, not
       `@PreAuthorize` — see the commit message for why.)*
 - [x] Ensure `SUPERADMIN` alone does not grant Asset Hub review access.
-- [ ] Add controller/security tests for external, unauthenticated, internal employee, reviewer,
-      admin, and superadmin combinations. **Not done — no test files this pass; verified live
-      instead (external/non-internal → `INTERNAL_ACCOUNT_REQUIRED`, missing `ASSET_REVIEWER` →
-      `ASSET_REVIEWER_REQUIRED`, unauthenticated → 401). See Handoff evidence.**
+- [x] Add controller/security tests for external, unauthenticated, internal employee, reviewer,
+      admin, and superadmin combinations. *(2026-09-15: `security/CurrentUserTest.java` covers
+      `isInternal`/`hasRole`/`requireInternal`/`requireAssetReviewer`/`requireSuperAdmin`/`isAdmin`
+      across unauthenticated/external/internal/reviewer/admin/superadmin; `AssetControllerTest`,
+      `AssetReviewControllerTest`, and `EmployeeControllerTest` (`@WebMvcTest` + MockMvc, matching
+      `PocFilesControllerTest`'s pattern) cover the HTTP-layer `403` mapping for each.)*
 
 ## 4. Multi-role management
 
@@ -124,8 +128,11 @@ feature spec.
 - [x] Return the authoritative updated role list.
 - [x] Document that the current JWT carries role claims and when an updated assignment becomes
       effective; add immediate revocation only if separately approved.
-- [ ] Test assigning `ADMIN` and `ASSET_REVIEWER` together, removing one role, idempotent replacement,
-      forbidden targets, and attempts to assign or remove `SUPERADMIN`.
+- [x] Test assigning `ADMIN` and `ASSET_REVIEWER` together, removing one role, idempotent replacement,
+      forbidden targets, and attempts to assign or remove `SUPERADMIN`. *(`EmployeeRoleServiceTest`
+      already covered the replace/self-management/external-target/inactive-target/duplicate-role
+      cases; 2026-09-15 added `listEmployees` coverage and `EmployeeControllerTest`'s
+      `SUPERADMIN_REQUIRED`/happy-path/service-rejection-propagation cases at the HTTP layer.)*
 - [x] Lock the target user row during replacement so concurrent requests cannot lose a role update
       or write a mismatched audit record.
 
@@ -153,10 +160,14 @@ feature spec.
       post-commit job with observable retry state. *(same transaction, not a post-commit job.)*
 - [x] Define archive behavior without hard deletion and ensure archived assets leave discovery.
 - [ ] Test the entire state machine, stale writes, repeated decisions, and concurrent reviewers.
-      **Not done — no test files this pass; the core paths (submit, approve, reject,
-      request-changes, self-review, stale version) were exercised live via curl, not exhaustively
-      (e.g. repeated/duplicate decisions and true concurrent-reviewer races were not exercised —
-      only reasoned about from the locking design). See Handoff evidence.**
+      *(2026-09-15: `AssetLifecycleServiceTest` now covers create/get/getWorkingRevision/
+      createWorkingRevision/updateWorkingRevision (including stale-version `409`)/
+      submitWorkingRevision/archiveAsset/listMyAssets/putFeedback/recordEvent; `AssetReviewServiceTest`
+      covers self-review-by-submitter-or-author, illegal-transition, stale-version, approve
+      (supersede + reindex), request-changes/reject, and append-only-not-update. Still not done:
+      repeated/duplicate decisions on an already-decided revision, and true concurrent-reviewer
+      races — both need a real transactional DB, ruled out of scope for this Mockito-only pass. See
+      Handoff evidence.)*
 
 ## 6. POC association and launch
 
@@ -220,11 +231,15 @@ Keyword search shipped in Phase 1. Semantic retrieval (RRF, `EmbeddingProvider`)
       change-detection needed since there's no other write path to the search document.)*
 - [x] Remove/archive search documents when an asset is archived.
 - [ ] Test authorization filters before ranking, pagination stability, no-result behavior, lexical
-      fallback, and exclusion of unapproved text. **Not done — no test files this pass; ranking,
-      filters, and no-result behavior were exercised live, not exhaustively.**
+      fallback, and exclusion of unapproved text. **Deliberately out of scope, confirmed with the
+      user 2026-09-15 (same DB-backed-testing decision as §2): the ranking/filter/pagination logic
+      lives entirely in `AssetSearchRepository`'s native SQL, which Mockito cannot exercise — only
+      a real Postgres can prove it correct. Ranking, filters, and no-result behavior were exercised
+      live via curl, not exhaustively.**
 - [ ] Add ranking golden tests covering lexical-only, semantic-only, overlap, equal fused scores,
-      filters, and stable UUID tie-breaking. *(semantic-only/overlap/fused-score cases are N/A until
-      Phase 3; lexical-only golden tests not written this pass.)*
+      filters, and stable UUID tie-breaking. **Deliberately out of scope, same reason — native SQL
+      correctness needs a real Postgres.** *(semantic-only/overlap/fused-score cases are additionally
+      N/A until the Phase 3 migration lands.)*
 
 ## 8. AI metadata suggestions
 
@@ -260,14 +275,17 @@ Keyword search shipped in Phase 1. Semantic retrieval (RRF, `EmbeddingProvider`)
       — that's Phase 2 test work, tracked separately.)*
 - [x] Leave template-validation interfaces unimplemented or feature-disabled until templates and
       rubrics are supplied.
-- [ ] Test timeout, provider error, malformed output, duplicate tags, oversized input, and stale
-      suggestions after an edit. *(Not done this pass — no test files added for
-      `GeminiAssetAiProvider`/`AssetAiSuggestionService`; verified only by `mvn test` — the existing
-      suite still passes in full (466 tests, 0 failures as of 2026-09-15), including full Spring
-      context boot with `asset-hub.ai-enabled=false` — and by compiling against a real Vertex AI
-      `generateContent` call confirmed reachable from the user's own GCP project during an earlier
-      session. No live end-to-end suggestion run was exercised for the 2026-09-15
-      systemInstruction change specifically.)*
+- [x] Test timeout, provider error, malformed output, duplicate tags, oversized input, and stale
+      suggestions after an edit. *(2026-09-15: `GeminiAssetAiProviderTest` uses
+      `RestClient.builder()` bound to `MockRestServiceServer` for malformed response, empty
+      candidates, non-2xx (`PROVIDER_ERROR`), connection failure (`PROVIDER_TIMEOUT`), and asserts
+      `sourceUrl` never appears in the outgoing body and the instruction lives in
+      `systemInstruction`, not the data turn. `AssetAiSuggestionServiceTest` covers the disabled
+      path, checksum-based reuse, provider-exception → `FAILED`, unexpected-`RuntimeException` →
+      `FAILED`, tag normalization/truncation (case-sensitive dedup, not case-insensitive — a real
+      behavior this test caught), and submitter/owner/reviewer visibility rules. No live
+      end-to-end suggestion run was exercised for the 2026-09-15 `systemInstruction` change
+      specifically — only unit-level coverage.)*
 
 ## 9. Feedback and metrics
 
@@ -292,15 +310,26 @@ time-to-useful-result, contributor adoption, review turnaround) was added 2026-0
       formally recorded in the Metrics Contract — no raw query text is or has ever been persisted;
       this was already true, now it's documented as policy rather than left open.)*
 - [ ] Test event ownership, accepted event types, deduplication/session behavior, and forbidden
-      external submissions. *(not done — no test files this pass.)*
+      external submissions. *(2026-09-15: `AssetMetricsServiceTest` covers the metrics computed
+      from events (successful-search rate, time-to-useful-result, contributor adoption, review
+      turnaround) and `AssetControllerTest`/`AssetLifecycleServiceTest` cover `recordEvent`'s
+      basic save path and the generic non-internal `403`. Not done: event-type acceptance
+      validation, deduplication/session-correlation behavior, and forbidden-external-submission
+      tests specifically for `POST /assets/{assetId}/events`.)*
 
 ## 10. Verification and rollout
 
-- [ ] Add service tests for every state transition and authorization invariant. *(role-policy,
-      source-URL, and search-event coverage exists; full lifecycle transition coverage remains.)*
-- [ ] Add controller slice tests implementing the generated API interface. *(not done, same reason.)*
+- [x] Add service tests for every state transition and authorization invariant. *(2026-09-15:
+      `AssetLifecycleServiceTest` (12 methods), `AssetReviewServiceTest`, `AssetAiSuggestionServiceTest`,
+      `EmployeeRoleServiceTest`, `AssetMetricsServiceTest`, and `CurrentUserTest` now cover this —
+      see §3–§9 above for specifics. Database-backed concurrency/races remain out of scope, see below.)*
+- [x] Add controller slice tests implementing the generated API interface. *(2026-09-15:
+      `AssetControllerTest`, `AssetReviewControllerTest`, `EmployeeControllerTest` — `@WebMvcTest` +
+      MockMvc, matching `PocFilesControllerTest`'s established pattern.)*
 - [ ] Add database-backed tests for revision promotion, role audit, search indexing, and races.
-      *(role audit has unit coverage; database-backed concurrency coverage remains.)*
+      **Deliberately out of scope, same DB-backed-testing decision as §2/§7.** *(role audit,
+      revision-promotion, and search-indexing all have unit-level coverage via mocked repositories;
+      only genuine transactional/concurrency behavior needs a real Postgres.)*
 - [ ] Add configuration validation and safe disabled fallbacks for AI/embedding providers.
       *(`AssetHubProperties` exists with safe `false` defaults from Phase 0; no explicit
       invalid-config-fails-startup validation added.)*
@@ -371,8 +400,8 @@ Deferred items (as of 2026-09-15):
     successful-search rate, time-to-useful-result, contributor adoption, review turnaround.
   - §10's database-backed concurrency and PostgreSQL integration coverage remains deferred; unit
     coverage now protects managed-role policy/auditing, source URL validation, and search events.
-    No new automated tests were added in the 2026-09-15 pass (explicit sequencing: implementation
-    first, then a dedicated test-coverage pass) — verified by `.\mvnw.cmd compile`/`test` only.
+    A dedicated test-coverage pass landed immediately after this one (same day) — see the update
+    below.
 
 Known risks:
   - Database-backed edge coverage is still needed for concurrent reviewers, repeated decisions,
@@ -383,4 +412,54 @@ Known risks:
   - `VoyageEmbeddingProvider` and the semantic branch of `AssetLifecycleService.listAssets` have
     never executed against a real Voyage API or a Postgres with pgvector — they are compiled and
     reasoned about, not live-verified, unlike every other provider integration in this feature.
+```
+
+**Update 2026-09-15 — test-coverage pass.** Closed most of §3–§10's open test checkboxes, following
+this repo's two existing conventions exactly (no new testing paradigm introduced): plain-Mockito
+service tests and `@WebMvcTest`+MockMvc controller slices with a manually-planted
+`JwtAuthenticationToken`.
+
+```text
+New test files:
+  security/CurrentUserTest.java
+  asset/controller/AssetControllerTest.java
+  asset/controller/AssetReviewControllerTest.java
+  asset/controller/EmployeeControllerTest.java
+  asset/service/AssetReviewServiceTest.java
+  asset/service/AssetAiSuggestionServiceTest.java
+  asset/ai/GeminiAssetAiProviderTest.java
+  asset/search/AssetSearchIndexerTest.java
+  asset/service/AssetMetricsServiceTest.java
+
+Expanded:
+  asset/service/AssetLifecycleServiceTest.java   (2 tests / 2 of 12 methods -> 12 tests / all 12 methods)
+  asset/service/EmployeeRoleServiceTest.java     (added listEmployees coverage)
+
+Tests run:
+  .\mvnw.cmd test   — 549 tests, 0 failures, 0 errors relative to baseline (the 2 pre-existing
+                      ScratchRedirectUriProbe errors remain — confirmed unrelated, see above)
+                      (466 -> 549, +83 new cases)
+
+Result: pass. One real behavior was caught and corrected by writing the test, not found by
+  mvn compile: AssetAiSuggestionService's tag normalization dedups by exact string equality
+  (.distinct()), not case-insensitively — "Tag One" and "tag one" both survive. The test now
+  documents this as intended behavior rather than asserting the wrong expectation.
+
+Deferred items (unchanged from the reasons already recorded per-section above):
+  - §2/§7/§10 database-backed tests (migration/repository integration, ranking-SQL correctness,
+    revision-promotion/role-lock concurrency races) — confirmed with the user: stay 100%
+    Mockito-only, do not introduce Testcontainers/a DB-backed convention for just this feature.
+  - §6 POC-association edge cases (unhosted links, deploying/failed/hidden/deleted POCs) — no new
+    tests added this pass.
+  - §9 event-type acceptance validation, dedup/session-correlation, and forbidden-external-
+    submission tests for POST /assets/{assetId}/events specifically — not added this pass (the
+    metrics *computed from* events are tested; the event-acceptance endpoint itself is not).
+  - §10 AI/embedding configuration validation (invalid config should fail startup) — not added.
+  - Portal component-level tests (self-service-portal) — see that repo's own checklist.
+
+Known risks (in addition to the ones already listed above):
+  - AssetSearchRankingService's RRF merge and AssetMetricsService's four formulas are unit-tested
+    against constructed fixtures only; neither has ever run against a real Postgres, so a mismatch
+    between the native SQL's actual column types/behavior and the Java-side assumptions (e.g.
+    Instant vs Timestamp conversion in the tie-break query) would not be caught by this suite.
 ```

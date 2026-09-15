@@ -67,7 +67,9 @@ Phase 2 metrics aggregation (`GET /asset-hub/metrics`) is implemented. Phase 3 s
 scaffolded (`EmbeddingProvider`/`VoyageEmbeddingProvider`, RRF ranking) but not reachable in any
 deployment: it needs native pgvector on this user's local PostgreSQL and a Voyage AI API key,
 neither of which exist yet — see `docs/checklists/asset-hub/backend-api.md` §7. Dedicated Asset Hub
-test generation and accessibility verification are next. BLOG/ARTICLE template scoring remains
+test generation landed 2026-09-15 (backend: 549 tests, 0 failures; portal: 596 tests, 0 failures) —
+see both checklists' §10/§11. Accessibility (AXE/keyboard/WCAG) verification remains, deliberately
+deferred to a separate follow-up. BLOG/ARTICLE template scoring remains
 deliberately deferred.
 
 ### Phase 0 — contract freeze (backend owner)
