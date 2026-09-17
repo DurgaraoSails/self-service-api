@@ -3,11 +3,15 @@ package com.sails.ai.selfserviceapi.onboarding.generate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubApiException;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
@@ -16,23 +20,46 @@ import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTree;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTreeEntry;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ContainerRole;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestParser;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestResolution;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestService;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidationException;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidator;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.Resources;
 import com.sails.ai.selfserviceapi.onboarding.OnboardingCheckResult;
 import com.sails.ai.selfserviceapi.onboarding.PocOnboardingCheckService;
 import com.sails.ai.selfserviceapi.onboarding.generate.PocManifestGenerationResult.Outcome;
+import com.sails.ai.selfserviceapi.onboarding.generate.cloudbuild.CloudBuildImporter;
+import com.sails.ai.selfserviceapi.onboarding.generate.dockerfile.DockerfileDraftService;
+import com.sails.ai.selfserviceapi.onboarding.generate.dockerfile.DockerfileLinter;
+import com.sails.ai.selfserviceapi.onboarding.generate.dockerfile.DockerfilePlanner;
+import com.sails.ai.selfserviceapi.onboarding.generate.dockerfile.DockerfileTemplates;
 import com.sails.ai.selfserviceapi.onboarding.generate.model.DraftModelProperties;
+import com.sails.ai.selfserviceapi.onboarding.generate.model.ManifestDraftException;
 import com.sails.ai.selfserviceapi.onboarding.generate.model.ManifestDraftModel;
+import com.sails.ai.selfserviceapi.onboarding.generate.secret.EnvVarClassifier;
+import com.sails.ai.selfserviceapi.onboarding.generate.stack.StackDetector;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
+/**
+ * Every deterministic collaborator ({@code ManifestParser}, {@code ManifestValidator},
+ * {@code CloudBuildImporter}, {@code StackDetector}, {@code ManifestMerger},
+ * {@code DeterministicContainerPlanner}, {@code DockerfileTemplates}, {@code DockerfileLinter},
+ * {@code DockerfilePlanner}, {@code ManifestYamlWriter}) runs for real here — each already has its
+ * own unit tests, and using the real thing means a mocked poc.yaml never has to be hand-crafted to
+ * survive this class's own re-validation step. Only {@code GitHubService}, {@code ManifestService},
+ * {@code PocOnboardingCheckService}, {@code RepoInventoryService} and the manifest-level
+ * {@code ManifestDraftService} (the one LLM-backed collaborator that matters for these tests) are
+ * mocked.
+ */
 class PocManifestGenerationServiceTest {
 
     private static final String URL = "https://github.com/acme/contract-agent";
@@ -45,21 +72,45 @@ class PocManifestGenerationServiceTest {
     private final PocOnboardingCheckService checkService = mock(PocOnboardingCheckService.class);
     private final RepoInventoryService inventoryService = mock(RepoInventoryService.class);
     private final ManifestDraftService draftService = mock(ManifestDraftService.class);
-    private final ManifestYamlWriter yamlWriter = mock(ManifestYamlWriter.class);
+
+    private final ManifestParser manifestParser = new ManifestParser();
+    private final ManifestValidator manifestValidator =
+            new ManifestValidator(new ManifestProperties(null, null, 0), new PocRuntimeProperties(null, null, null));
+    private final CloudBuildImporter cloudBuildImporter =
+            new CloudBuildImporter(new EnvVarClassifier(new ManifestProperties(null, null, 0)));
+    private final StackDetector stackDetector = new StackDetector();
+    private final ManifestMerger manifestMerger = new ManifestMerger();
+    private final DeterministicContainerPlanner deterministicPlanner = new DeterministicContainerPlanner();
+    private final DockerfileTemplates templates = new DockerfileTemplates();
+    private final DockerfileLinter linter = new DockerfileLinter();
+    private final ManifestYamlWriter yamlWriter = new ManifestYamlWriter();
 
     private DraftModelProperties properties;
     private PocManifestGenerationService service;
 
     @BeforeEach
     void setUp() {
-        properties = new DraftModelProperties(true, "ollama", Duration.ofSeconds(60), null, null);
-        service = new PocManifestGenerationService(
-                gitHubService, manifestService, checkService, inventoryService, draftService, yamlWriter, properties);
+        properties = new DraftModelProperties(true, "ollama", Duration.ofSeconds(60), null, null, null);
+        service = buildService(properties);
         when(checkService.check(URL, BRANCH, null))
                 .thenReturn(new OnboardingCheckResult("acme/contract-agent", false, List.of(), List.of()));
         when(gitHubService.parseRepoUrl(URL)).thenReturn(REPO);
         when(gitHubService.checkPushAccess(REPO)).thenReturn(RepoAccess.OK);
         when(gitHubService.getBranchHeadSha(REPO, BRANCH)).thenReturn(SHA);
+        lenient().when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf());
+        // Every file lookup this class's collaborators make (CloudBuildImporter, StackDetector,
+        // DockerfilePlanner) goes through RepoFileReader -> this same GitHubService call — default
+        // to "not found" so an un-stubbed path never NPEs on a null Optional.
+        lenient().when(gitHubService.getFileContent(any(), anyString(), anyString())).thenReturn(Optional.empty());
+    }
+
+    private PocManifestGenerationService buildService(DraftModelProperties props) {
+        DockerfileDraftService dockerfileDraftService =
+                new DockerfileDraftService(List.of(), props, templates, linter, JsonMapper.builder().build());
+        DockerfilePlanner dockerfilePlanner = new DockerfilePlanner(stackDetector, templates, linter, dockerfileDraftService, props);
+        return new PocManifestGenerationService(gitHubService, manifestService, manifestParser, manifestValidator,
+                checkService, inventoryService, cloudBuildImporter, stackDetector, draftService, manifestMerger,
+                deterministicPlanner, dockerfilePlanner, yamlWriter, props);
     }
 
     private GitHubTree treeOf(String... blobPaths) {
@@ -69,20 +120,22 @@ class PocManifestGenerationServiceTest {
 
     @Test
     void aSingleRootDockerfileNeedsNoManifest() {
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf("Dockerfile", "README.md"));
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution(null, singleContainerManifest()));
-        when(inventoryService.inventory(REPO, SHA))
-                .thenReturn(new RepoInventory(treeOf("Dockerfile", "README.md"), List.of(), false));
 
         PocManifestGenerationResult result = service.generate(URL, BRANCH);
 
         assertThat(result.outcome()).isEqualTo(Outcome.NOT_NEEDED);
         assertThat(result.pocYaml()).isNull();
-        verify(draftService, never()).draft(any(), any());
+        verify(draftService, never()).draft(any(), any(), any(), any());
     }
 
     @Test
-    void anAlreadyValidManifestNeedsNoRegeneration() {
+    void anAlreadyValidManifestWithItsDockerfileInPlaceNeedsNoRegeneration() {
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf("Dockerfile"));
+        when(gitHubService.getFileContent(REPO, SHA, "Dockerfile"))
+                .thenReturn(Optional.of("FROM node:20-slim\nUSER node\nCMD [\"node\", \"server.js\"]\n"));
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution("containers:\n  - name: app\n", singleContainerManifest()));
 
@@ -90,11 +143,29 @@ class PocManifestGenerationServiceTest {
 
         assertThat(result.outcome()).isEqualTo(Outcome.NOT_NEEDED);
         verify(inventoryService, never()).inventory(any(), any());
-        verify(draftService, never()).draft(any(), any());
+        verify(draftService, never()).draft(any(), any(), any(), any());
+    }
+
+    /** A valid poc.yaml is never rewritten — only the Dockerfile it names but doesn't have is generated. */
+    @Test
+    void aValidManifestNamingAMissingDockerfileGeneratesJustThatFile() {
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf("package.json"));
+        when(gitHubService.getFileContent(REPO, SHA, "package.json"))
+                .thenReturn(Optional.of("{\"dependencies\":{\"express\":\"^4.18.0\"}}"));
+        when(manifestService.resolveForBuild(REPO, SHA))
+                .thenReturn(new ManifestResolution("containers:\n  - name: app\n", singleContainerManifest()));
+
+        PocManifestGenerationResult result = service.generate(URL, BRANCH);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.GENERATED);
+        assertThat(result.pocYaml()).isNull();
+        assertThat(result.dockerfiles()).anyMatch(f -> f.path().equals("Dockerfile"));
+        verify(draftService, never()).draft(any(), any(), any(), any());
     }
 
     @Test
     void generatesAFreshManifestWhenNoneExistsAndItIsNotASingleContainerRepo() {
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"));
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution(null, singleContainerManifest()));
         RepoInventory inventory = new RepoInventory(
@@ -103,15 +174,13 @@ class PocManifestGenerationServiceTest {
 
         ManifestDraftModel model = availableModel();
         when(draftService.selectedModel()).thenReturn(Optional.of(model));
-        ManifestDraftResult draftResult = new ManifestDraftResult(
-                singleContainerManifest(), List.of(), List.of("assumed things"), List.of());
-        when(draftService.draft(inventory, null)).thenReturn(draftResult);
-        when(yamlWriter.write(draftResult.manifest(), draftResult.assumptions())).thenReturn("containers:\n  - name: app\n");
+        ManifestDraftResult draftResult = new ManifestDraftResult(singleContainerManifest(), List.of("assumed things"), List.of());
+        when(draftService.draft(eq(inventory), any(ManifestFacts.class), isNull(), any())).thenReturn(draftResult);
 
         PocManifestGenerationResult result = service.generate(URL, BRANCH);
 
         assertThat(result.outcome()).isEqualTo(Outcome.GENERATED);
-        assertThat(result.pocYaml()).isEqualTo("containers:\n  - name: app\n");
+        assertThat(result.pocYaml()).contains("name: app");
         assertThat(result.manifestWasCorrected()).isFalse();
         assertThat(result.assumptions()).containsExactly("assumed things");
     }
@@ -122,15 +191,14 @@ class PocManifestGenerationServiceTest {
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenThrow(new ManifestValidationException(List.of("exactly one container must have role 'ingress'")));
         when(gitHubService.getFileContent(REPO, SHA, "poc.yaml")).thenReturn(Optional.of("containers:\n  - name: broken\n"));
-        RepoInventory inventory = new RepoInventory(treeOf("Dockerfile"), List.of(), false);
+        RepoInventory inventory = new RepoInventory(treeOf(), List.of(), false);
         when(inventoryService.inventory(REPO, SHA)).thenReturn(inventory);
 
         ManifestDraftModel model = availableModel();
         when(draftService.selectedModel()).thenReturn(Optional.of(model));
-        ManifestDraftResult draftResult = new ManifestDraftResult(
-                singleContainerManifest(), List.of(), List.of(), List.of());
-        when(draftService.draft(inventory, "containers:\n  - name: broken\n")).thenReturn(draftResult);
-        when(yamlWriter.write(any(), any())).thenReturn("containers:\n  - name: app\n");
+        ManifestDraftResult draftResult = new ManifestDraftResult(singleContainerManifest(), List.of(), List.of());
+        when(draftService.draft(eq(inventory), any(ManifestFacts.class), eq("containers:\n  - name: broken\n"), any()))
+                .thenReturn(draftResult);
 
         PocManifestGenerationResult result = service.generate(URL, BRANCH);
 
@@ -140,9 +208,8 @@ class PocManifestGenerationServiceTest {
 
     @Test
     void generationDisabledIsUnavailableWithoutTouchingGitHub() {
-        DraftModelProperties disabled = new DraftModelProperties(false, "ollama", Duration.ofSeconds(60), null, null);
-        service = new PocManifestGenerationService(
-                gitHubService, manifestService, checkService, inventoryService, draftService, yamlWriter, disabled);
+        DraftModelProperties disabled = new DraftModelProperties(false, "ollama", Duration.ofSeconds(60), null, null, null);
+        service = buildService(disabled);
 
         PocManifestGenerationResult result = service.generate(URL, BRANCH);
 
@@ -151,18 +218,35 @@ class PocManifestGenerationServiceTest {
         verify(gitHubService, never()).parseRepoUrl(anyString());
     }
 
+    /** No model, and a two-component repo the deterministic fallback can't resolve on its own either. */
     @Test
-    void noModelReachableFallsBackToTheShippedTemplate() {
+    void noModelReachableAndNoDeterministicFallbackFallsBackToTheShippedTemplate() {
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"));
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution(null, singleContainerManifest()));
-        when(inventoryService.inventory(REPO, SHA))
-                .thenReturn(new RepoInventory(treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"), List.of(), false));
         when(draftService.selectedModel()).thenReturn(Optional.empty());
 
         PocManifestGenerationResult result = service.generate(URL, BRANCH);
 
         assertThat(result.outcome()).isEqualTo(Outcome.UNAVAILABLE);
         assertThat(result.pocYaml()).contains("yaml-language-server");
+    }
+
+    /** No model, but a single-component repo (a component at the repo root) the deterministic fallback CAN resolve on its own. */
+    @Test
+    void noModelReachableButASingleComponentRepoStillGeneratesViaTheDeterministicFallback() {
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf("package.json"));
+        when(gitHubService.getFileContent(REPO, SHA, "package.json"))
+                .thenReturn(Optional.of("{\"scripts\":{\"start\":\"node index.js\"}}"));
+        when(manifestService.resolveForBuild(REPO, SHA))
+                .thenReturn(new ManifestResolution(null, singleContainerManifest()));
+        when(draftService.selectedModel()).thenReturn(Optional.empty());
+
+        PocManifestGenerationResult result = service.generate(URL, BRANCH);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.GENERATED);
+        assertThat(result.notices()).anyMatch(n -> n.code().equals(GenerationNoticeCode.MODEL_UNAVAILABLE));
+        assertThat(result.pocYaml()).contains("name: app");
     }
 
     /**
@@ -172,16 +256,16 @@ class PocManifestGenerationServiceTest {
      * case, and it must degrade the same way "no model configured" does, never fail the page.
      */
     @Test
-    void aDraftModelCallFailureFallsBackToTheShippedTemplateRatherThanFailingThePage() {
+    void aDraftModelCallFailureFallsBackToTheShippedTemplateWhenTheDeterministicFallbackAlsoCannotResolveIt() {
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"));
         when(manifestService.resolveForBuild(REPO, SHA))
                 .thenReturn(new ManifestResolution(null, singleContainerManifest()));
         RepoInventory inventory = new RepoInventory(
                 treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"), List.of(), false);
         when(inventoryService.inventory(REPO, SHA)).thenReturn(inventory);
         when(draftService.selectedModel()).thenReturn(Optional.of(availableModel()));
-        when(draftService.draft(inventory, null))
-                .thenThrow(new com.sails.ai.selfserviceapi.onboarding.generate.model.ManifestDraftException(
-                        "Connection refused"));
+        when(draftService.draft(eq(inventory), any(ManifestFacts.class), isNull(), any()))
+                .thenThrow(new ManifestDraftException("Connection refused"));
 
         PocManifestGenerationResult result = service.generate(URL, BRANCH);
 
@@ -191,14 +275,14 @@ class PocManifestGenerationServiceTest {
     }
 
     /**
-     * A GitHub read past the initial branch-head check (resolveForBuild, tree/evidence reads) can
-     * still fail transiently — a rate limit, a momentary 5xx. This used to escape as this
-     * endpoint's own 502; it must degrade the same way an unreachable draft model does instead.
+     * A GitHub read past the initial branch-head check (the tree scan, resolveForBuild, any
+     * evidence read) can still fail transiently — a rate limit, a momentary 5xx. This used to
+     * escape as this endpoint's own 502; it must degrade the same way an unreachable draft model
+     * does instead.
      */
     @Test
     void aGitHubFailureMidGenerationDegradesToUnavailableRatherThanEscaping() {
-        when(manifestService.resolveForBuild(REPO, SHA))
-                .thenThrow(new GitHubApiException("rate limited"));
+        when(gitHubService.listTree(REPO, SHA)).thenThrow(new GitHubApiException("rate limited"));
 
         PocManifestGenerationResult result = service.generate(URL, BRANCH);
 

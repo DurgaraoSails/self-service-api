@@ -29,7 +29,7 @@ class OllamaDraftModelTest {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
         server = MockRestServiceServer.bindTo(builder).build();
         DraftModelProperties properties = new DraftModelProperties(true, "ollama", Duration.ofSeconds(60),
-                new DraftModelProperties.Ollama(BASE, "qwen2.5-coder:32b", 32_000, 0), null);
+                new DraftModelProperties.Ollama(BASE, "qwen2.5-coder:32b", 32_000, 0), null, null);
         model = new OllamaDraftModel(builder.build(), properties);
     }
 

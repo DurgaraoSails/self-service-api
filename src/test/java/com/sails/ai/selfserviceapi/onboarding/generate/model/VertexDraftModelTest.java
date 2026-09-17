@@ -29,7 +29,7 @@ class VertexDraftModelTest {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
         server = MockRestServiceServer.bindTo(builder).build();
         DraftModelProperties properties = new DraftModelProperties(true, "vertex", Duration.ofSeconds(60),
-                null, new DraftModelProperties.Vertex("acme-poc", "us-central1", "gemini-2.0-flash-001"));
+                null, new DraftModelProperties.Vertex("acme-poc", "us-central1", "gemini-2.0-flash-001"), null);
         model = new VertexDraftModel(builder.build(), properties);
     }
 
@@ -38,7 +38,7 @@ class VertexDraftModelTest {
         assertThat(model.isAvailable()).isTrue();
 
         DraftModelProperties unconfigured = new DraftModelProperties(true, "vertex", Duration.ofSeconds(60),
-                null, new DraftModelProperties.Vertex(null, "us-central1", "gemini-2.0-flash-001"));
+                null, new DraftModelProperties.Vertex(null, "us-central1", "gemini-2.0-flash-001"), null);
         RestClient noRequestExpected = RestClient.builder()
                 .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
                 .build();

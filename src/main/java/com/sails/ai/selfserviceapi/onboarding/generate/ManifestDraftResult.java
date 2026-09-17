@@ -4,22 +4,20 @@ import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import java.util.List;
 
 /**
- * A draft that passed {@code ManifestValidator} — the only shape {@link ManifestDraftService}
- * returns successfully. A draft that never validates, even after repair attempts, is a
- * {@link ManifestDraftValidationException} instead, never a partial result.
+ * A draft that passed {@code ManifestValidator} (with the overlay already applied) — the only
+ * shape {@code ManifestDraftService} returns successfully. A draft that never validates, even
+ * after repair attempts, is a {@link ManifestDraftValidationException} instead, never a partial
+ * result.
  *
- * @param manifest      the validated manifest.
- * @param dockerfiles   Dockerfiles proposed for containers that declared none — advisory, see
- *                      {@link GeneratedDockerfile}.
- * @param assumptions   what the model assumed, for the human reviewing this before committing it.
- * @param secretWarnings credential-shaped literals {@link RepoInventoryService}'s evidence
- *                      contained — never turned into a manifest entry, only surfaced so a team
- *                      knows to rotate/remove them.
+ * <p>Dockerfiles are no longer part of this — {@code ManifestDraftService} is manifest-only as of
+ * Phase 3; {@code DockerfilePlanner}/{@code DockerfileDraftService} decide those separately, per
+ * container, only for containers that actually need one.
+ *
+ * @param manifest    the validated manifest.
+ * @param assumptions what the model assumed, for the human reviewing this before committing it.
+ * @param notices     anything worth surfacing from the draft itself — a credential-shaped literal
+ *                    found in the evidence and redacted before it ever reached the prompt
+ *                    ({@code EVIDENCE_SECRET_REDACTED}), most commonly.
  */
-public record ManifestDraftResult(
-        PocManifest manifest,
-        List<GeneratedDockerfile> dockerfiles,
-        List<String> assumptions,
-        List<String> secretWarnings
-) {
+public record ManifestDraftResult(PocManifest manifest, List<String> assumptions, List<GenerationNotice> notices) {
 }

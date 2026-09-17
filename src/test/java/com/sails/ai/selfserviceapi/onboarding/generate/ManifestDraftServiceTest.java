@@ -8,6 +8,7 @@ import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTree;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTreeEntry;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidator;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.PocManifest;
 import com.sails.ai.selfserviceapi.onboarding.generate.RepoInventory.EvidenceFile;
 import com.sails.ai.selfserviceapi.onboarding.generate.model.DraftModelProperties;
 import com.sails.ai.selfserviceapi.onboarding.generate.model.ManifestDraftModel;
@@ -17,6 +18,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -31,15 +33,17 @@ class ManifestDraftServiceTest {
     private static final ManifestValidator VALIDATOR =
             new ManifestValidator(new ManifestProperties(null, null, 0), new PocRuntimeProperties(null, null, null));
 
+    private static final ManifestFacts NO_FACTS = ManifestFacts.of(List.of());
+
     private static final String VALID_JSON = """
             {"containers":[{"name":"app","role":"ingress","dockerfile":"Dockerfile","context":".",
-            "evidence":"root Dockerfile"}],"dockerfiles":[],"assumptions":["Single service."]}
+            "evidence":"root Dockerfile"}],"assumptions":["Single service."]}
             """;
 
     /** No ingress container — ManifestValidator rejects this. */
     private static final String INVALID_JSON = """
             {"containers":[{"name":"app","role":"sidecar","dockerfile":"Dockerfile","context":".",
-            "port":8080,"evidence":"root Dockerfile"}],"dockerfiles":[],"assumptions":[]}
+            "port":8080,"evidence":"root Dockerfile"}],"assumptions":[]}
             """;
 
     private static RepoInventory fixtureInventory() {
@@ -48,8 +52,12 @@ class ManifestDraftServiceTest {
     }
 
     private ManifestDraftService serviceWithModel(ManifestDraftModel model) {
-        DraftModelProperties properties = new DraftModelProperties(true, model.name(), Duration.ofSeconds(30), null, null);
+        DraftModelProperties properties = new DraftModelProperties(true, model.name(), Duration.ofSeconds(30), null, null, null);
         return new ManifestDraftService(List.of(model), properties, VALIDATOR, JsonMapper.builder().build());
+    }
+
+    private ManifestDraftResult draft(ManifestDraftService service, RepoInventory inventory) {
+        return service.draft(inventory, NO_FACTS, null, UnaryOperator.identity());
     }
 
     @Test
@@ -57,7 +65,7 @@ class ManifestDraftServiceTest {
         List<String> promptsSeen = new ArrayList<>();
         ManifestDraftModel model = scripted("stub", promptsSeen, VALID_JSON);
 
-        ManifestDraftResult result = serviceWithModel(model).draft(fixtureInventory(), null);
+        ManifestDraftResult result = draft(serviceWithModel(model), fixtureInventory());
 
         assertThat(result.manifest().ingress().name()).isEqualTo("app");
         assertThat(promptsSeen).hasSize(1);
@@ -72,7 +80,7 @@ class ManifestDraftServiceTest {
         List<String> promptsSeen = new ArrayList<>();
         ManifestDraftModel model = scripted("stub", promptsSeen, INVALID_JSON, VALID_JSON);
 
-        ManifestDraftResult result = serviceWithModel(model).draft(fixtureInventory(), null);
+        ManifestDraftResult result = draft(serviceWithModel(model), fixtureInventory());
 
         assertThat(result.manifest().ingress().name()).isEqualTo("app");
         assertThat(promptsSeen).hasSize(2);
@@ -86,7 +94,7 @@ class ManifestDraftServiceTest {
         List<String> promptsSeen = new ArrayList<>();
         ManifestDraftModel model = scripted("stub", promptsSeen, INVALID_JSON, INVALID_JSON, INVALID_JSON);
 
-        assertThatThrownBy(() -> serviceWithModel(model).draft(fixtureInventory(), null))
+        assertThatThrownBy(() -> draft(serviceWithModel(model), fixtureInventory()))
                 .isInstanceOf(ManifestDraftValidationException.class)
                 .satisfies(e -> assertThat(((ManifestDraftValidationException) e).violations())
                         .anyMatch(v -> v.contains("ingress")));
@@ -104,7 +112,7 @@ class ManifestDraftServiceTest {
         List<String> promptsSeen = new ArrayList<>();
         ManifestDraftModel model = scripted("stub", promptsSeen, "not json at all {{{", VALID_JSON);
 
-        ManifestDraftResult result = serviceWithModel(model).draft(fixtureInventory(), null);
+        ManifestDraftResult result = draft(serviceWithModel(model), fixtureInventory());
 
         assertThat(result.manifest().ingress().name()).isEqualTo("app");
         assertThat(promptsSeen).hasSize(2);
@@ -117,21 +125,35 @@ class ManifestDraftServiceTest {
         ManifestDraftModel model = scripted("stub", new ArrayList<>(),
                 "not json", "still not json", "definitely not json");
 
-        assertThatThrownBy(() -> serviceWithModel(model).draft(fixtureInventory(), null))
+        assertThatThrownBy(() -> draft(serviceWithModel(model), fixtureInventory()))
                 .isInstanceOf(ManifestDraftValidationException.class);
     }
 
     @Test
-    void secretLiteralsInEvidenceBecomeWarningsNeverManifestValues() {
+    void secretLiteralsInEvidenceBecomeNoticesNeverManifestValues() {
         GitHubTree tree = new GitHubTree(List.of(new GitHubTreeEntry(".env", "blob", 40L)), false);
         RepoInventory inventory = new RepoInventory(tree,
                 List.of(new EvidenceFile(".env", "OPENAI_API_KEY=sk-verylongsecretvalue1234567890")), false);
         ManifestDraftModel model = scripted("stub", new ArrayList<>(), VALID_JSON);
 
-        ManifestDraftResult result = serviceWithModel(model).draft(inventory, null);
+        ManifestDraftResult result = draft(serviceWithModel(model), inventory);
 
-        assertThat(result.secretWarnings()).anyMatch(w -> w.contains(".env"));
+        assertThat(result.notices()).anyMatch(n -> ".env".equals(n.path()));
         assertThat(result.manifest().ingress().env()).doesNotContainKey("OPENAI_API_KEY");
+    }
+
+    /** The FACTS block is always the first thing the model sees — authoritative per the system prompt. */
+    @Test
+    void theFactsBlockIsAlwaysIncludedInThePrompt() {
+        List<String> promptsSeen = new ArrayList<>();
+        ManifestDraftModel model = scripted("stub", promptsSeen, VALID_JSON);
+        ManifestFacts facts = ManifestFacts.of(List.of(
+                new ManifestFacts.ComponentFact("", com.sails.ai.selfserviceapi.onboarding.generate.stack.StackKind.NODE_SERVER, true, "Dockerfile")));
+
+        serviceWithModel(model).draft(fixtureInventory(), facts, null, UnaryOperator.identity());
+
+        assertThat(promptsSeen).singleElement().satisfies(prompt ->
+                assertThat(prompt).contains("FACTS").contains("NODE_SERVER"));
     }
 
     /**
@@ -162,7 +184,7 @@ class ManifestDraftServiceTest {
             }
         };
 
-        serviceWithModel(model).draft(fixtureInventory(), null);
+        draft(serviceWithModel(model), fixtureInventory());
 
         assertThat(schemasSeen).singleElement().satisfies(schema ->
                 assertThat(schema).doesNotContain("\"type\": [").doesNotContain("\"type\":["));

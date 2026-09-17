@@ -65,6 +65,17 @@ class DraftModelPropertiesBindingTest {
         assertThat(properties.vertex().project()).isNullOrEmpty();
         assertThat(properties.vertex().location()).isEqualTo("us-central1");
         assertThat(properties.vertex().model()).isEqualTo("gemini-2.0-flash-001");
+
+        assertThat(properties.maxDockerfileModelCalls()).isEqualTo(2);
+    }
+
+    @Test
+    void maxDockerfileModelCallsEnvVarOverridesItsOwnValue() {
+        DraftModelProperties properties = binderWithEnv(Map.of(
+                "POC_GENERATOR_MAX_DOCKERFILE_MODEL_CALLS", "5"
+        )).bind("poc-generator", Bindable.of(DraftModelProperties.class)).get();
+
+        assertThat(properties.maxDockerfileModelCalls()).isEqualTo(5);
     }
 
     @Test

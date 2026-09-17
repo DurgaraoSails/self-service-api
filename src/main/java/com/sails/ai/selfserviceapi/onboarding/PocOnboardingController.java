@@ -3,13 +3,20 @@ package com.sails.ai.selfserviceapi.onboarding;
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.generated.api.OnboardingApi;
 import com.sails.ai.selfserviceapi.generated.model.PocGeneratedDockerfile;
+import com.sails.ai.selfserviceapi.generated.model.PocGeneratedFile;
+import com.sails.ai.selfserviceapi.generated.model.PocGenerationImport;
+import com.sails.ai.selfserviceapi.generated.model.PocGenerationImportSettingsInner;
+import com.sails.ai.selfserviceapi.generated.model.PocGenerationImportUnsupportedInner;
+import com.sails.ai.selfserviceapi.generated.model.PocGenerationNotice;
 import com.sails.ai.selfserviceapi.generated.model.PocManifestGenerateRequest;
 import com.sails.ai.selfserviceapi.generated.model.PocManifestGenerateResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocManifestGenerationOutcome;
 import com.sails.ai.selfserviceapi.generated.model.PocOnboardingCheckRequest;
 import com.sails.ai.selfserviceapi.generated.model.PocOnboardingCheckResponse;
 import com.sails.ai.selfserviceapi.generated.model.PocOnboardingFinding;
-import com.sails.ai.selfserviceapi.onboarding.generate.GeneratedDockerfile;
+import com.sails.ai.selfserviceapi.onboarding.generate.GeneratedFile;
+import com.sails.ai.selfserviceapi.onboarding.generate.GenerationImport;
+import com.sails.ai.selfserviceapi.onboarding.generate.GenerationNotice;
 import com.sails.ai.selfserviceapi.onboarding.generate.PocManifestGenerationResult;
 import com.sails.ai.selfserviceapi.onboarding.generate.PocManifestGenerationService;
 import com.sails.ai.selfserviceapi.security.CurrentUser;
@@ -88,21 +95,45 @@ public class PocOnboardingController implements OnboardingApi {
     }
 
     private PocManifestGenerateResponse toResponse(PocManifestGenerationResult result) {
-        List<PocGeneratedDockerfile> dockerfiles = result.dockerfiles().stream()
-                .map(this::toGeneratedDockerfile)
+        List<PocGeneratedFile> files = result.files().stream().map(this::toGeneratedFile).toList();
+        List<PocGenerationNotice> notices = result.notices().stream().map(this::toNotice).toList();
+        List<PocGenerationImport> imports = result.imports().stream().map(this::toImport).toList();
+        List<PocGeneratedDockerfile> legacyDockerfiles = result.dockerfiles().stream()
+                .map(f -> new PocGeneratedDockerfile(f.path(), f.content(), f.reason()))
                 .toList();
 
         return new PocManifestGenerateResponse(
                 PocManifestGenerationOutcome.valueOf(result.outcome().name()),
-                dockerfiles,
-                result.assumptions(),
-                result.warnings(),
+                files, notices, imports, legacyDockerfiles,
+                result.assumptions(), result.warnings(),
                 result.manifestWasCorrected(),
                 toResponse(result.checkResult()))
                 .pocYaml(result.pocYaml());
     }
 
-    private PocGeneratedDockerfile toGeneratedDockerfile(GeneratedDockerfile dockerfile) {
-        return new PocGeneratedDockerfile(dockerfile.path(), dockerfile.content(), dockerfile.reason());
+    private PocGeneratedFile toGeneratedFile(GeneratedFile file) {
+        return new PocGeneratedFile(file.path(),
+                PocGeneratedFile.KindEnum.valueOf(file.kind().name()),
+                PocGeneratedFile.ActionEnum.valueOf(file.action().name()),
+                PocGeneratedFile.SourceEnum.valueOf(file.source().name()),
+                file.content(), file.reason(), file.needsReview())
+                .container(file.container());
+    }
+
+    private PocGenerationNotice toNotice(GenerationNotice notice) {
+        return new PocGenerationNotice(notice.severity(), notice.code(), notice.message())
+                .path(notice.path())
+                .container(notice.container());
+    }
+
+    private PocGenerationImport toImport(GenerationImport generationImport) {
+        List<PocGenerationImportSettingsInner> settings = generationImport.settings().stream()
+                .map(s -> new PocGenerationImportSettingsInner(s.container(), s.key(), s.value()))
+                .toList();
+        List<PocGenerationImportUnsupportedInner> unsupported = generationImport.unsupported().stream()
+                .map(u -> new PocGenerationImportUnsupportedInner(u.setting(), u.reason()))
+                .toList();
+        return new PocGenerationImport(generationImport.sourcePath(), generationImport.services(), settings,
+                generationImport.secretNames(), unsupported);
     }
 }

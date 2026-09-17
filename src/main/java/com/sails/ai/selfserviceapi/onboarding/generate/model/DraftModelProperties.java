@@ -16,6 +16,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param timeout  the per-call timeout passed to {@link ModelRequest#timeout()}. A model call is
  *                 expected to run far longer than a plain REST call, so this is independent of the
  *                 adapters' own connect/read timeouts.
+ * @param maxDockerfileModelCalls how many {@code DockerfileDraftService} calls one generation run
+ *                 may spend — one per container whose stack could not be recognized deterministically.
+ *                 Separate from {@code ManifestDraftService}'s own repair budget: a repo with several
+ *                 unrecognized components could otherwise turn one "Prepare my POC files" click into
+ *                 many model calls.
  */
 @ConfigurationProperties(prefix = "poc-generator")
 public record DraftModelProperties(
@@ -23,10 +28,12 @@ public record DraftModelProperties(
         String provider,
         Duration timeout,
         Ollama ollama,
-        Vertex vertex
+        Vertex vertex,
+        Integer maxDockerfileModelCalls
 ) {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(120);
+    private static final int DEFAULT_MAX_DOCKERFILE_MODEL_CALLS = 2;
 
     public DraftModelProperties {
         if (provider == null || provider.isBlank()) {
@@ -40,6 +47,9 @@ public record DraftModelProperties(
         }
         if (vertex == null) {
             vertex = Vertex.defaults();
+        }
+        if (maxDockerfileModelCalls == null || maxDockerfileModelCalls <= 0) {
+            maxDockerfileModelCalls = DEFAULT_MAX_DOCKERFILE_MODEL_CALLS;
         }
     }
 

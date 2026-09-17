@@ -177,10 +177,13 @@ PocManifestGenerateResponse:
   type: object
   description: >
     One of three honest outcomes: the platform already covers this repository with no file needed,
-    a generated (or corrected) poc.yaml, or generation was unavailable. checkResult is always
+    a generated (or corrected) set of files, or generation was unavailable. checkResult is always
     present, regardless of outcome, so there is always something actionable to show.
   required:
     - outcome
+    - files
+    - notices
+    - imports
     - dockerfiles
     - assumptions
     - warnings
@@ -190,20 +193,51 @@ PocManifestGenerateResponse:
     outcome:
       $ref: '#/PocManifestGenerationOutcome'
 
+    files:
+      type: array
+      description: >
+        Every file this run produced, poc.yaml first (when present) then the rest by path. The
+        current and complete way to get everything this endpoint prepared — dockerfiles/pocYaml
+        below are the same content reshaped for callers that have not moved to this field yet.
+      items:
+        $ref: '#/PocGeneratedFile'
+
+    notices:
+      type: array
+      description: >
+        Everything worth a team's attention from this run, at whatever severity it actually is —
+        import decisions, lint findings, a truncated tree, why generation was unavailable. The
+        current and complete way to see what happened; warnings below is a filtered view of this
+        for callers that have not moved to this field yet.
+      items:
+        $ref: '#/PocGenerationNotice'
+
+    imports:
+      type: array
+      description: >
+        What was read from a cloudbuild.yaml, if the repository had one and it applied to this
+        outcome (empty when a valid poc.yaml already existed — the import is reported but never
+        applied to an existing manifest — see IMPORT_NOT_APPLIED in notices).
+      items:
+        $ref: '#/PocGenerationImport'
+
     pocYaml:
       type: string
       nullable: true
+      deprecated: true
       description: >
-        The generated (or corrected) manifest text for outcome GENERATED; the platform's own
-        shipped poc.yaml.template for outcome UNAVAILABLE, so there is always something to copy
-        even when generation itself did not run; null for outcome NOT_NEEDED.
+        Deprecated — use files (kind POC_YAML). The generated (or corrected) manifest text for
+        outcome GENERATED; the platform's own shipped poc.yaml.template for outcome UNAVAILABLE, so
+        there is always something to copy even when generation itself did not run; null for outcome
+        NOT_NEEDED.
 
     dockerfiles:
       type: array
+      deprecated: true
       description: >
-        Dockerfiles proposed for containers that declared none. Advisory only — unlike pocYaml,
-        nothing validates a Dockerfile's content, so these are meant for copy-and-review, never for
-        an automatic commit. Empty outside outcome GENERATED.
+        Deprecated — use files (kind DOCKERFILE). Dockerfiles proposed for containers that declared
+        none. Advisory only — unlike pocYaml, nothing validates a Dockerfile's content, so these are
+        meant for copy-and-review, never for an automatic commit. Empty outside outcome GENERATED.
       items:
         $ref: '#/PocGeneratedDockerfile'
 
@@ -215,10 +249,12 @@ PocManifestGenerateResponse:
 
     warnings:
       type: array
+      deprecated: true
       description: >
-        Anything worth a team's attention that is not a manifest violation — a credential-shaped
-        literal found in the repository (never copied into the manifest), a repository tree too
-        large to read in full, or why generation was unavailable.
+        Deprecated — use notices (severity WARNING or ERROR). Anything worth a team's attention
+        that is not a manifest violation — a credential-shaped literal found in the repository
+        (never copied into the manifest), a repository tree too large to read in full, or why
+        generation was unavailable.
       items:
         type: string
 
@@ -230,6 +266,132 @@ PocManifestGenerateResponse:
 
     checkResult:
       $ref: './poc-onboarding.yaml#/PocOnboardingCheckResponse'
+
+PocGeneratedFile:
+  type: object
+  description: One file this run produced, ready to copy or download.
+  required:
+    - path
+    - kind
+    - action
+    - source
+    - content
+    - reason
+    - needsReview
+  properties:
+    path:
+      type: string
+      description: Relative to the repository root, e.g. "apps/api/Dockerfile" or "poc.yaml".
+      example: "apps/api/Dockerfile"
+    kind:
+      type: string
+      enum: [POC_YAML, DOCKERFILE, DOCKERIGNORE, CONFIG]
+    action:
+      type: string
+      enum: [CREATE, REPLACE]
+      description: >
+        REPLACE means a file already existed at this path and this content is meant to overwrite
+        it (e.g. a Dockerfile that copies a build output nothing in it produces — see
+        DOCKERFILE_EXTERNAL_ARTIFACT). CREATE means nothing was there before.
+    source:
+      type: string
+      enum: [TEMPLATE, MODEL, DERIVED]
+      description: >
+        TEMPLATE — a vetted, stack-specific template. MODEL — drafted by the configured LLM.
+        DERIVED — assembled deterministically with no model call (the fallback container plan's
+        poc.yaml, for instance).
+    container:
+      type: string
+      nullable: true
+      description: Which container this file belongs to, when it belongs to one specific container.
+    content:
+      type: string
+    reason:
+      type: string
+      description: Why this file looks the way it does — the evidence or decision behind it.
+    needsReview:
+      type: boolean
+      description: >
+        True for anything not proven safe by a validator or a vetted template — a model-drafted
+        Dockerfile for an unrecognized stack, most notably. poc.yaml is never true here: it always
+        passed ManifestValidator before it reached this response.
+
+PocGenerationNotice:
+  type: object
+  description: One thing worth a team's attention that is not a manifest validation violation.
+  required:
+    - severity
+    - code
+    - message
+  properties:
+    severity:
+      $ref: '#/PocOnboardingSeverity'
+    code:
+      type: string
+      description: >
+        A stable identifier for this notice's kind (e.g. SECRET_TO_PROVISION, DOCKERFILE_ROOT_USER,
+        SERVICES_MERGED). Deliberately a plain string, not an enum — a new code is additive and
+        never breaks a client parsing this response. See the platform's docs for the full list.
+      example: "SECRET_TO_PROVISION"
+    message:
+      type: string
+    path:
+      type: string
+      nullable: true
+      description: The file this notice is about, when there is one specific file.
+    container:
+      type: string
+      nullable: true
+      description: The container this notice is about, when there is one.
+
+PocGenerationImport:
+  type: object
+  description: What was read from one cloudbuild.yaml.
+  required:
+    - sourcePath
+    - services
+    - settings
+    - secretNames
+    - unsupported
+  properties:
+    sourcePath:
+      type: string
+      example: "cloudbuild.yaml"
+    services:
+      type: array
+      description: Cloud Run service name(s) this cloudbuild.yaml deployed. More than one means they were merged — see SERVICES_MERGED in notices.
+      items:
+        type: string
+    settings:
+      type: array
+      description: Every setting actually imported, one row per value — never a secret's value, only its name.
+      items:
+        type: object
+        required: [container, key, value]
+        properties:
+          container:
+            type: string
+          key:
+            type: string
+            example: "port"
+          value:
+            type: string
+    secretNames:
+      type: array
+      description: Names of secrets this deploy referenced (--set-secrets) — never the Secret Manager reference they pointed at.
+      items:
+        type: string
+    unsupported:
+      type: array
+      description: Settings this cloudbuild.yaml declared that were not imported, and why.
+      items:
+        type: object
+        required: [setting, reason]
+        properties:
+          setting:
+            type: string
+          reason:
+            type: string
 
 PocGeneratedDockerfile:
   type: object
