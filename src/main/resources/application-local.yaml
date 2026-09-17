@@ -15,6 +15,9 @@ BUILD_SERVICE_ACCOUNT: self-service-builder
 microsoft-sso:
   enabled: true
 
+asset-hub:
+  enabled: true
+
 # Uncomment to test poc.yaml generation against Vertex AI locally. Needs
 # `gcloud auth application-default login` and roles/aiplatform.user on the project — the same ADC
 # this app already uses for Cloud Build/Cloud Run, no new credential to set up.
