@@ -7,7 +7,7 @@
 #   output-dir defaults to secrets/jwt (gitignored)
 
 set -euo pipefail
-
+doe
 OUT_DIR="${1:-secrets/jwt}"
 mkdir -p "$OUT_DIR"
 

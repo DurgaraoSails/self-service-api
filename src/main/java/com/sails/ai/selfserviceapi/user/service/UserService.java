@@ -4,6 +4,7 @@ import com.sails.ai.selfserviceapi.auth.microsoft.EmployeeAccess;
 
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.user.config.TrialProperties;
+import com.sails.ai.selfserviceapi.user.entity.AccountType;
 import com.sails.ai.selfserviceapi.user.entity.ThemeMode;
 import com.sails.ai.selfserviceapi.user.entity.User;
 import com.sails.ai.selfserviceapi.user.entity.UserStatus;
@@ -203,10 +204,17 @@ public class UserService {
      * clicking an already-on toggle twice doesn't churn the row. Rebuilds the list rather than
      * mutating {@code user.getRoles()} in place, matching {@link #registerUser}'s own handling of
      * this column — not guaranteed mutable once loaded back from the {@code text[]} column.
+     *
+     * <p>ADMIN is an internal-employee privilege, matching {@code EmployeeRoleService}'s rule for
+     * ASSET_REVIEWER — an external (customer) account can never hold it.
      */
     @Transactional
     public User promoteToAdmin(String id) {
         User user = getById(id);
+        if (user.getAccountType() != AccountType.INTERNAL) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "ROLE_TARGET_MUST_BE_INTERNAL",
+                    "ADMIN can only be granted to internal employees.");
+        }
         if (!user.getRoles().contains("ADMIN")) {
             List<String> roles = new ArrayList<>(user.getRoles());
             roles.add("ADMIN");

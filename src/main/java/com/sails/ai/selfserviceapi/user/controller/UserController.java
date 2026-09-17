@@ -8,6 +8,7 @@ import com.sails.ai.selfserviceapi.generated.model.RequestTrialExtensionRequest;
 import com.sails.ai.selfserviceapi.generated.model.TrialAlertsCountResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdateUserRequest;
 import com.sails.ai.selfserviceapi.generated.model.UserResponse;
+import com.sails.ai.selfserviceapi.security.CurrentUser;
 import com.sails.ai.selfserviceapi.support.service.SupportService;
 import com.sails.ai.selfserviceapi.user.entity.ThemeMode;
 import com.sails.ai.selfserviceapi.user.entity.User;
@@ -84,12 +85,14 @@ public class UserController implements UserApi {
     @Override
     @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<CustomerResponse> promoteToAdmin(String id) {
+        CurrentUser.requireInternal();
         return ResponseEntity.ok(CustomerResponseMapper.toResponse(userService.promoteToAdmin(id)));
     }
 
     @Override
     @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<CustomerResponse> demoteToUser(String id) {
+        CurrentUser.requireInternal();
         return ResponseEntity.ok(CustomerResponseMapper.toResponse(userService.demoteToUser(id)));
     }
 

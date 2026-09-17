@@ -14,3 +14,6 @@ BUILD_SERVICE_ACCOUNT: self-service-builder
 # Local development has the Microsoft credentials in the gitignored secrets import above.
 microsoft-sso:
   enabled: true
+
+asset-hub:
+  enabled: true

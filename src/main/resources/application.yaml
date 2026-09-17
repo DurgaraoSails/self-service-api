@@ -2,10 +2,15 @@ spring:
   application:
     name: self-service-api
 
+  config:
+    # Loads local-dev-only secrets (BREVO_API_KEY, JWT key paths, mail sender) with no profile
+    # needed — optional, so it's silently skipped in prod/CI where the file doesn't exist.
+    import: optional:file:./secrets/application-local-secrets.yaml
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/selfservice}
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD}
+    password: ${DB_PASSWORD:admin}
 
     hikari:
       maximum-pool-size: 5
@@ -225,3 +230,51 @@ microsoft-sso:
   # prod) so a literal here would be wrong somewhere. Comes from the environment only — the
   # gitignored local secrets YAML for local dev, the deployed environment's own secrets elsewhere.
   redirect-uri: ${MICROSOFT_REDIRECT_URI}
+
+# Asset Hub. False by default everywhere until migrations and both applications (this one and
+# self-service-portal) are deployed. ai-enabled/semantic-search-enabled are independent of each
+# other and of enabled itself: keyword search and manual review must work with both off.
+asset-hub:
+  enabled: ${ASSET_HUB_ENABLED:false}
+  ai-enabled: ${ASSET_HUB_AI_ENABLED:false}
+  semantic-search-enabled: ${ASSET_HUB_SEMANTIC_SEARCH_ENABLED:false}
+  # Gemini for metadata suggestions (docs/specs/asset-hub.md, AI Suggestion Contract). Read only
+  # when ai-enabled=true; irrelevant and unvalidated otherwise. When it is true, the selected
+  # transport's required fields are checked at startup, not at first suggestion.
+  ai:
+    # VERTEX_AI — Gemini via Vertex AI, authenticated with Application Default Credentials, the
+    #   same mechanism the deploy pipeline uses. No API key to store or rotate. Needs project-id
+    #   and either `gcloud auth application-default login` locally or an attached service account.
+    # GEMINI_API — Gemini via generativelanguage.googleapis.com, authenticated with an API key.
+    #   Needs no GCP project, gcloud, or ADC, so it runs anywhere a key is available.
+    transport: ${ASSET_HUB_AI_TRANSPORT:VERTEX_AI}
+
+    # VERTEX_AI only. Defaults to the project the deploy pipeline already targets; override only if
+    # Asset Hub's AI calls must bill or audit against a different project.
+    project-id: ${ASSET_HUB_AI_PROJECT_ID:${GCP_PROJECT_ID:}}
+    region: ${ASSET_HUB_AI_REGION:us-central1}
+
+    # GEMINI_API only. A long-lived credential — supply it through the deployment secret mechanism
+    # (env var here, secrets/application-local-secrets.yaml locally). Never commit a literal.
+    api-key: ${ASSET_HUB_AI_API_KEY:}
+
+    # gemini-2.5-flash retires 2026-10-16. Kept as configuration rather than a constant so moving
+    # to the current generation is a config change, not a release.
+    model: ${ASSET_HUB_AI_MODEL:gemini-2.5-flash}
+    timeout-seconds: ${ASSET_HUB_AI_TIMEOUT_SECONDS:20}
+
+  # Voyage AI embeddings for semantic search (docs/specs/asset-hub.md, "Semantic search
+  # embeddings"). Read only when semantic-search-enabled=true, which additionally requires a
+  # pgvector-enabled PostgreSQL — migration V26 creates the extension and the vector(1024) column.
+  # Keyword search is unaffected when this is off.
+  embedding:
+    # Voyage's free tier (200M tokens on the voyage-4 family) covers this POC. Supply through the
+    # deployment secret mechanism; never commit a literal.
+    api-key: ${ASSET_HUB_EMBEDDING_API_KEY:}
+    base-url: ${ASSET_HUB_EMBEDDING_BASE_URL:https://api.voyageai.com}
+    model: ${ASSET_HUB_EMBEDDING_MODEL:voyage-4}
+    # Must equal the vector(N) width in V26. Startup fails on a mismatch rather than letting every
+    # approval hit an opaque pgvector dimension error — changing it needs a migration and a full
+    # reindex, so it is not a safe runtime override.
+    dimensions: ${ASSET_HUB_EMBEDDING_DIMENSIONS:1024}
+    timeout-seconds: ${ASSET_HUB_EMBEDDING_TIMEOUT_SECONDS:20}
