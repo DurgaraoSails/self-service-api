@@ -31,6 +31,7 @@ The manifest contract itself is already specified and is not restated here:
 | For | See |
 |-----|-----|
 | `poc.yaml` shape, validation rules, multi-container deploy | `docs/specs/poc-manifest-deployment.md` |
+| Generating a `poc.yaml`/Dockerfiles for a repository that fails this check | `docs/specs/poc-onboarding-generate.md` |
 | Injected env vars (`PLATFORM_API_URL`, `POC_SLUG`, `PORTAL_ORIGIN`, `PORT`, `SVC_<NAME>_URL`) | `docs/specs/poc-container-environment.md` |
 | Tag creation, build, and deploy sequence | `docs/specs/poc-deployment-pipeline.md` |
 | The full POC contract including JWT auth and the portal bridge (phase 2+) | `docs/poc-integration-guide.md` |

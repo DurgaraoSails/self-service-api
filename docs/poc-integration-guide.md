@@ -6,6 +6,8 @@ Give this entire file to the developer or coding agent working in the POC reposi
 
 This is the **full** contract, including the POC-scoped JWT and the portal bridge. A team that only wants its POC hosted and launchable — no authentication, no bridge, no file or database integration — has a shorter path: the in-portal onboarding guide at `/docs/host-poc`, specified in `docs/specs/poc-onboarding-check.md` (the readiness checker) and in `self-service-portal` at `docs/specs/poc-onboarding-guide-page.md` (the guide itself). Start there, and come back to this file when the POC needs to know who its user is.
 
+A platform admin can also generate a draft `poc.yaml` and any missing Dockerfiles for a repository — `POST /poc-onboarding/generate`, specified in `docs/specs/poc-onboarding-generate.md` — rather than writing them by hand against section 9 below. It is not a substitute for section 9: everything it produces must satisfy the same rules, and it may answer "you don't need one" or "I couldn't determine one" for a repository shape it cannot resolve on its own.
+
 ## 1. Instructions to the implementing coding agent
 
 Adapt the existing POC to the SAILS self-service platform. Implement the changes in the POC repository, preserving its business functionality and existing framework unless a change is necessary for integration. Do not stop at a plan or at adding frontend token decoding: complete frontend, backend, runtime configuration, container packaging, and relevant tests.
@@ -349,6 +351,11 @@ File endpoints can be called by the frontend or by the POC backend forwarding th
 A shared uploader UI package is not currently available in the inspected bridge. Implement the POC's upload UI if needed. `platform.files.enabled` does not automatically create that UI or credentials.
 
 ## 9. Container and manifest contract
+
+A platform admin can generate a first draft of everything in this section — see the note in the
+introduction and `docs/specs/poc-onboarding-generate.md` — but every rule below still applies to
+what it produces, and it is not implemented by the coding agent working in the POC repository, since
+it calls a platform endpoint the POC repository itself has no access to.
 
 The current platform API builds containers from one POC repository and deploys them as one Cloud Run service with exactly one ingress container. Sidecars share the instance network and must use distinct listening ports. Docker Compose may be used for local testing but is not the deployment input.
 
