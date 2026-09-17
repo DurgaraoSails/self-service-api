@@ -40,21 +40,43 @@ public class StepCommandExtractor {
             return commands;
         }
 
+        if (step.args().isEmpty() && (step.entrypoint() == null || step.entrypoint().isBlank())) {
+            return List.of();
+        }
+
         List<String> words = new ArrayList<>();
+        Tool tool;
         if (step.entrypoint() != null && !step.entrypoint().isBlank()) {
+            // An explicit entrypoint IS the literal command word — "npm", "mvn", a full path, etc.
             words.add(step.entrypoint());
+            tool = toolFor(step.entrypoint(), step.name());
+        } else {
+            // A plain args: invocation never restates the tool name — that's implied by the builder
+            // image itself ('docker build -t x .' is written as just args: ['build','-t','x','.']
+            // against gcr.io/cloud-builders/docker). Every downstream parser expects the literal CLI
+            // shape ("docker"/"gcloud"/"pack" as the first word), so it is prepended here from the
+            // builder image — except kaniko, whose args already ARE its flags with no subcommand
+            // word of their own.
+            tool = toolForBuilderImage(step.name());
+            String canonical = canonicalWordFor(tool);
+            if (canonical != null) {
+                words.add(canonical);
+            }
         }
         words.addAll(step.args());
         if (words.isEmpty()) {
             return List.of();
         }
-        Tool tool = step.entrypoint() != null && !step.entrypoint().isBlank()
-                ? toolFor(step.entrypoint(), step.name())
-                : toolForBuilderImage(step.name());
-        // kaniko's args ARE its flags directly (no leading "kaniko" subcommand word to strip), so
-        // its word list is exactly step.args() with no entrypoint prefix — words already holds this
-        // when entrypoint is unset, which is kaniko's normal shape.
         return List.of(new ExtractedCommand(tool, words, step.dir()));
+    }
+
+    private String canonicalWordFor(Tool tool) {
+        return switch (tool) {
+            case DOCKER -> "docker";
+            case GCLOUD -> "gcloud";
+            case PACK -> "pack";
+            default -> null;
+        };
     }
 
     private String scriptTextOf(Step step) {
