@@ -1921,6 +1921,45 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /poc-onboarding/generate:
+    post:
+      summary: Generate a poc.yaml (and any missing Dockerfiles) for a repository
+      description: >
+        Reads a repository through the platform's own GitHub integration, drafts a poc.yaml with an
+        LLM, and validates the draft with the same ManifestValidator a real deploy uses before ever
+        returning it — a generated manifest that fails validation never reaches a caller. Returns
+        one of three outcomes: the repository does not need a poc.yaml at all, a generated (or
+        corrected) poc.yaml, or generation was unavailable, with the platform's own template
+        returned instead so there is always something to copy.
+
+
+        Available to any signed-in user, matching /poc-onboarding/check. More expensive than a
+        check — it makes an LLM call — so it is rate limited more strictly per user.
+      operationId: generatePocManifest
+      tags:
+        - Onboarding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/schemas/poc-onboarding.yaml#/PocManifestGenerateRequest'
+      responses:
+        '200':
+          description: The generation attempt ran. See PocManifestGenerationOutcome for what the three outcomes mean.
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc-onboarding.yaml#/PocManifestGenerateResponse'
+        '400':
+          $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '429':
+          $ref: './components/responses.yaml#/TooManyRequests'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /assets:
     get:
       summary: Search and list approved assets
@@ -2723,45 +2762,6 @@ paths:
                 $ref: './components/schemas/common.yaml#/ErrorResponse'
         '404':
           $ref: './components/responses.yaml#/NotFound'
-        '500':
-          $ref: './components/responses.yaml#/InternalServerError'
-
-  /poc-onboarding/generate:
-    post:
-      summary: Generate a poc.yaml (and any missing Dockerfiles) for a repository
-      description: >
-        Reads a repository through the platform's own GitHub integration, drafts a poc.yaml with an
-        LLM, and validates the draft with the same ManifestValidator a real deploy uses before ever
-        returning it — a generated manifest that fails validation never reaches a caller. Returns
-        one of three outcomes: the repository does not need a poc.yaml at all, a generated (or
-        corrected) poc.yaml, or generation was unavailable, with the platform's own template
-        returned instead so there is always something to copy.
-
-
-        Available to any signed-in user, matching /poc-onboarding/check. More expensive than a
-        check — it makes an LLM call — so it is rate limited more strictly per user.
-      operationId: generatePocManifest
-      tags:
-        - Onboarding
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: './components/schemas/poc-onboarding.yaml#/PocManifestGenerateRequest'
-      responses:
-        '200':
-          description: The generation attempt ran. See PocManifestGenerationOutcome for what the three outcomes mean.
-          content:
-            application/json:
-              schema:
-                $ref: './components/schemas/poc-onboarding.yaml#/PocManifestGenerateResponse'
-        '400':
-          $ref: './components/responses.yaml#/BadRequest'
-        '401':
-          $ref: './components/responses.yaml#/Unauthorized'
-        '429':
-          $ref: './components/responses.yaml#/TooManyRequests'
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
