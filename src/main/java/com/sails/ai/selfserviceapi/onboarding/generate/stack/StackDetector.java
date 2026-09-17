@@ -8,6 +8,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -22,6 +24,7 @@ import tools.jackson.databind.json.JsonMapper;
  * on another framework (Next.js on React, FastAPI-with-a-package.json-sibling) must not be
  * misdetected as the more generic one beneath it.
  */
+@Component
 public class StackDetector {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();

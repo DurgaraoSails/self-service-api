@@ -4,6 +4,8 @@ import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestRequirement;
 import com.sails.ai.selfserviceapi.onboarding.generate.GenerationNotice;
 import com.sails.ai.selfserviceapi.onboarding.generate.GenerationNoticeCode;
+import org.springframework.stereotype.Component;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,6 +22,7 @@ import java.util.regex.Pattern;
  * is reserved even if its value also looks like a secret; a secret name/value is declared under
  * {@code requires:} even if it also contains an unresolved substitution.
  */
+@Component
 public class EnvVarClassifier {
 
     private static final Pattern VALID_ENV_NAME = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]*$");

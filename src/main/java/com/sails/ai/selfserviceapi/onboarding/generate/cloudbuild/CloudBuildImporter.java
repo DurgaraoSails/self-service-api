@@ -15,6 +15,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -33,9 +35,8 @@ import org.springframework.stereotype.Component;
  * to answer; one file is the overwhelmingly common shape.
  */
 @Component
+@Slf4j
 public class CloudBuildImporter {
-
-    private static final Logger log = LoggerFactory.getLogger(CloudBuildImporter.class);
 
     private static final int MAX_CANDIDATE_FILES = 5;
     private static final long MAX_FILE_BYTES = 100_000;

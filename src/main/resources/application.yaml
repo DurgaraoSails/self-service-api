@@ -216,7 +216,7 @@ poc-generator:
     location: ${POC_GENERATOR_VERTEX_LOCATION:us-central1}
     # Vertex serves both Gemini and Claude models behind the same generateContent shape this
     # adapter calls, so trying a different model is a config change here, never a code change.
-    model: ${POC_GENERATOR_VERTEX_MODEL:gemini-2.0-flash-001}
+    model: ${POC_GENERATOR_VERTEX_MODEL:gemini-3.1-flash-lite}
   # How many DockerfileDraftService calls one generation run may spend — one per container whose
   # stack could not be recognized deterministically. A repo with several unrecognized components
   # could otherwise turn one "Prepare my POC files" click into many model calls.
