@@ -62,6 +62,20 @@ class VertexDraftModelTest {
         server.verify();
     }
 
+    /** usageMetadata isn't used by the draft itself — this only proves the response DTO actually parses it, for logging. */
+    @Test
+    void parsesUsageMetadataFromTheResponseWhenPresent() {
+        server.expect(requestTo(URL))
+                .andRespond(withSuccess("""
+                        {"candidates":[{"content":{"role":"model","parts":[{"text":"{}"}]}}],
+                         "usageMetadata":{"promptTokenCount":123,"candidatesTokenCount":45,"totalTokenCount":168}}
+                        """, MediaType.APPLICATION_JSON));
+
+        String result = model.draft(new ModelRequest("s", "u", "{}", Duration.ofSeconds(30)));
+
+        assertThat(result).isEqualTo("{}");
+    }
+
     @Test
     void noCandidatesIsAFailureNotANullDraft() {
         server.expect(requestTo(URL))

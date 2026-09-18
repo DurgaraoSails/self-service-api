@@ -3,6 +3,8 @@ package com.sails.ai.selfserviceapi.onboarding.generate.model;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonRawValue;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +71,7 @@ public class OllamaDraftModel implements ManifestDraftModel {
      */
     @Override
     public String draft(ModelRequest request) {
+        Instant start = Instant.now();
         ChatResponse response;
         try {
             response = restClient.post()
@@ -85,8 +88,15 @@ public class OllamaDraftModel implements ManifestDraftModel {
                     .retrieve()
                     .body(ChatResponse.class);
         } catch (RestClientException e) {
+            log.info("Ollama call to '{}' failed after {}ms: {}", properties.ollama().model(),
+                    Duration.between(start, Instant.now()).toMillis(), e.getMessage());
             throw new ManifestDraftException("Ollama call failed: " + e.getMessage(), e);
         }
+        Duration elapsed = Duration.between(start, Instant.now());
+        // Ollama omits eval counts on some builds/backends — logged as null rather than guessed at.
+        log.info("Ollama call to '{}' took {}ms (prompt tokens: {}, completion tokens: {})",
+                properties.ollama().model(), elapsed.toMillis(),
+                response == null ? null : response.promptEvalCount(), response == null ? null : response.evalCount());
         if (response == null || response.message() == null || response.message().content() == null) {
             throw new ManifestDraftException("Ollama returned an empty response");
         }
@@ -117,6 +127,8 @@ public class OllamaDraftModel implements ManifestDraftModel {
                             double temperature) {
     }
 
-    private record ChatResponse(Message message, @JsonProperty("done_reason") String doneReason) {
+    private record ChatResponse(Message message, @JsonProperty("done_reason") String doneReason,
+                                 @JsonProperty("prompt_eval_count") Integer promptEvalCount,
+                                 @JsonProperty("eval_count") Integer evalCount) {
     }
 }

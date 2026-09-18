@@ -2,6 +2,8 @@ package com.sails.ai.selfserviceapi.onboarding.generate.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonRawValue;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +69,7 @@ public class VertexDraftModel implements ManifestDraftModel {
      */
     @Override
     public String draft(ModelRequest request) {
+        Instant start = Instant.now();
         GenerateContentResponse response;
         try {
             response = restClient.post()
@@ -78,8 +81,16 @@ public class VertexDraftModel implements ManifestDraftModel {
                     .retrieve()
                     .body(GenerateContentResponse.class);
         } catch (RuntimeException e) {
+            log.info("Vertex AI call to '{}' failed after {}ms: {}", properties.vertex().model(),
+                    Duration.between(start, Instant.now()).toMillis(), e.getMessage());
             throw new ManifestDraftException("Vertex AI call failed: " + e.getMessage(), e);
         }
+        Duration elapsed = Duration.between(start, Instant.now());
+        UsageMetadata usage = response == null ? null : response.usageMetadata();
+        log.info("Vertex AI call to '{}' took {}ms (prompt tokens: {}, completion tokens: {}, total: {})",
+                properties.vertex().model(), elapsed.toMillis(),
+                usage == null ? null : usage.promptTokenCount(), usage == null ? null : usage.candidatesTokenCount(),
+                usage == null ? null : usage.totalTokenCount());
 
         Candidate candidate = firstCandidate(response);
         if (candidate == null) {
@@ -145,9 +156,15 @@ public class VertexDraftModel implements ManifestDraftModel {
                                      double temperature, @JsonProperty("maxOutputTokens") int maxOutputTokens) {
     }
 
-    private record GenerateContentResponse(List<Candidate> candidates) {
+    private record GenerateContentResponse(List<Candidate> candidates,
+                                            @JsonProperty("usageMetadata") UsageMetadata usageMetadata) {
     }
 
     private record Candidate(Content content, @JsonProperty("finishReason") String finishReason) {
+    }
+
+    private record UsageMetadata(@JsonProperty("promptTokenCount") Integer promptTokenCount,
+                                  @JsonProperty("candidatesTokenCount") Integer candidatesTokenCount,
+                                  @JsonProperty("totalTokenCount") Integer totalTokenCount) {
     }
 }

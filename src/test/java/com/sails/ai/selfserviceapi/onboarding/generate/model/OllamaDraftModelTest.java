@@ -69,6 +69,19 @@ class OllamaDraftModelTest {
         server.verify();
     }
 
+    /** Token counts aren't used by the draft itself — this only proves the response DTO actually parses them, for logging. */
+    @Test
+    void parsesTokenCountsFromTheResponseWhenPresent() {
+        server.expect(requestTo(BASE + "/api/chat"))
+                .andRespond(withSuccess("""
+                        {"message":{"role":"assistant","content":"{}"},"prompt_eval_count":123,"eval_count":45}
+                        """, MediaType.APPLICATION_JSON));
+
+        String result = model.draft(new ModelRequest("s", "u", "{}", Duration.ofSeconds(30)));
+
+        assertThat(result).isEqualTo("{}");
+    }
+
     @Test
     void sendsTheJsonSchemaAsRawJsonNotAsAQuotedString() {
         server.expect(requestTo(BASE + "/api/chat"))
