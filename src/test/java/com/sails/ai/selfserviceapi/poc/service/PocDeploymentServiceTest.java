@@ -41,6 +41,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
 class PocDeploymentServiceTest {
@@ -137,6 +138,38 @@ class PocDeploymentServiceTest {
         verify(deploymentTrigger).buildAndDeploy(requestCaptor.capture());
         assertThat(requestCaptor.getValue().githubUrl()).isEqualTo("https://github.com/example-org/contract-agent");
         assertThat(requestCaptor.getValue().versionLabel()).isEqualTo("1.0.1");
+    }
+
+    /**
+     * The actual bug this guards against: {@code deploymentTrigger.buildAndDeploy} dispatches to
+     * an {@code @Async} thread that reads the deployment row straight back out of the database —
+     * called directly (not deferred to after-commit), that thread can race the very transaction
+     * that persisted the row, intermittently throwing {@code PocDeploymentNotFoundException} on
+     * whichever caller's connection loses the race. Every other test in this class has no active
+     * transaction (plain Mockito, no Spring proxy), so it exercises {@code afterCommit}'s
+     * synchronous fallback and would not have caught this — this test activates real transaction
+     * synchronization to prove the trigger genuinely waits for the commit signal instead.
+     */
+    @Test
+    void deploymentTriggerFiresOnlyAfterTheTransactionActuallyCommits() {
+        Poc poc = pocWithGithubUrl(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(poc));
+        when(pocVersionRepository.findTopByPocIdOrderByMajorDescMinorDescPatchDesc(ID_1)).thenReturn(Optional.empty());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.deployNewVersion(ID_1, "admin-1");
+
+            // Not fired yet — still deferred, exactly as it must be while the row that was just
+            // persisted has not actually committed.
+            verify(deploymentTrigger, never()).buildAndDeploy(any());
+
+            TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.afterCommit());
+
+            verify(deploymentTrigger).buildAndDeploy(any());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test

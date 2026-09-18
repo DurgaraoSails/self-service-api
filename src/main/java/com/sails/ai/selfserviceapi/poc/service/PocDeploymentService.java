@@ -46,6 +46,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -118,8 +120,9 @@ public class PocDeploymentService {
      * {@code pipeline.executor=skip}, which never touches GitHub at all, consistent with its
      * existing contract.
      *
-     * <p>The trigger call is deliberately the last statement — firing it only after every persist
-     * above has run reduces the window for the pipeline's own callback to race an uncommitted row.
+     * <p>The trigger call itself goes through {@link #afterCommit}, not a direct call — see its
+     * javadoc for why a direct call here is a real (not theoretical) race against the in-process
+     * async pipeline it dispatches to.
      */
     @Transactional
     public PocDeployment deployNewVersion(UUID pocId, String initiatedByUserId) {
@@ -155,8 +158,10 @@ public class PocDeploymentService {
         PocDeployment deployment = createDeployment(pocId, version.getId(), BUILD_AND_DEPLOY, initiatedByUserId, true);
 
         logInitiated("New deployment", poc, version);
-        deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(
-                deployment.getId(), pocId, poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest, true));
+        String resolvedCommitSha = commitSha;
+        PocManifest resolvedManifest = manifest;
+        afterCommit(() -> deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(
+                deployment.getId(), pocId, poc.getSlug(), poc.getGithubUrl(), version.getVersionLabel(), resolvedCommitSha, resolvedManifest, true)));
         return deployment;
     }
 
@@ -200,8 +205,9 @@ public class PocDeploymentService {
         PocDeployment deployment = createDeployment(pocId, version.getId(), BUILD_AND_DEPLOY, initiatedByUserId, false);
 
         logInitiated("New deployment", poc, version);
-        deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(deployment.getId(), pocId, poc.getSlug(),
-                poc.getGithubUrl(), version.getVersionLabel(), commitSha, resolution.manifest(), false));
+        PocVersion resolvedVersion = version;
+        afterCommit(() -> deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(deployment.getId(), pocId, poc.getSlug(),
+                poc.getGithubUrl(), resolvedVersion.getVersionLabel(), commitSha, resolution.manifest(), false)));
         return deployment;
     }
 
@@ -333,8 +339,8 @@ public class PocDeploymentService {
         PocDeployment deployment = createDeployment(pocId, versionId, REDEPLOY, initiatedByUserId, true);
 
         logInitiated("Redeployment", poc, version);
-        deploymentTrigger.redeploy(new RedeployRequest(
-                deployment.getId(), pocId, poc.getSlug(), version.getVersionLabel(), manifest, imagesByContainer));
+        afterCommit(() -> deploymentTrigger.redeploy(new RedeployRequest(
+                deployment.getId(), pocId, poc.getSlug(), version.getVersionLabel(), manifest, imagesByContainer)));
         return deployment;
     }
 
@@ -410,8 +416,10 @@ public class PocDeploymentService {
             }
             resetForRetry(deployment, initiatedByUserId);
             logInitiated("New deployment", poc, version);
-            deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(deployment.getId(), poc.getId(), poc.getSlug(),
-                    poc.getGithubUrl(), version.getVersionLabel(), commitSha, manifest, deployment.isCreateTag()));
+            String resolvedCommitSha = commitSha;
+            PocManifest resolvedManifest = manifest;
+            afterCommit(() -> deploymentTrigger.buildAndDeploy(new BuildAndDeployRequest(deployment.getId(), poc.getId(), poc.getSlug(),
+                    poc.getGithubUrl(), version.getVersionLabel(), resolvedCommitSha, resolvedManifest, deployment.isCreateTag())));
             return deployment;
         }
 
@@ -419,8 +427,8 @@ public class PocDeploymentService {
         Map<String, String> imagesByContainer = resolveImagesByContainer(version.getId(), version.getContainerImage());
         resetForRetry(deployment, initiatedByUserId);
         logInitiated("Redeployment", poc, version);
-        deploymentTrigger.redeploy(new RedeployRequest(
-                deployment.getId(), poc.getId(), poc.getSlug(), version.getVersionLabel(), manifest, imagesByContainer));
+        afterCommit(() -> deploymentTrigger.redeploy(new RedeployRequest(
+                deployment.getId(), poc.getId(), poc.getSlug(), version.getVersionLabel(), manifest, imagesByContainer)));
         return deployment;
     }
 
@@ -428,6 +436,44 @@ public class PocDeploymentService {
     private void logInitiated(String label, Poc poc, PocVersion version) {
         log.info("{} (version {}) initiated for poc: {} with poc-id: {}",
                 label, version.getVersionLabel(), poc.getSlug(), poc.getId());
+    }
+
+    /**
+     * Defers {@code action} until the enclosing {@code @Transactional} method's transaction has
+     * actually committed — every caller uses this to fire {@link DeploymentTrigger}, never a
+     * direct call, because a direct call races the real async pipeline it dispatches to.
+     *
+     * <p>{@code deploymentTrigger.buildAndDeploy}/{@code redeploy} return almost immediately
+     * (they only submit an {@code @Async} task to {@code PipelineRunner}'s thread pool), but the
+     * pipeline thread they hand off to reads the deployment row straight back out of the database
+     * on its own connection. Called directly, that thread could start running — and query for a
+     * row Spring's transaction advice has not committed yet — before this method returns and its
+     * {@code @Transactional} proxy commits, since Spring's default (REQUIRED) commit happens only
+     * on normal method return, strictly after every statement in the method body, including this
+     * call, has run. Whether that race is actually lost depends on nothing but timing (DB commit
+     * latency vs. how fast a pool thread picks up the task), which is exactly why it surfaced as
+     * an intermittent {@code PocDeploymentNotFoundException} rather than a reliably reproducible
+     * failure — worst on the {@code pipeline.executor=skip} path, which does no GitHub or Cloud
+     * Build calls at all before reporting status, leaving almost no time for the commit to land
+     * first. See {@code docs/specs/poc-deployment.md}, "Trigger ordering is not transactionally
+     * guaranteed", which flagged this exact gap as theoretical before a real async trigger existed.
+     *
+     * <p>Falls back to running {@code action} immediately when no transaction is active — every
+     * real caller is {@code @Transactional}, so this only matters for a test that calls this
+     * service directly with no Spring transaction proxy in front of it, where there is no commit
+     * to wait for and immediate execution is exactly what today's tests already assert on.
+     */
+    private void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     /**
