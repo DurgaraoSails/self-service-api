@@ -66,4 +66,6 @@ public final class GenerationNoticeCode {
     public static final String SECRET_PROVISIONING_INSTRUCTIONS = "SECRET_PROVISIONING_INSTRUCTIONS";
     /** The model marked something secret whose name doesn't look credential-shaped — flagged, never reclassified. */
     public static final String SECRET_CLASSIFICATION_UNCERTAIN = "SECRET_CLASSIFICATION_UNCERTAIN";
+    /** What the deploying service account needs access to for this POC — the shared-account baseline, or one specific grant. */
+    public static final String SERVICE_ACCOUNT_ACCESS_NEEDED = "SERVICE_ACCOUNT_ACCESS_NEEDED";
 }

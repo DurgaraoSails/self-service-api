@@ -1,5 +1,6 @@
 package com.sails.ai.selfserviceapi.onboarding.generate;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.GcpProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitBranchNames;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubApiException;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
@@ -84,6 +85,7 @@ public class PocManifestGenerationService {
     private final DockerfilePlanner dockerfilePlanner;
     private final ManifestYamlWriter yamlWriter;
     private final DraftModelProperties properties;
+    private final GcpProperties gcp;
 
     public PocManifestGenerationService(GitHubService gitHubService, ManifestService manifestService,
                                          ManifestParser manifestParser, ManifestValidator manifestValidator,
@@ -92,7 +94,7 @@ public class PocManifestGenerationService {
                                          InfrastructureDetector infrastructureDetector, ManifestDraftService draftService,
                                          ManifestMerger manifestMerger, DeterministicContainerPlanner deterministicPlanner,
                                          DockerfilePlanner dockerfilePlanner, ManifestYamlWriter yamlWriter,
-                                         DraftModelProperties properties) {
+                                         DraftModelProperties properties, GcpProperties gcp) {
         this.gitHubService = gitHubService;
         this.manifestService = manifestService;
         this.manifestParser = manifestParser;
@@ -108,6 +110,7 @@ public class PocManifestGenerationService {
         this.dockerfilePlanner = dockerfilePlanner;
         this.yamlWriter = yamlWriter;
         this.properties = properties;
+        this.gcp = gcp;
     }
 
     public PocManifestGenerationResult generate(String githubUrl, String deployBranch) {
@@ -209,6 +212,7 @@ public class PocManifestGenerationService {
             return PocManifestGenerationResult.notNeeded(checkResult,
                     "This repository already has a poc.yaml, and it passes the platform's validator — nothing to generate.");
         }
+        notices.add(serviceAccountBaselineNotice());
         return new PocManifestGenerationResult(PocManifestGenerationResult.Outcome.GENERATED, dockerfilePlan.files(),
                 notices, toGenerationImports(cloudBuildImport), List.of(), false, checkResult);
     }
@@ -292,6 +296,7 @@ public class PocManifestGenerationService {
         }
 
         notices.addAll(secretProvisioningNotices(manifest));
+        notices.add(serviceAccountBaselineNotice());
 
         List<GeneratedFile> files = new ArrayList<>();
         files.add(new GeneratedFile("poc.yaml", GeneratedFile.Kind.POC_YAML, GeneratedFile.Action.CREATE, pocYamlSource,
@@ -372,11 +377,32 @@ public class PocManifestGenerationService {
                         "'" + requirement.name() + "' needs a value from Secret Manager. The platform derives its "
                                 + "secret id from the POC slug, this container's name and this key — you never name "
                                 + "the secret yourself. The exact id is reported when this POC is deployed; provide "
-                                + "the actual value to the platform team against that id.")
+                                + "the actual value to the platform team against that id. The secret is read at "
+                                + "runtime by the shared " + gcp.serviceAccountEmail("poc-runtime") + " service "
+                                + "account (see below) — not one scoped to this POC alone.")
                         .withContainer(container.name()));
             }
         }
         return notices;
+    }
+
+    /**
+     * Every POC generated today deploys under one shared runtime service account, not one minted
+     * per POC — {@code BuildService.deployStep} always passes
+     * {@code gcp.serviceAccountEmail("poc-runtime")}, literally, regardless of which repo is being
+     * deployed (see {@code docs/specs/poc-container-environment.md} for the not-yet-built per-POC
+     * alternative). Whatever this repository needs access to — the infrastructure
+     * {@link InfrastructureDetector} flagged, or anything else — has to be grantable to that one
+     * account, and a grant made for this POC is available to every other POC running under it too.
+     */
+    private GenerationNotice serviceAccountBaselineNotice() {
+        return GenerationNotice.info(GenerationNoticeCode.SERVICE_ACCOUNT_ACCESS_NEEDED,
+                "This POC deploys under the platform's shared runtime service account, "
+                        + gcp.serviceAccountEmail("poc-runtime") + " — every POC currently runs as this same "
+                        + "account (per-POC service accounts do not exist yet). Any IAM role this POC needs has to "
+                        + "be granted to that shared account, and doing so also grants it to every other POC "
+                        + "deployed on this platform — coordinate with the platform team before requesting a new "
+                        + "grant rather than assuming it's scoped to just this repo.");
     }
 
     private void addSetting(List<GenerationImport.Setting> settings, String container, String key, String value) {

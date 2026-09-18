@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.sails.ai.selfserviceapi.deploypipeline.config.GcpProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.config.PocRuntimeProperties;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubApiException;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
@@ -85,6 +86,7 @@ class PocManifestGenerationServiceTest {
     private final DockerfileTemplates templates = new DockerfileTemplates();
     private final DockerfileLinter linter = new DockerfileLinter();
     private final ManifestYamlWriter yamlWriter = new ManifestYamlWriter();
+    private final GcpProperties gcp = new GcpProperties("acme-poc-project", "us-central1", "test");
 
     private DraftModelProperties properties;
     private PocManifestGenerationService service;
@@ -111,7 +113,7 @@ class PocManifestGenerationServiceTest {
         DockerfilePlanner dockerfilePlanner = new DockerfilePlanner(stackDetector, templates, linter, dockerfileDraftService, props);
         return new PocManifestGenerationService(gitHubService, manifestService, manifestParser, manifestValidator,
                 checkService, inventoryService, cloudBuildImporter, stackDetector, infrastructureDetector, draftService,
-                manifestMerger, deterministicPlanner, dockerfilePlanner, yamlWriter, props);
+                manifestMerger, deterministicPlanner, dockerfilePlanner, yamlWriter, props, gcp);
     }
 
     private GitHubTree treeOf(String... blobPaths) {
@@ -212,6 +214,26 @@ class PocManifestGenerationServiceTest {
 
         assertThat(result.notices()).anyMatch(n -> n.code().equals(GenerationNoticeCode.SECRET_PROVISIONING_INSTRUCTIONS)
                 && n.message().contains("OPENAI_API_KEY") && "app".equals(n.container()));
+    }
+
+    /** Every POC deploys under one shared account today, not one minted per POC — this notice says so plainly. */
+    @Test
+    void everyGenerationReportsTheSharedServiceAccountItDeploysUnder() {
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"));
+        when(manifestService.resolveForBuild(REPO, SHA))
+                .thenReturn(new ManifestResolution(null, singleContainerManifest()));
+        RepoInventory inventory = new RepoInventory(
+                treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"), List.of(), false);
+        when(inventoryService.inventory(REPO, SHA)).thenReturn(inventory);
+
+        when(draftService.selectedModel()).thenReturn(Optional.of(availableModel()));
+        ManifestDraftResult draftResult = new ManifestDraftResult(singleContainerManifest(), List.of(), List.of());
+        when(draftService.draft(eq(inventory), any(ManifestFacts.class), isNull(), any())).thenReturn(draftResult);
+
+        PocManifestGenerationResult result = service.generate(URL, BRANCH);
+
+        assertThat(result.notices()).anyMatch(n -> n.code().equals(GenerationNoticeCode.SERVICE_ACCOUNT_ACCESS_NEEDED)
+                && n.message().contains(gcp.serviceAccountEmail("poc-runtime")));
     }
 
     /** A poc.yaml exists but the checker's own validator rejects it — correct it, not replace it blind. */

@@ -33,10 +33,38 @@ class InfrastructureDetectorTest {
 
         List<GenerationNotice> notices = detector.detect(layoutOf("package.json"), fileReader);
 
-        assertThat(notices).singleElement().satisfies(n -> {
+        assertThat(notices).hasSize(2);
+        assertThat(notices).anySatisfy(n -> {
             assertThat(n.code()).isEqualTo(GenerationNoticeCode.EXTERNAL_INFRASTRUCTURE_DETECTED);
             assertThat(n.message()).contains("PostgreSQL");
             assertThat(n.path()).isEqualTo("package.json");
+        });
+    }
+
+    @Test
+    void alsoReportsWhatAccessTheServiceAccountWouldNeedForADetectedSignal() {
+        when(gitHubService.getFileContent(REPO, SHA, "package.json"))
+                .thenReturn(Optional.of("{\"dependencies\":{\"pg\":\"^8.0.0\"}}"));
+
+        List<GenerationNotice> notices = detector.detect(layoutOf("package.json"), fileReader);
+
+        assertThat(notices).anySatisfy(n -> {
+            assertThat(n.code()).isEqualTo(GenerationNoticeCode.SERVICE_ACCOUNT_ACCESS_NEEDED);
+            assertThat(n.message()).contains("cloudsql.client");
+            assertThat(n.path()).isEqualTo("package.json");
+        });
+    }
+
+    @Test
+    void namesTheAccessHintAsNoGcpIamRoleWhenTheCategoryHasNoPlatformNativeOption() {
+        when(gitHubService.getFileContent(REPO, SHA, "package.json"))
+                .thenReturn(Optional.of("{\"dependencies\":{\"mongoose\":\"^8.0.0\"}}"));
+
+        List<GenerationNotice> notices = detector.detect(layoutOf("package.json"), fileReader);
+
+        assertThat(notices).anySatisfy(n -> {
+            assertThat(n.code()).isEqualTo(GenerationNoticeCode.SERVICE_ACCOUNT_ACCESS_NEEDED);
+            assertThat(n.message()).contains("no platform IAM role applies");
         });
     }
 
@@ -56,7 +84,7 @@ class InfrastructureDetectorTest {
 
         List<GenerationNotice> notices = detector.detect(layoutOf("package.json"), fileReader);
 
-        assertThat(notices).singleElement().satisfies(n -> assertThat(n.message()).contains("does not provision"));
+        assertThat(notices).anySatisfy(n -> assertThat(n.message()).contains("does not provision"));
     }
 
     @Test
@@ -85,7 +113,7 @@ class InfrastructureDetectorTest {
 
         List<GenerationNotice> notices = detector.detect(layoutOf("package.json"), fileReader);
 
-        assertThat(notices).hasSize(1);
+        assertThat(notices).hasSize(2);
     }
 
     @Test
@@ -95,7 +123,7 @@ class InfrastructureDetectorTest {
 
         List<GenerationNotice> notices = detector.detect(layoutOf("apps/api/requirements.txt"), fileReader);
 
-        assertThat(notices).singleElement()
-                .satisfies(n -> assertThat(n.path()).isEqualTo("apps/api/requirements.txt"));
+        assertThat(notices).hasSize(2);
+        assertThat(notices).allSatisfy(n -> assertThat(n.path()).isEqualTo("apps/api/requirements.txt"));
     }
 }
