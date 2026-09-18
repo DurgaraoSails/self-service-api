@@ -12,7 +12,9 @@ import com.sails.ai.selfserviceapi.onboarding.generate.cloudbuild.StepCommandExt
 import com.sails.ai.selfserviceapi.onboarding.generate.cloudbuild.StepCommandExtractor.Tool;
 import com.sails.ai.selfserviceapi.onboarding.generate.secret.EnvVarClassifier;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -196,9 +198,22 @@ public class CloudBuildImporter {
         String serviceName = rawDeploys.get(0).serviceName();
         Integer minInstances = null;
         Integer maxInstances = null;
+        Map<String, String> otherServiceNames = collectServiceIdentifiers(rawDeploys);
 
         for (int deployIndex = 0; deployIndex < rawDeploys.size(); deployIndex++) {
             RawDeploy deploy = rawDeploys.get(deployIndex);
+            if (deployIndex > 0) {
+                noticeDiscardedScalingPolicy(deploy, minInstances, maxInstances, notices);
+                if (deploy.allowUnauthenticated()) {
+                    notices.add(GenerationNotice.warning(GenerationNoticeCode.INDEPENDENT_SERVICE_NO_LONGER_PUBLIC,
+                            "'" + deploy.serviceName() + "' was deployed with --allow-unauthenticated of its own — "
+                                    + "meant to be reachable on its own public URL. Merged as a sidecar it is now "
+                                    + "reachable only at localhost from the ingress, so anything that called it "
+                                    + "directly (another external client, a scheduled job, a webhook target) needs "
+                                    + "to be repointed at the ingress instead, or this service may need to stay an "
+                                    + "independent Cloud Run service rather than being merged."));
+                }
+            }
             minInstances = firstNonNull(minInstances, deploy.minInstances());
             maxInstances = firstNonNull(maxInstances, deploy.maxInstances());
             for (RawContainer raw : deploy.containers()) {
@@ -222,9 +237,10 @@ public class CloudBuildImporter {
                 }
 
                 // No other imported service's real URL is knowable from static parsing alone (that
-                // would need a live Cloud Run lookup, which this deterministic importer never does)
-                // — rule 6 of EnvVarClassifier simply never fires here, which is the honest answer.
-                EnvVarClassifier.Result classified = envClassifier.classify(raw.rawEnv(), port != null, Map.of());
+                // would need a live Cloud Run lookup, which this deterministic importer never does),
+                // so rule 6's exact match never fires here — but its heuristic fallback can, from
+                // otherServiceNames, flagged rather than applied with confidence (see EnvVarClassifier).
+                EnvVarClassifier.Result classified = envClassifier.classify(raw.rawEnv(), port != null, Map.of(), otherServiceNames);
                 notices.addAll(classified.notices());
                 notices.addAll(raw.notices());
                 if (!raw.secretEnvNames().isEmpty()) {
@@ -250,6 +266,59 @@ public class CloudBuildImporter {
 
     private Integer firstNonNull(Integer a, Integer b) {
         return a != null ? a : b;
+    }
+
+    /**
+     * Only the first deploy's own {@code min/max-instances} survive the merge ({@link #firstNonNull}
+     * above never overwrites an already-kept value) — a later deploy that declared its own, distinct
+     * scaling wanted its container to scale independently of the one that got kept, which merging
+     * as a sidecar can no longer honor.
+     */
+    private void noticeDiscardedScalingPolicy(RawDeploy deploy, Integer keptMin, Integer keptMax, List<GenerationNotice> notices) {
+        boolean minDiffers = deploy.minInstances() != null && !deploy.minInstances().equals(keptMin) && keptMin != null;
+        boolean maxDiffers = deploy.maxInstances() != null && !deploy.maxInstances().equals(keptMax) && keptMax != null;
+        if (!minDiffers && !maxDiffers) {
+            return;
+        }
+        notices.add(GenerationNotice.info(GenerationNoticeCode.SCALING_POLICY_DISCARDED,
+                "'" + deploy.serviceName() + "' declared its own scaling (min-instances=" + deploy.minInstances()
+                        + ", max-instances=" + deploy.maxInstances() + "), different from the merged service's ("
+                        + "min-instances=" + keptMin + ", max-instances=" + keptMax + "). Cloud Run scales the "
+                        + "merged instance as one unit now, so this service can no longer scale independently."));
+    }
+
+    /**
+     * Every declared container's name and image basename, lowercased, mapped to its canonical
+     * container name — the identifiers {@link EnvVarClassifier}'s heuristic rule 6 fallback searches
+     * an env value's URL text for (see its javadoc). Not excluded per-container: a container's own
+     * name essentially never appears in its own env values as a URL fragment in practice, so one
+     * shared map for the whole file is simpler than computing an exclusion per container.
+     */
+    private Map<String, String> collectServiceIdentifiers(List<RawDeploy> rawDeploys) {
+        Map<String, String> identifiers = new LinkedHashMap<>();
+        for (RawDeploy deploy : rawDeploys) {
+            for (RawContainer raw : deploy.containers()) {
+                String name = raw.name() != null ? raw.name() : deploy.serviceName();
+                if (name == null || name.isBlank()) {
+                    continue;
+                }
+                identifiers.put(name.toLowerCase(Locale.ROOT), name);
+                String imageBasename = imageBasename(raw.imageRef());
+                if (imageBasename != null) {
+                    identifiers.putIfAbsent(imageBasename.toLowerCase(Locale.ROOT), name);
+                }
+            }
+        }
+        return identifiers;
+    }
+
+    private String imageBasename(String imageRef) {
+        if (imageRef == null) {
+            return null;
+        }
+        String stripped = stripImageRef(imageRef);
+        int lastSlash = stripped.lastIndexOf('/');
+        return lastSlash >= 0 ? stripped.substring(lastSlash + 1) : stripped;
     }
 
     /** Links a deploy's {@code --image} to the build that produced it, tag and digest stripped from both sides. */

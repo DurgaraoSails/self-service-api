@@ -51,4 +51,19 @@ public final class GenerationNoticeCode {
 
     public static final String FILE_EXISTS_NOT_OVERWRITTEN = "FILE_EXISTS_NOT_OVERWRITTEN";
     public static final String TOO_MANY_COMPONENTS = "TOO_MANY_COMPONENTS";
+
+    /** An env value's hostname contains another declared service's name — a heuristic guess, not a confirmed match. */
+    public static final String CROSS_SERVICE_URL_GUESSED = "CROSS_SERVICE_URL_GUESSED";
+    /** Which sidecar an nginx-served frontend's reverse proxy was wired to, when more than one existed to choose from. */
+    public static final String REVERSE_PROXY_BACKEND_CHOSEN = "REVERSE_PROXY_BACKEND_CHOSEN";
+    /** A merged service had --allow-unauthenticated and is no longer independently, publicly reachable. */
+    public static final String INDEPENDENT_SERVICE_NO_LONGER_PUBLIC = "INDEPENDENT_SERVICE_NO_LONGER_PUBLIC";
+    /** A merged service's own min/max-instances were discarded in favor of the primary service's. */
+    public static final String SCALING_POLICY_DISCARDED = "SCALING_POLICY_DISCARDED";
+    /** A dependency on a database/cache/queue/storage client the platform does not provision automatically. */
+    public static final String EXTERNAL_INFRASTRUCTURE_DETECTED = "EXTERNAL_INFRASTRUCTURE_DETECTED";
+    /** How a declared secret's value actually gets provisioned — restates the platform's real mechanism. */
+    public static final String SECRET_PROVISIONING_INSTRUCTIONS = "SECRET_PROVISIONING_INSTRUCTIONS";
+    /** The model marked something secret whose name doesn't look credential-shaped — flagged, never reclassified. */
+    public static final String SECRET_CLASSIFICATION_UNCERTAIN = "SECRET_CLASSIFICATION_UNCERTAIN";
 }

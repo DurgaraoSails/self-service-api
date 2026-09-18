@@ -34,6 +34,46 @@ class DeterministicContainerPlannerTest {
         assertThat(plan.get().resources().cpu()).isEqualTo("2");
     }
 
+    /**
+     * cloudbuild.yaml gives no role signal, so declaration order decides by default — but when the
+     * detected stacks make it clear which container is the browser-facing frontend, that one becomes
+     * ingress even if a backend API was declared first.
+     */
+    @Test
+    void prefersTheBrowserFacingContainerAsIngressOverDeclarationOrder() {
+        ImportedContainer api = new ImportedContainer("api", "apps/api/Dockerfile", "apps/api", 8081, null, null, null, Map.of(), null);
+        ImportedContainer web = new ImportedContainer("web", "apps/web/Dockerfile", "apps/web", null, null, null, null, Map.of(), null);
+        CloudBuildImport cloudBuildImport = new CloudBuildImport("cloudbuild.yaml",
+                java.util.List.of(new ImportedService("svc", java.util.List.of(api, web), null, null, null)),
+                java.util.List.of(), java.util.List.of(), java.util.List.of());
+        Map<String, DetectedStack> stacks = Map.of(
+                "apps/api", new DetectedStack(StackKind.PYTHON_FASTAPI, "apps/api", Map.of(), java.util.List.of()),
+                "apps/web", new DetectedStack(StackKind.VITE_SPA, "apps/web", Map.of(), java.util.List.of()));
+
+        Optional<PocManifest> plan = planner.plan(stacks, cloudBuildImport);
+
+        assertThat(plan).isPresent();
+        assertThat(plan.get().ingress().name()).isEqualTo("web");
+    }
+
+    /** Two candidates that could both plausibly be a frontend is a genuine ambiguity — fall back rather than guess. */
+    @Test
+    void fallsBackToDeclarationOrderWhenMoreThanOneContainerLooksBrowserFacing() {
+        ImportedContainer web1 = new ImportedContainer("web1", "apps/web1/Dockerfile", "apps/web1", null, null, null, null, Map.of(), null);
+        ImportedContainer web2 = new ImportedContainer("web2", "apps/web2/Dockerfile", "apps/web2", 8081, null, null, null, Map.of(), null);
+        CloudBuildImport cloudBuildImport = new CloudBuildImport("cloudbuild.yaml",
+                java.util.List.of(new ImportedService("svc", java.util.List.of(web1, web2), null, null, null)),
+                java.util.List.of(), java.util.List.of(), java.util.List.of());
+        Map<String, DetectedStack> stacks = Map.of(
+                "apps/web1", new DetectedStack(StackKind.VITE_SPA, "apps/web1", Map.of(), java.util.List.of()),
+                "apps/web2", new DetectedStack(StackKind.ANGULAR_SPA, "apps/web2", Map.of(), java.util.List.of()));
+
+        Optional<PocManifest> plan = planner.plan(stacks, cloudBuildImport);
+
+        assertThat(plan).isPresent();
+        assertThat(plan.get().ingress().name()).isEqualTo("web1");
+    }
+
     @Test
     void importIsIgnoredWhenAnyContainerIsMissingADockerfileOrContext() {
         ImportedContainer unresolved = new ImportedContainer("web", null, null, null, null, null, null, Map.of(), null);

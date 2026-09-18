@@ -54,7 +54,11 @@ public class ManifestDraftService {
             - FACTS are authoritative. If FACTS says a directory has no Dockerfile, "dockerfile" may \
             still name a path that does not exist yet — prefer "<context>/Dockerfile" in that case. \
             If FACTS says a Dockerfile already exists at a path, use that exact path.
-            - Exactly one container must have role "ingress"; every other container is "sidecar".
+            - Exactly one container must have role "ingress"; every other container is "sidecar". \
+            When more than one container could plausibly be it, prefer the one that serves the \
+            browser frontend directly (a static/SPA build, or a server that renders/serves HTML to \
+            a browser) over a pure backend API or worker service — unless FACTS or the evidence \
+            clearly shows the repository is meant to work the other way around.
             - "dockerfile" and "context" are both paths from the repository root, independent of \
             each other — "dockerfile" is never resolved relative to "context".
             - A sidecar container must declare "port". Sidecar ports must all be distinct from each \
@@ -182,6 +186,7 @@ public class ManifestDraftService {
             PocManifest manifest = overlay.apply(toManifest(response));
             violations = validator.validate(manifest);
             if (violations.isEmpty()) {
+                notices.addAll(uncertainSecretNotices(manifest));
                 return new ManifestDraftResult(manifest, safeList(response.assumptions()), notices);
             }
             userPrompt = buildUserPrompt(inventory, facts, existingManifestYaml, violations);
@@ -227,6 +232,29 @@ public class ManifestDraftService {
                         "'" + file.path() + "' appears to contain a committed credential — rotate/remove it. "
                                 + "It was redacted before reaching the draft model and was not copied into the "
                                 + "generated manifest.").withPath(file.path()));
+            }
+        }
+        return notices;
+    }
+
+    /**
+     * The model's own {@code secret: true} judgment goes straight into the manifest with no
+     * deterministic check — unlike the cloudbuild-import path, which runs every requirement through
+     * {@code EnvVarClassifier}/{@link SecretHeuristics}. Forcibly reclassifying a requirement the
+     * model marked secret would risk leaking a real one whose name just doesn't match the heuristic,
+     * so this only flags the mismatch for a human to double-check; the entry itself is untouched.
+     */
+    private List<GenerationNotice> uncertainSecretNotices(PocManifest manifest) {
+        List<GenerationNotice> notices = new ArrayList<>();
+        for (ManifestContainer container : manifest.containers()) {
+            for (ManifestRequirement requirement : container.requires()) {
+                if (requirement.secret() && !SecretHeuristics.nameLooksSecret(requirement.name())) {
+                    notices.add(GenerationNotice.info(GenerationNoticeCode.SECRET_CLASSIFICATION_UNCERTAIN,
+                            "'" + requirement.name() + "' was drafted as a secret (requires: secret: true), but "
+                                    + "its name doesn't look credential-shaped — double check it's really meant to "
+                                    + "come from Secret Manager rather than a plain, committable env value.")
+                            .withContainer(container.name()));
+                }
             }
         }
         return notices;

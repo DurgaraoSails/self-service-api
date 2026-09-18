@@ -6,8 +6,10 @@ import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubRepoRef;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTree;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubTreeEntry;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestContainer;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestParseException;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestParser;
+import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestRequirement;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestResolution;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestService;
 import com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestValidationException;
@@ -75,6 +77,7 @@ public class PocManifestGenerationService {
     private final RepoInventoryService inventoryService;
     private final CloudBuildImporter cloudBuildImporter;
     private final StackDetector stackDetector;
+    private final InfrastructureDetector infrastructureDetector;
     private final ManifestDraftService draftService;
     private final ManifestMerger manifestMerger;
     private final DeterministicContainerPlanner deterministicPlanner;
@@ -86,9 +89,10 @@ public class PocManifestGenerationService {
                                          ManifestParser manifestParser, ManifestValidator manifestValidator,
                                          PocOnboardingCheckService checkService, RepoInventoryService inventoryService,
                                          CloudBuildImporter cloudBuildImporter, StackDetector stackDetector,
-                                         ManifestDraftService draftService, ManifestMerger manifestMerger,
-                                         DeterministicContainerPlanner deterministicPlanner, DockerfilePlanner dockerfilePlanner,
-                                         ManifestYamlWriter yamlWriter, DraftModelProperties properties) {
+                                         InfrastructureDetector infrastructureDetector, ManifestDraftService draftService,
+                                         ManifestMerger manifestMerger, DeterministicContainerPlanner deterministicPlanner,
+                                         DockerfilePlanner dockerfilePlanner, ManifestYamlWriter yamlWriter,
+                                         DraftModelProperties properties) {
         this.gitHubService = gitHubService;
         this.manifestService = manifestService;
         this.manifestParser = manifestParser;
@@ -97,6 +101,7 @@ public class PocManifestGenerationService {
         this.inventoryService = inventoryService;
         this.cloudBuildImporter = cloudBuildImporter;
         this.stackDetector = stackDetector;
+        this.infrastructureDetector = infrastructureDetector;
         this.draftService = draftService;
         this.manifestMerger = manifestMerger;
         this.deterministicPlanner = deterministicPlanner;
@@ -194,8 +199,11 @@ public class PocManifestGenerationService {
                     "This repository already has a valid poc.yaml — cloudbuild.yaml settings were not applied to it."));
         }
 
-        DockerfilePlanner.PlanResult dockerfilePlan = dockerfilePlanner.plan(manifest, layout, fileReader);
+        // allowManifestEdits=false: a valid poc.yaml is never rewritten, so the reverse-proxy env
+        // wiring DockerfilePlanner could otherwise add has nowhere safe to be written here.
+        DockerfilePlanner.PlanResult dockerfilePlan = dockerfilePlanner.plan(manifest, layout, fileReader, false);
         notices.addAll(dockerfilePlan.notices());
+        notices.addAll(secretProvisioningNotices(manifest));
 
         if (dockerfilePlan.files().isEmpty()) {
             return PocManifestGenerationResult.notNeeded(checkResult,
@@ -216,6 +224,7 @@ public class PocManifestGenerationService {
 
         Map<String, DetectedStack> stacksByDirectory = detectStacks(layout, fileReader);
         ManifestFacts facts = buildFacts(stacksByDirectory, layout, cloudBuildImport);
+        notices.addAll(infrastructureDetector.detect(layout, fileReader));
 
         Optional<ManifestDraftModel> model = draftService.selectedModel();
         PocManifest manifest;
@@ -267,8 +276,11 @@ public class PocManifestGenerationService {
             pocYamlSource = GeneratedFile.Source.DERIVED;
         }
 
+        // Default (allowManifestEdits=true): this manifest is being written fresh, so DockerfilePlanner
+        // may add env bindings to it (the reverse-proxy BACKEND_URL wiring) before it's rendered.
         DockerfilePlanner.PlanResult dockerfilePlan = dockerfilePlanner.plan(manifest, layout, fileReader);
         notices.addAll(dockerfilePlan.notices());
+        manifest = dockerfilePlan.manifest();
 
         String pocYaml = yamlWriter.write(manifest, assumptions);
         List<String> violations = manifestValidator.validate(manifestParser.parse(pocYaml));
@@ -278,6 +290,8 @@ public class PocManifestGenerationService {
                     "The generated poc.yaml did not pass the platform's own validator (" + String.join("; ", violations)
                             + "). Here is the platform's own poc.yaml template instead.", loadTemplate());
         }
+
+        notices.addAll(secretProvisioningNotices(manifest));
 
         List<GeneratedFile> files = new ArrayList<>();
         files.add(new GeneratedFile("poc.yaml", GeneratedFile.Kind.POC_YAML, GeneratedFile.Action.CREATE, pocYamlSource,
@@ -336,6 +350,33 @@ public class PocManifestGenerationService {
                 .map(notice -> new GenerationImport.Unsupported(notice.code(), notice.message()))
                 .toList();
         return List.of(new GenerationImport(cloudBuildImport.sourcePath(), services, settings, secretNames, unsupported));
+    }
+
+    /**
+     * One notice per {@code requires: secret: true} entry the final manifest carries, regardless of
+     * whether it came from the model, the deterministic fallback, or a cloudbuild.yaml import — this
+     * runs once, after the container plan is settled, so it covers all three paths without restating
+     * itself in each. Turns {@code docs/poc-integration-guide.md} §9's "Secrets" prose (the platform
+     * derives the Secret Manager id itself; a value is never named by the manifest author) into a
+     * response field attached to the exact secret that needs it, instead of prose a reader has to
+     * already know to look for.
+     */
+    private List<GenerationNotice> secretProvisioningNotices(PocManifest manifest) {
+        List<GenerationNotice> notices = new ArrayList<>();
+        for (ManifestContainer container : manifest.containers()) {
+            for (ManifestRequirement requirement : container.requires()) {
+                if (!requirement.secret()) {
+                    continue;
+                }
+                notices.add(GenerationNotice.info(GenerationNoticeCode.SECRET_PROVISIONING_INSTRUCTIONS,
+                        "'" + requirement.name() + "' needs a value from Secret Manager. The platform derives its "
+                                + "secret id from the POC slug, this container's name and this key — you never name "
+                                + "the secret yourself. The exact id is reported when this POC is deployed; provide "
+                                + "the actual value to the platform team against that id.")
+                        .withContainer(container.name()));
+            }
+        }
+        return notices;
     }
 
     private void addSetting(List<GenerationImport.Setting> settings, String container, String key, String value) {

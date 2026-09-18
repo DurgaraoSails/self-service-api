@@ -112,6 +112,25 @@ class CloudBuildImporterTest {
         });
     }
 
+    /**
+     * The second deploy in two-services.yaml declares --allow-unauthenticated (meant to be
+     * independently public) and its own, different scaling — both discarded by the merge, and both
+     * must say so rather than silently dropping what the team actually asked for.
+     */
+    @Test
+    void warnsWhenAMergedServiceWasIndependentlyPublicOrHadItsOwnScaling() {
+        var result = importFixture("two-services.yaml").orElseThrow();
+
+        assertThat(result.notices()).anySatisfy(n -> {
+            assertThat(n.code()).isEqualTo(GenerationNoticeCode.INDEPENDENT_SERVICE_NO_LONGER_PUBLIC);
+            assertThat(n.message()).contains("api-service");
+        });
+        assertThat(result.notices()).anySatisfy(n -> {
+            assertThat(n.code()).isEqualTo(GenerationNoticeCode.SCALING_POLICY_DISCARDED);
+            assertThat(n.message()).contains("api-service");
+        });
+    }
+
     @Test
     void importsAKanikoBuild() {
         var result = importFixture("kaniko.yaml").orElseThrow();

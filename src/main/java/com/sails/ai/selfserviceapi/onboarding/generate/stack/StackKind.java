@@ -22,5 +22,27 @@ public enum StackKind {
     PYTHON_GRADIO,
     GO,
     DOTNET,
-    UNKNOWN
+    UNKNOWN;
+
+    /**
+     * True for a stack that serves a browser frontend directly — a SPA build, a plain static site,
+     * or Next.js's own server. Used to prefer this container as ingress over a pure backend API when
+     * a cloudbuild.yaml (or the model's own reasoning) leaves more than one plausible candidate, and
+     * to decide whether an nginx-served frontend needs a reverse proxy to a backend sidecar.
+     *
+     * <p>{@code NODE_SERVER} is deliberately excluded — it is a plain Node process that could just as
+     * easily be a backend API as a frontend, and {@link StackDetector} already only assigns it when
+     * no more specific frontend stack matched, so guessing it as browser-facing here would be wrong
+     * as often as it was right. That genuine ambiguity is left to the caller.
+     */
+    public boolean isBrowserFacing() {
+        return this == ANGULAR_SPA || this == VITE_SPA || this == CRA_SPA || this == NEXTJS || this == STATIC_SITE;
+    }
+
+    /** True for a stack that is, on its own, never a browser-facing frontend — a pure backend/API/worker. */
+    public boolean isBackendOnly() {
+        return this == JAVA_MAVEN || this == JAVA_GRADLE || this == PYTHON_FASTAPI || this == PYTHON_FLASK
+                || this == PYTHON_DJANGO || this == PYTHON_STREAMLIT || this == PYTHON_GRADIO || this == GO
+                || this == DOTNET;
+    }
 }

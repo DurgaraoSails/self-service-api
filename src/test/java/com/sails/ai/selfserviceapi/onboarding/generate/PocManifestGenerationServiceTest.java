@@ -79,6 +79,7 @@ class PocManifestGenerationServiceTest {
     private final CloudBuildImporter cloudBuildImporter =
             new CloudBuildImporter(new EnvVarClassifier(new ManifestProperties(null, null, 0)));
     private final StackDetector stackDetector = new StackDetector();
+    private final InfrastructureDetector infrastructureDetector = new InfrastructureDetector();
     private final ManifestMerger manifestMerger = new ManifestMerger();
     private final DeterministicContainerPlanner deterministicPlanner = new DeterministicContainerPlanner();
     private final DockerfileTemplates templates = new DockerfileTemplates();
@@ -109,8 +110,8 @@ class PocManifestGenerationServiceTest {
                 new DockerfileDraftService(List.of(), props, templates, linter, JsonMapper.builder().build());
         DockerfilePlanner dockerfilePlanner = new DockerfilePlanner(stackDetector, templates, linter, dockerfileDraftService, props);
         return new PocManifestGenerationService(gitHubService, manifestService, manifestParser, manifestValidator,
-                checkService, inventoryService, cloudBuildImporter, stackDetector, draftService, manifestMerger,
-                deterministicPlanner, dockerfilePlanner, yamlWriter, props);
+                checkService, inventoryService, cloudBuildImporter, stackDetector, infrastructureDetector, draftService,
+                manifestMerger, deterministicPlanner, dockerfilePlanner, yamlWriter, props);
     }
 
     private GitHubTree treeOf(String... blobPaths) {
@@ -183,6 +184,34 @@ class PocManifestGenerationServiceTest {
         assertThat(result.pocYaml()).contains("name: app");
         assertThat(result.manifestWasCorrected()).isFalse();
         assertThat(result.assumptions()).containsExactly("assumed things");
+    }
+
+    /**
+     * Covers all three paths in one place — model-drafted here, deterministic-fallback and
+     * cloudbuild-imported are covered by ManifestMergerTest/DeterministicContainerPlannerTest
+     * exercising the same requires: list through ManifestContainer directly.
+     */
+    @Test
+    void everySecretRequirementGetsAProvisioningInstructionNotice() {
+        when(gitHubService.listTree(REPO, SHA)).thenReturn(treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"));
+        when(manifestService.resolveForBuild(REPO, SHA))
+                .thenReturn(new ManifestResolution(null, singleContainerManifest()));
+        RepoInventory inventory = new RepoInventory(
+                treeOf("apps/web/Dockerfile", "apps/api/Dockerfile"), List.of(), false);
+        when(inventoryService.inventory(REPO, SHA)).thenReturn(inventory);
+
+        PocManifest manifestWithSecret = new PocManifest(
+                List.of(new ManifestContainer("app", ContainerRole.INGRESS, "Dockerfile", ".", null, Map.of(), null, null,
+                        List.of(new com.sails.ai.selfserviceapi.deploypipeline.manifest.ManifestRequirement("OPENAI_API_KEY", true)))),
+                new Resources(null, null));
+        when(draftService.selectedModel()).thenReturn(Optional.of(availableModel()));
+        ManifestDraftResult draftResult = new ManifestDraftResult(manifestWithSecret, List.of(), List.of());
+        when(draftService.draft(eq(inventory), any(ManifestFacts.class), isNull(), any())).thenReturn(draftResult);
+
+        PocManifestGenerationResult result = service.generate(URL, BRANCH);
+
+        assertThat(result.notices()).anyMatch(n -> n.code().equals(GenerationNoticeCode.SECRET_PROVISIONING_INSTRUCTIONS)
+                && n.message().contains("OPENAI_API_KEY") && "app".equals(n.container()));
     }
 
     /** A poc.yaml exists but the checker's own validator rejects it — correct it, not replace it blind. */

@@ -154,6 +154,64 @@ class DockerfilePlannerTest {
                 && f.path().equals("nginx-default.conf.template"));
     }
 
+    /** A frontend with exactly one sidecar is unambiguous — wire the nginx config to it. */
+    @Test
+    void anNginxFrontendWithExactlyOneSidecarGetsAReverseProxyWiredToIt() {
+        when(gitHubService.getFileContent(REPO, SHA, "package.json"))
+                .thenReturn(java.util.Optional.of("{\"dependencies\":{\"vite\":\"^5.0.0\"}}"));
+        GitHubTree tree = new GitHubTree(List.of(new GitHubTreeEntry("package.json", "blob", 10L)), false);
+        RepoLayout layout = RepoLayout.of(tree);
+        ManifestContainer web = container("Dockerfile", ".");
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "apps/api/Dockerfile", "apps/api", 8081, Map.of());
+
+        DockerfilePlanner.PlanResult result = plannerWithNoModel().plan(manifestOf(web, api), layout, fileReader());
+
+        assertThat(result.files()).anyMatch(f -> f.kind() == GeneratedFile.Kind.CONFIG
+                && f.content().contains("proxy_pass ${BACKEND_URL}/;"));
+        assertThat(result.notices()).anyMatch(n -> n.code().equals(GenerationNoticeCode.REVERSE_PROXY_BACKEND_CHOSEN));
+        assertThat(result.manifest().containers()).anyMatch(c -> c.name().equals("app")
+                && "${services.api.url}".equals(c.env().get("BACKEND_URL")));
+    }
+
+    /** More than one sidecar is a genuine ambiguity — never guess which one is "the backend". */
+    @Test
+    void anNginxFrontendWithMoreThanOneSidecarGetsTheStaticOnlyConfigAndAWarning() {
+        when(gitHubService.getFileContent(REPO, SHA, "package.json"))
+                .thenReturn(java.util.Optional.of("{\"dependencies\":{\"vite\":\"^5.0.0\"}}"));
+        GitHubTree tree = new GitHubTree(List.of(new GitHubTreeEntry("package.json", "blob", 10L)), false);
+        RepoLayout layout = RepoLayout.of(tree);
+        ManifestContainer web = container("Dockerfile", ".");
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "apps/api/Dockerfile", "apps/api", 8081, Map.of());
+        ManifestContainer worker = new ManifestContainer("worker", ContainerRole.SIDECAR, "apps/worker/Dockerfile", "apps/worker", 8082, Map.of());
+
+        DockerfilePlanner.PlanResult result = plannerWithNoModel().plan(manifestOf(web, api, worker), layout, fileReader());
+
+        assertThat(result.files()).anyMatch(f -> f.kind() == GeneratedFile.Kind.CONFIG
+                && !f.content().contains("proxy_pass"));
+        assertThat(result.notices()).anyMatch(n -> n.code().equals(GenerationNoticeCode.REVERSE_PROXY_BACKEND_CHOSEN)
+                && n.message().contains("more than one sidecar"));
+        assertThat(result.manifest().containers()).anyMatch(c -> c.name().equals("app") && !c.env().containsKey("BACKEND_URL"));
+    }
+
+    /** A manifest that must never be rewritten (an already-valid existing poc.yaml) gets no env wiring, ever. */
+    @Test
+    void aNonEditableManifestNeverGetsTheReverseProxyWiring() {
+        when(gitHubService.getFileContent(REPO, SHA, "package.json"))
+                .thenReturn(java.util.Optional.of("{\"dependencies\":{\"vite\":\"^5.0.0\"}}"));
+        GitHubTree tree = new GitHubTree(List.of(new GitHubTreeEntry("package.json", "blob", 10L)), false);
+        RepoLayout layout = RepoLayout.of(tree);
+        ManifestContainer web = container("Dockerfile", ".");
+        ManifestContainer api = new ManifestContainer("api", ContainerRole.SIDECAR, "apps/api/Dockerfile", "apps/api", 8081, Map.of());
+        PocManifest manifest = manifestOf(web, api);
+
+        DockerfilePlanner.PlanResult result = plannerWithNoModel().plan(manifest, layout, fileReader(), false);
+
+        assertThat(result.files()).anyMatch(f -> f.kind() == GeneratedFile.Kind.CONFIG
+                && !f.content().contains("proxy_pass"));
+        assertThat(result.manifest()).isSameAs(manifest);
+        assertThat(result.manifest().containers()).noneMatch(c -> c.env().containsKey("BACKEND_URL"));
+    }
+
     @Test
     void anUnrecognizedStackWithNoModelReachableIsReportedAsUnresolved() {
         GitHubTree tree = new GitHubTree(List.of(), false);

@@ -31,10 +31,10 @@ public class GcloudRunDeployParser {
     }
 
     public record RawDeploy(String serviceName, List<RawContainer> containers, Integer minInstances,
-                             Integer maxInstances, List<GenerationNotice> notices) {
+                             Integer maxInstances, boolean allowUnauthenticated, List<GenerationNotice> notices) {
     }
 
-    private static final Set<String> BOOLEAN_IGNORED = Set.of("--allow-unauthenticated", "--quiet", "--async", "--no-traffic");
+    private static final Set<String> BOOLEAN_IGNORED = Set.of("--quiet", "--async", "--no-traffic");
     private static final Set<String> VALUE_IGNORED = Set.of("--region", "--project", "--platform", "--tag", "--revision-suffix", "--depends-on");
     private static final Set<String> BOOLEAN_UNSUPPORTED = Set.of("--no-allow-unauthenticated", "--no-cpu-throttling", "--cpu-boost", "--use-http2");
     private static final Set<String> VALUE_UNSUPPORTED = Set.of(
@@ -55,6 +55,7 @@ public class GcloudRunDeployParser {
         List<GenerationNotice> serviceNotices = new ArrayList<>();
         Integer minInstances = null;
         Integer maxInstances = null;
+        boolean allowUnauthenticated = false;
         List<ContainerBuilder> segments = new ArrayList<>();
         segments.add(new ContainerBuilder(null));
 
@@ -79,6 +80,7 @@ public class GcloudRunDeployParser {
                 case "--memory" -> current.memory = valueOf(flag, words, i, name).orElse(current.memory);
                 case "--min-instances" -> minInstances = valueOf(flag, words, i, name).map(this::parseIntOrNull).orElse(minInstances);
                 case "--max-instances" -> maxInstances = valueOf(flag, words, i, name).map(this::parseIntOrNull).orElse(maxInstances);
+                case "--allow-unauthenticated" -> allowUnauthenticated = true;
                 case "--set-env-vars", "--update-env-vars" ->
                         valueOf(flag, words, i, name).ifPresent(v -> current.rawEnv.putAll(parseDelimited(v)));
                 case "--env-vars-file" -> current.notices.add(GenerationNotice.info(GenerationNoticeCode.ENV_FILE_NOT_IN_REPO,
@@ -120,7 +122,7 @@ public class GcloudRunDeployParser {
             containers.add(b.build());
         }
         List<GenerationNotice> notices = new ArrayList<>(serviceNotices);
-        return Optional.of(new RawDeploy(serviceName, containers, minInstances, maxInstances, notices));
+        return Optional.of(new RawDeploy(serviceName, containers, minInstances, maxInstances, allowUnauthenticated, notices));
     }
 
     private int skipToDeployVerb(List<String> words) {
@@ -231,6 +233,7 @@ public class GcloudRunDeployParser {
             return index;
         }
         if (BOOLEAN_IGNORED.contains(flagName) || BOOLEAN_UNSUPPORTED.contains(flagName)
+                || flagName.equals("--allow-unauthenticated")
                 || flagName.startsWith("--clear-") || flagName.startsWith("--remove-")) {
             return index;
         }

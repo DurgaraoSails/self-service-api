@@ -29,6 +29,8 @@ public class DockerfileTemplates {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{(\\w+)}}");
     private static final String NGINX_CONFIG_RESOURCE = "templates/dockerfiles/nginx-default.conf.template.tmpl";
+    private static final String NGINX_CONFIG_WITH_BACKEND_RESOURCE =
+            "templates/dockerfiles/nginx-default-with-backend.conf.template.tmpl";
 
     public String renderDockerfile(StackKind kind, Map<String, String> params) {
         return render(resourcePath(kind, "Dockerfile.tmpl"), withStackName(kind, params));
@@ -38,9 +40,18 @@ public class DockerfileTemplates {
         return render(resourcePath(kind, "dockerignore.tmpl"), withStackName(kind, params));
     }
 
-    /** Shared by every SPA-shaped stack (Angular/Vite/CRA/static) — no {{param}}s, ${PORT} is nginx's own at container start. */
-    public String renderNginxConfig() {
-        return render(NGINX_CONFIG_RESOURCE, Map.of());
+    /**
+     * Shared by every SPA-shaped stack (Angular/Vite/CRA/static) — no {{param}}s, {@code ${PORT}}
+     * and {@code ${BACKEND_URL}} are nginx's own {@code envsubst} at container start, not this
+     * class's placeholder syntax.
+     *
+     * @param withBackendProxy true to also proxy {@code /api/} to whatever {@code BACKEND_URL} is
+     *                         bound to — the caller is responsible for actually binding it in the
+     *                         same container's {@code env:} (see {@code DockerfilePlanner}); this
+     *                         method only picks which config text to render.
+     */
+    public String renderNginxConfig(boolean withBackendProxy) {
+        return render(withBackendProxy ? NGINX_CONFIG_WITH_BACKEND_RESOURCE : NGINX_CONFIG_RESOURCE, Map.of());
     }
 
     public boolean hasTemplate(StackKind kind) {

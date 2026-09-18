@@ -142,6 +142,40 @@ class ManifestDraftServiceTest {
         assertThat(result.manifest().ingress().env()).doesNotContainKey("OPENAI_API_KEY");
     }
 
+    /**
+     * The model's own secret/env judgment isn't second-guessed — reclassifying a real secret to
+     * plain env: because its name doesn't match a heuristic would leak it. It is only flagged for a
+     * human to double-check, and the requirement itself is left exactly as drafted.
+     */
+    @Test
+    void aModelDraftedSecretWithAnUnconvincingNameIsFlaggedNotReclassified() {
+        String jsonWithOddlyNamedSecret = """
+                {"containers":[{"name":"app","role":"ingress","dockerfile":"Dockerfile","context":".",
+                "requires":[{"name":"APP_MODE","secret":true}],"evidence":"root Dockerfile"}],"assumptions":[]}
+                """;
+        ManifestDraftModel model = scripted("stub", new ArrayList<>(), jsonWithOddlyNamedSecret);
+
+        ManifestDraftResult result = draft(serviceWithModel(model), fixtureInventory());
+
+        assertThat(result.notices()).anyMatch(n -> GenerationNoticeCode.SECRET_CLASSIFICATION_UNCERTAIN.equals(n.code())
+                && n.message().contains("APP_MODE"));
+        assertThat(result.manifest().ingress().requires()).anyMatch(r -> r.name().equals("APP_MODE") && r.secret());
+    }
+
+    /** A name that already looks credential-shaped needs no second-guessing. */
+    @Test
+    void aModelDraftedSecretWithAConvincingNameIsNotFlagged() {
+        String jsonWithObviousSecret = """
+                {"containers":[{"name":"app","role":"ingress","dockerfile":"Dockerfile","context":".",
+                "requires":[{"name":"DB_PASSWORD","secret":true}],"evidence":"root Dockerfile"}],"assumptions":[]}
+                """;
+        ManifestDraftModel model = scripted("stub", new ArrayList<>(), jsonWithObviousSecret);
+
+        ManifestDraftResult result = draft(serviceWithModel(model), fixtureInventory());
+
+        assertThat(result.notices()).noneMatch(n -> GenerationNoticeCode.SECRET_CLASSIFICATION_UNCERTAIN.equals(n.code()));
+    }
+
     /** The FACTS block is always the first thing the model sees — authoritative per the system prompt. */
     @Test
     void theFactsBlockIsAlwaysIncludedInThePrompt() {

@@ -171,6 +171,15 @@ class GcloudRunDeployParserTest {
                         + "--platform=managed --allow-unauthenticated --quiet"));
 
         assertThat(result.get().notices()).isEmpty();
+        assertThat(result.get().allowUnauthenticated()).isTrue();
+    }
+
+    /** CloudBuildImporter uses this to warn when a merged service was meant to be independently public. */
+    @Test
+    void defaultsAllowUnauthenticatedToFalseWhenNotPassed() {
+        Optional<RawDeploy> result = parser.parse(words("gcloud run deploy myapp --image=app"));
+
+        assertThat(result.get().allowUnauthenticated()).isFalse();
     }
 
     @Test

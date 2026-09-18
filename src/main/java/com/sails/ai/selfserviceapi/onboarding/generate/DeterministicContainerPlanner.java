@@ -28,7 +28,7 @@ import org.springframework.stereotype.Component;
 public class DeterministicContainerPlanner {
 
     public Optional<PocManifest> plan(Map<String, DetectedStack> stacksByDirectory, CloudBuildImport cloudBuildImport) {
-        Optional<PocManifest> fromImport = planFromImport(cloudBuildImport);
+        Optional<PocManifest> fromImport = planFromImport(stacksByDirectory, cloudBuildImport);
         if (fromImport.isPresent()) {
             return fromImport;
         }
@@ -36,7 +36,7 @@ public class DeterministicContainerPlanner {
     }
 
     /** Exactly one imported service whose every container already has a resolved Dockerfile, context and port. */
-    private Optional<PocManifest> planFromImport(CloudBuildImport cloudBuildImport) {
+    private Optional<PocManifest> planFromImport(Map<String, DetectedStack> stacksByDirectory, CloudBuildImport cloudBuildImport) {
         if (cloudBuildImport == null || cloudBuildImport.services().size() != 1) {
             return Optional.empty();
         }
@@ -46,12 +46,11 @@ public class DeterministicContainerPlanner {
             return Optional.empty();
         }
 
+        int ingressIndex = chooseIngressIndex(containers, stacksByDirectory);
         List<ManifestContainer> manifestContainers = new ArrayList<>();
         for (int i = 0; i < containers.size(); i++) {
             ImportedContainer ic = containers.get(i);
-            // The first declared container is treated as the ingress — cloudbuild.yaml gives no
-            // explicit role signal, and teams overwhelmingly declare their primary service first.
-            ContainerRole role = i == 0 ? ContainerRole.INGRESS : ContainerRole.SIDECAR;
+            ContainerRole role = i == ingressIndex ? ContainerRole.INGRESS : ContainerRole.SIDECAR;
             List<ManifestRequirement> requires = ic.secretEnvNames() == null ? List.of()
                     : ic.secretEnvNames().stream().map(name -> new ManifestRequirement(name, true)).toList();
             Map<String, String> env = ic.env() == null ? Map.of() : new LinkedHashMap<>(ic.env());
@@ -59,8 +58,27 @@ public class DeterministicContainerPlanner {
                     ic.port(), env, ic.health(), null, requires));
         }
 
-        Resources resources = new Resources(containers.get(0).cpu(), containers.get(0).memory());
+        Resources resources = new Resources(containers.get(ingressIndex).cpu(), containers.get(ingressIndex).memory());
         return Optional.of(new PocManifest(manifestContainers, resources));
+    }
+
+    /**
+     * Prefers a container whose detected stack serves a browser frontend directly (see
+     * {@code StackKind.isBrowserFacing}) over cloudbuild.yaml's own declaration order — but only
+     * when exactly one container clearly qualifies. Falls back to the first declared container
+     * (cloudbuild.yaml gives no explicit role signal, and teams overwhelmingly declare their primary
+     * service first) whenever the signal is ambiguous: no browser-facing candidate, or more than
+     * one, is left to that existing rule rather than guessed at.
+     */
+    private int chooseIngressIndex(List<ImportedContainer> containers, Map<String, DetectedStack> stacksByDirectory) {
+        List<Integer> browserFacing = new ArrayList<>();
+        for (int i = 0; i < containers.size(); i++) {
+            DetectedStack stack = stacksByDirectory == null ? null : stacksByDirectory.get(containers.get(i).context());
+            if (stack != null && stack.kind().isBrowserFacing()) {
+                browserFacing.add(i);
+            }
+        }
+        return browserFacing.size() == 1 ? browserFacing.get(0) : 0;
     }
 
     private boolean resolves(ImportedContainer container) {

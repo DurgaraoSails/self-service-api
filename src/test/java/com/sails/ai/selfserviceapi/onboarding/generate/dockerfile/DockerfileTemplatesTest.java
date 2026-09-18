@@ -78,9 +78,19 @@ class DockerfileTemplatesTest {
 
     @Test
     void rendersTheSharedNginxConfigWithLiteralShellPortSyntaxUntouched() {
-        String config = templates.renderNginxConfig();
+        String config = templates.renderNginxConfig(false);
 
         assertThat(config).contains("listen       ${PORT};");
+        assertThat(config).doesNotContain("{{");
+        assertThat(config).doesNotContain("proxy_pass");
+    }
+
+    @Test
+    void rendersTheWithBackendNginxConfigProxyingApiToBackendUrl() {
+        String config = templates.renderNginxConfig(true);
+
+        assertThat(config).contains("listen       ${PORT};");
+        assertThat(config).contains("proxy_pass ${BACKEND_URL}/;");
         assertThat(config).doesNotContain("{{");
     }
 

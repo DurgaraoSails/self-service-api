@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -45,10 +46,20 @@ public class EnvVarClassifier {
      *                           {@code PORT}'s value when the container has none yet, so an
      *                           explicitly-declared port always wins over an imported env var.
      * @param serviceUrlsByName  other imported services' names mapped to their Cloud Run URL, for
-     *                           rule 6. Pass an empty map when this is unknown (a single-service
-     *                           import, or a model draft with no import behind it).
+     *                           rule 6's exact match. Pass an empty map when this is unknown (a
+     *                           single-service import, or a model draft with no import behind it) —
+     *                           a real Cloud Run URL is only assigned at deploy time, so this is
+     *                           rarely populated.
+     * @param otherServiceNames  other declared containers'/services' names and image basenames
+     *                           (lowercased), mapped to the canonical container name to reference —
+     *                           for rule 6's heuristic fallback: an {@code https://} value whose
+     *                           host merely *contains* one of these as a substring is rewritten the
+     *                           same way, but flagged as a guess rather than a confirmed match (see
+     *                           {@link com.sails.ai.selfserviceapi.onboarding.generate.GenerationNoticeCode#CROSS_SERVICE_URL_GUESSED}).
+     *                           Pass an empty map to skip this fallback entirely.
      */
-    public Result classify(Map<String, String> rawEnv, boolean hasPortAlready, Map<String, String> serviceUrlsByName) {
+    public Result classify(Map<String, String> rawEnv, boolean hasPortAlready, Map<String, String> serviceUrlsByName,
+                            Map<String, String> otherServiceNames) {
         Map<String, String> env = new LinkedHashMap<>();
         List<ManifestRequirement> requires = new ArrayList<>();
         List<GenerationNotice> notices = new ArrayList<>();
@@ -104,7 +115,7 @@ public class EnvVarClassifier {
                 continue;
             }
 
-            String asServiceReference = rewriteServiceUrl(value, serviceUrlsByName);
+            String asServiceReference = rewriteServiceUrl(value, name, serviceUrlsByName, otherServiceNames, notices);
             if (asServiceReference != null) {
                 env.put(name, asServiceReference);
                 continue;
@@ -125,17 +136,44 @@ public class EnvVarClassifier {
         return manifestProperties.reservedEnvPrefixes().stream().anyMatch(name::startsWith);
     }
 
-    private String rewriteServiceUrl(String value, Map<String, String> serviceUrlsByName) {
-        if (serviceUrlsByName == null || serviceUrlsByName.isEmpty() || value == null) {
+    private String rewriteServiceUrl(String value, String envName, Map<String, String> serviceUrlsByName,
+                                      Map<String, String> otherServiceNames, List<GenerationNotice> notices) {
+        if (value == null) {
             return null;
         }
         String trimmed = stripTrailingSlash(value.trim());
-        for (Map.Entry<String, String> service : serviceUrlsByName.entrySet()) {
-            if (trimmed.equals(stripTrailingSlash(service.getValue()))) {
-                return "${services." + service.getKey() + ".url}";
+
+        if (serviceUrlsByName != null) {
+            for (Map.Entry<String, String> service : serviceUrlsByName.entrySet()) {
+                if (trimmed.equals(stripTrailingSlash(service.getValue()))) {
+                    return "${services." + service.getKey() + ".url}";
+                }
+            }
+        }
+
+        // A confirmed Cloud Run URL is essentially never known statically (it is assigned at deploy
+        // time) — this heuristic fallback is what actually fires in practice: an https:// value
+        // whose host merely mentions another declared container's name is very likely that
+        // container's URL, but it is a guess, not a parsed fact, so it is always flagged rather than
+        // applied silently the way an exact match above is.
+        if (otherServiceNames != null && !otherServiceNames.isEmpty() && looksLikeHttpUrl(trimmed)) {
+            String lower = trimmed.toLowerCase(Locale.ROOT);
+            for (Map.Entry<String, String> candidate : otherServiceNames.entrySet()) {
+                if (!candidate.getKey().isBlank() && lower.contains(candidate.getKey())) {
+                    notices.add(GenerationNotice.warning(GenerationNoticeCode.CROSS_SERVICE_URL_GUESSED,
+                            "'" + envName + "' looked like it points at the '" + candidate.getValue() + "' container "
+                                    + "declared in the same cloudbuild.yaml (its name appears in the URL) — rewritten "
+                                    + "to ${services." + candidate.getValue() + ".url}. This is a guess from the URL "
+                                    + "text, not a confirmed match — verify it before deploying."));
+                    return "${services." + candidate.getValue() + ".url}";
+                }
             }
         }
         return null;
+    }
+
+    private boolean looksLikeHttpUrl(String value) {
+        return value.toLowerCase(Locale.ROOT).startsWith("http://") || value.toLowerCase(Locale.ROOT).startsWith("https://");
     }
 
     private String stripTrailingSlash(String value) {
