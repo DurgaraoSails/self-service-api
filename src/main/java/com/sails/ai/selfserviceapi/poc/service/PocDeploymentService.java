@@ -502,6 +502,34 @@ public class PocDeploymentService {
     }
 
     /**
+     * Lets an admin give up on a non-terminal deployment right now rather than wait for {@code
+     * StaleDeploymentReconciler}'s timeout ({@code deployment.reconciliation.stale-after}, an hour
+     * by default) — most often needed after self-service-api itself crashed mid-deployment, which
+     * otherwise leaves the POC undeployable (blocked by {@code requireNoActiveDeployment}) until
+     * that timeout passes. Marking it FAILED here reopens {@link #retryDeployment} immediately.
+     *
+     * <p>There is no Cloud Build cancel call here — only this record changes, matching {@code
+     * StaleDeploymentReconciler}'s own approach (see its javadoc: nothing durable records which
+     * Cloud Build job, if any, a row was waiting on, so there is nothing to actually stop). A
+     * build genuinely still running in the background may finish and try to report its own result
+     * afterward; that report is rejected by the same terminal-status guard every other status
+     * update already goes through ({@link #reportStatus}/{@link #reportManifestStatus}), so it
+     * cannot silently overwrite what the admin just decided.
+     */
+    @Transactional
+    public PocDeployment cancelDeployment(UUID deploymentId) {
+        PocDeployment deployment = getDeploymentById(deploymentId);
+        if (isTerminal(deployment.getStatus())) {
+            throw new DeploymentAlreadyTerminalException(deploymentId);
+        }
+        deployment.setStatus(FAILED);
+        deployment.setErrorMessage("Cancelled by an admin.");
+        deployment.setContainerProgress(null);
+        deployment.setCompletedAt(Instant.now());
+        return pocDeploymentRepository.save(deployment);
+    }
+
+    /**
      * Resolves the manifest a POC's next build would use, and how many/which containers it
      * declares, without creating a deployment — lets the admin UI show what a deploy would do (or
      * why it would fail) before the admin actually triggers it.

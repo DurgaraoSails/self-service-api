@@ -221,6 +221,13 @@ public class PocDeploymentController implements DeploymentApi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PocDeploymentResponse> cancelDeployment(UUID deploymentId) {
+        PocDeployment cancelled = pocDeploymentService.cancelDeployment(deploymentId);
+        return ResponseEntity.ok(mapper.toDeploymentResponse(cancelled, versionLabelOf(cancelled)));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PocManifestPreviewResponse> getManifestPreview(UUID id) {
         PocManifest manifest = pocDeploymentService.previewManifest(id);
         List<PocManifestPreviewContainer> containers = manifest.containers().stream()

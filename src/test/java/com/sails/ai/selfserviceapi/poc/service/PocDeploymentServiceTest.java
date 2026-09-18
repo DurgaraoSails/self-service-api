@@ -650,6 +650,51 @@ class PocDeploymentServiceTest {
                 .isEqualTo(HttpStatus.CONFLICT);
     }
 
+    // --- cancelDeployment: an admin giving up on a deployment that looks stuck -------------------
+
+    @Test
+    void cancelDeploymentMarksAPendingDeploymentFailedWithAnAdminCancelledMessage() {
+        PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
+        when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
+
+        PocDeployment cancelled = service.cancelDeployment(deployment.getId());
+
+        assertThat(cancelled.getStatus()).isEqualTo("FAILED");
+        assertThat(cancelled.getErrorMessage()).isEqualTo("Cancelled by an admin.");
+        assertThat(cancelled.getContainerProgress()).isNull();
+        assertThat(cancelled.getCompletedAt()).isNotNull();
+    }
+
+    @Test
+    void cancelDeploymentWorksFromBuildingOrDeployingToo() {
+        PocDeployment building = pendingDeployment("BUILD_AND_DEPLOY");
+        building.setStatus("BUILDING");
+        when(pocDeploymentRepository.findById(building.getId())).thenReturn(Optional.of(building));
+
+        assertThat(service.cancelDeployment(building.getId()).getStatus()).isEqualTo("FAILED");
+
+        PocDeployment deploying = pendingDeployment("BUILD_AND_DEPLOY");
+        deploying.setStatus("DEPLOYING");
+        when(pocDeploymentRepository.findById(deploying.getId())).thenReturn(Optional.of(deploying));
+
+        assertThat(service.cancelDeployment(deploying.getId()).getStatus()).isEqualTo("FAILED");
+    }
+
+    /** Matches reportStatus's own guard — a deployment that already finished has nothing left to cancel. */
+    @Test
+    void cancelDeploymentThrowsWhenTheDeploymentIsAlreadyTerminal() {
+        PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");
+        deployment.setStatus("SUCCEEDED");
+        when(pocDeploymentRepository.findById(deployment.getId())).thenReturn(Optional.of(deployment));
+
+        assertThatThrownBy(() -> service.cancelDeployment(deployment.getId()))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).getStatus())
+                .isEqualTo(HttpStatus.CONFLICT);
+
+        verify(pocDeploymentRepository, never()).save(any());
+    }
+
     @Test
     void reportManifestStatusOnSuccessPersistsOneContainerRowPerBuiltContainer() {
         PocDeployment deployment = pendingDeployment("BUILD_AND_DEPLOY");

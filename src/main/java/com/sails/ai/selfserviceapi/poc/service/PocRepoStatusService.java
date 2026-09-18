@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Reads a POC's repository state from GitHub and stores it — the only place this platform's
@@ -61,6 +62,7 @@ public class PocRepoStatusService {
      * for a POC that has one, but a POC's URL can be cleared between scheduling and running.
      */
     @Async(AsyncConfig.PIPELINE_EXECUTOR)
+    @Transactional
     public void refresh(UUID pocId) {
         pocRepository.findById(pocId).ifPresent(this::refreshNow);
     }
@@ -80,14 +82,13 @@ public class PocRepoStatusService {
      * manual-refresh endpoint, which needs to 404 on a missing POC rather than silently no-op)
      * does not have to re-fetch it, and so tests can drive this without waiting on {@code @Async}.
      *
-     * <p>Deliberately not {@code @Transactional}: {@link #refresh} calls this via {@code this::},
-     * which bypasses Spring's proxy and would make that annotation a no-op anyway. The two writes
-     * below (the status row, then the tag rows) are each already atomic on their own via Spring
-     * Data's own transactional {@code save}/{@code saveAll} — losing atomicity *across* the two
-     * only matters if the process dies between them, and the next refresh (on-demand, or the next
-     * deploy) simply overwrites both again. Not worth a real transaction boundary for a refresh
-     * that is already best-effort by design (see the class javadoc).
+     * <p>{@code @Transactional} here covers {@link #replaceTags}'s {@code deleteByPocId}, which
+     * (unlike {@code save}/{@code saveAll}) needs an actual open EntityManager/transaction to run
+     * its {@code remove()} calls. {@link #refresh} also carries {@code @Transactional} so that its
+     * self-invocation of this method (via {@code this::}, which bypasses Spring's proxy) still runs
+     * inside a transaction bound to that thread.
      */
+    @Transactional
     public void refreshNow(Poc poc) {
         String githubUrl = poc.getGithubUrl();
         if (githubUrl == null || githubUrl.isBlank()) {

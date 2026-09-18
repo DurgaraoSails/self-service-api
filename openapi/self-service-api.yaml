@@ -1469,6 +1469,49 @@ paths:
         '500':
           $ref: './components/responses.yaml#/InternalServerError'
 
+  /pocs/deployments/{deploymentId}/cancel:
+    post:
+      summary: Give up on a non-terminal deployment right now, without waiting for it to time out (admin only)
+      description: >
+        Marks a PENDING/BUILDING/DEPLOYING deployment FAILED immediately — for a deployment that
+        looks stuck (most often because self-service-api itself crashed mid-attempt, which
+        otherwise only self-heals after deployment.reconciliation.stale-after, an hour by
+        default) and an admin doesn't want to wait. Reopens POST .../retry and un-blocks
+        deploying/redeploying this POC again right away.
+        Does not stop anything already running in Cloud Build — there is no cancel call to Cloud
+        Build here, only this record changes. If a build that was already running later reports
+        back anyway, that report is rejected (409) because this row is already terminal, so it
+        cannot silently overwrite the cancellation.
+        409 if the deployment has already reached a terminal status (SUCCEEDED/FAILED/SKIPPED) —
+        nothing to cancel.
+      operationId: cancelDeployment
+      tags:
+        - Deployment
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: './components/schemas/poc-deployment.yaml#/PocDeploymentResponse'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '404':
+          $ref: './components/responses.yaml#/NotFound'
+        '409':
+          $ref: './components/responses.yaml#/Conflict'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
   /pocs/deployments/{deploymentId}/status:
     post:
       summary: Report a deployment's status (called by the deploy pipeline, not the portal)

@@ -1,6 +1,3 @@
-spring:
-  config:
-    import: optional:file:./secrets/application-local-secrets.yaml
 
 JWT_PRIVATE_KEY_PATH: file:./secrets/jwt/private-key.pem
 JWT_PUBLIC_KEY_PATH: file:./secrets/jwt/public-key.pem
@@ -24,3 +21,8 @@ asset-hub:
 # POC_GENERATOR_ENABLED: true
 # POC_GENERATOR_PROVIDER: vertex
 # POC_GENERATOR_VERTEX_PROJECT: your-gcp-project-id
+
+spring:
+  config:
+    import: optional:file:./secrets/application-local-secrets.yaml
+
