@@ -1945,7 +1945,7 @@ paths:
             type: array
             items:
               type: string
-              enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+              enum: [POC, BLOG, HACKATHON_IDEA]
           description: Repeatable. Filters to any of the given asset types.
         - name: tag
           in: query
@@ -2045,7 +2045,7 @@ paths:
             type: array
             items:
               type: string
-              enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+              enum: [POC, BLOG, HACKATHON_IDEA]
         - name: tag
           in: query
           required: false
@@ -2482,7 +2482,7 @@ paths:
             type: array
             items:
               type: string
-              enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+              enum: [POC, BLOG, HACKATHON_IDEA]
         - name: maxAgeDays
           in: query
           required: false

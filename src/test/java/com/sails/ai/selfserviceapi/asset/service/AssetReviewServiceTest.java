@@ -174,7 +174,7 @@ class AssetReviewServiceTest {
         assertThat(response.getTotalAssets()).isEqualTo(1L);
         assertThat(response.getApprovedAssets()).isEqualTo(1L);
         assertThat(response.getInReviewAssets()).isEqualTo(0L);
-        assertThat(response.getCategories()).hasSize(6);
+        assertThat(response.getCategories()).hasSize(3);
         assertThat(response.getCategories().stream()
                 .filter(c -> c.getAssetType().getValue().equals("BLOG"))
                 .findFirst().orElseThrow().getTotalAssets()).isEqualTo(0L);
@@ -185,7 +185,7 @@ class AssetReviewServiceTest {
         asset.setId(UUID.randomUUID());
         asset.setSubmittedByUserId(submitterId);
         asset.setOwnerUserId(ownerId);
-        asset.setAssetType("DOCUMENT");
+        asset.setAssetType("POC");
         return asset;
     }
 

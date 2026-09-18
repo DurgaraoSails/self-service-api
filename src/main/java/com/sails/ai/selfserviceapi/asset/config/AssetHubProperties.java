@@ -9,7 +9,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  */
 @ConfigurationProperties(prefix = "asset-hub")
 public record AssetHubProperties(
-        boolean enabled,
         boolean aiEnabled,
         boolean semanticSearchEnabled,
         Ai ai,

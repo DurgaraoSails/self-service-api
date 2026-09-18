@@ -30,7 +30,7 @@ class GeminiAssetAiProviderTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     /** VERTEX_AI so the provider builds the aiplatform path this test's expectations assert. */
-    private final AssetHubProperties properties = new AssetHubProperties(true, true, false,
+    private final AssetHubProperties properties = new AssetHubProperties(true, false,
             new AssetHubProperties.Ai(AssetAiTransport.VERTEX_AI, "test-project", "test-region", null,
                     "gemini-test", 5),
             null);

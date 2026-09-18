@@ -34,8 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AssetReviewService {
 
-    private static final List<String> ASSET_TYPES =
-            List.of("AI_USE_CASE", "POC", "BLOG", "ARTICLE", "HACKATHON_IDEA", "DOCUMENT");
+    private static final List<String> ASSET_TYPES = List.of("POC", "BLOG", "HACKATHON_IDEA");
 
     private final AssetRepository assetRepository;
     private final AssetRevisionRepository assetRevisionRepository;

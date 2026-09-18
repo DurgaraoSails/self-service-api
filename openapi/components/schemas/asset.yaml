@@ -40,7 +40,7 @@ AssetSummaryResponse:
 
     assetType:
       type: string
-      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      enum: [POC, BLOG, HACKATHON_IDEA]
       example: "POC"
 
     title:
@@ -197,7 +197,7 @@ AssetFacetsResponse:
         properties:
           assetType:
             type: string
-            enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+            enum: [POC, BLOG, HACKATHON_IDEA]
           count:
             type: integer
 
@@ -340,7 +340,7 @@ AssetEditorResponse:
           format: uuid
         assetType:
           type: string
-          enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+          enum: [POC, BLOG, HACKATHON_IDEA]
         ownerUserId:
           type: string
         submittedByUserId:
@@ -398,7 +398,7 @@ AssetMineSummaryResponse:
 
     assetType:
       type: string
-      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      enum: [POC, BLOG, HACKATHON_IDEA]
       example: "POC"
 
     title:
@@ -483,7 +483,7 @@ CreateAssetRequest:
   properties:
     assetType:
       type: string
-      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      enum: [POC, BLOG, HACKATHON_IDEA]
       example: "POC"
 
     ownerUserId:
@@ -557,7 +557,7 @@ UpdateAssetRevisionRequest:
   properties:
     assetType:
       type: string
-      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      enum: [POC, BLOG, HACKATHON_IDEA]
       nullable: true
       description: Settable only before the asset has ever had an approved revision.
       example: "POC"
@@ -824,7 +824,7 @@ AssetReviewQueueItemResponse:
 
     assetType:
       type: string
-      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      enum: [POC, BLOG, HACKATHON_IDEA]
       example: "POC"
 
     title:
@@ -914,7 +914,7 @@ AssetReviewerDashboardCategoryResponse:
   properties:
     assetType:
       type: string
-      enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+      enum: [POC, BLOG, HACKATHON_IDEA]
     totalAssets:
       type: integer
       format: int64
@@ -1077,7 +1077,7 @@ AssetReviewDetailResponse:
           format: uuid
         assetType:
           type: string
-          enum: [AI_USE_CASE, POC, BLOG, ARTICLE, HACKATHON_IDEA, DOCUMENT]
+          enum: [POC, BLOG, HACKATHON_IDEA]
         ownerUserId:
           type: string
         ownerDisplayName:

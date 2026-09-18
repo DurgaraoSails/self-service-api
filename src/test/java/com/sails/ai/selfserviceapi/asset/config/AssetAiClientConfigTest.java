@@ -18,7 +18,7 @@ class AssetAiClientConfigTest {
 
     /** Embedding config is irrelevant here — semanticSearchEnabled is false, so nothing reads it. */
     private static AssetHubProperties properties(AssetHubProperties.Ai ai) {
-        return new AssetHubProperties(true, true, false, ai,
+        return new AssetHubProperties(true, false, ai,
                 new AssetHubProperties.Embedding(null, "https://api.voyageai.com", "voyage-4", 1024, 20));
     }
 

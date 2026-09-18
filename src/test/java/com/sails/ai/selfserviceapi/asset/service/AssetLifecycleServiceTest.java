@@ -98,7 +98,7 @@ class AssetLifecycleServiceTest {
 
     @Test
     void rejectsNonHttpSourceUrlsBeforeWritingAnAsset() {
-        CreateAssetRequest request = new CreateAssetRequest(CreateAssetRequest.AssetTypeEnum.DOCUMENT,
+        CreateAssetRequest request = new CreateAssetRequest(CreateAssetRequest.AssetTypeEnum.POC,
                 "owner", "Title", "Summary", "file:///C:/secret.txt");
 
         assertThatThrownBy(() -> service.createAsset(request, "author"))
@@ -108,7 +108,7 @@ class AssetLifecycleServiceTest {
 
     @Test
     void createAssetMakesTheCallerSubmitterAndInitialRevisionAuthor() {
-        CreateAssetRequest request = new CreateAssetRequest(CreateAssetRequest.AssetTypeEnum.DOCUMENT,
+        CreateAssetRequest request = new CreateAssetRequest(CreateAssetRequest.AssetTypeEnum.POC,
                 "owner-1", "Title", "Summary", "https://example.com/doc");
         when(userRepository.findById("owner-1")).thenReturn(Optional.of(activeInternalUser("owner-1")));
         stubSavesToReturnTheirArgument();
@@ -456,7 +456,7 @@ class AssetLifecycleServiceTest {
     private static Asset approvedAsset() {
         Asset asset = new Asset();
         asset.setId(UUID.randomUUID());
-        asset.setAssetType("DOCUMENT");
+        asset.setAssetType("POC");
         asset.setOwnerUserId("owner-1");
         asset.setSubmittedByUserId("submitter-1");
         asset.setApprovedRevisionId(UUID.randomUUID());
@@ -468,7 +468,7 @@ class AssetLifecycleServiceTest {
     private static Asset assetWithWorkingRevision(String submitterId, String ownerId) {
         Asset asset = new Asset();
         asset.setId(UUID.randomUUID());
-        asset.setAssetType("DOCUMENT");
+        asset.setAssetType("POC");
         asset.setSubmittedByUserId(submitterId);
         asset.setOwnerUserId(ownerId);
         asset.setWorkingRevisionId(UUID.randomUUID());
