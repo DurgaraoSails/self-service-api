@@ -22,8 +22,11 @@ import com.sails.ai.selfserviceapi.asset.repository.AssetFeedbackRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetReviewRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetRevisionRepository;
+import com.sails.ai.selfserviceapi.asset.repository.AiCapabilityRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetSearchRepository;
+import com.sails.ai.selfserviceapi.asset.repository.IndustryRepository;
 import com.sails.ai.selfserviceapi.asset.repository.TagRepository;
+import com.sails.ai.selfserviceapi.asset.repository.TechnologyRepository;
 import com.sails.ai.selfserviceapi.asset.search.AssetSearchIndexer;
 import com.sails.ai.selfserviceapi.asset.search.AssetSearchRankingService;
 import com.sails.ai.selfserviceapi.common.exception.ApiException;
@@ -63,6 +66,9 @@ class AssetLifecycleServiceTest {
     private AssetRevisionRepository assetRevisionRepository;
     private AssetSearchRepository assetSearchRepository;
     private TagRepository tagRepository;
+    private IndustryRepository industryRepository;
+    private AiCapabilityRepository aiCapabilityRepository;
+    private TechnologyRepository technologyRepository;
     private UserRepository userRepository;
     private PocRepository pocRepository;
     private AssetFeedbackRepository assetFeedbackRepository;
@@ -77,6 +83,9 @@ class AssetLifecycleServiceTest {
         assetRevisionRepository = Mockito.mock(AssetRevisionRepository.class);
         assetSearchRepository = Mockito.mock(AssetSearchRepository.class);
         tagRepository = Mockito.mock(TagRepository.class);
+        industryRepository = Mockito.mock(IndustryRepository.class);
+        aiCapabilityRepository = Mockito.mock(AiCapabilityRepository.class);
+        technologyRepository = Mockito.mock(TechnologyRepository.class);
         userRepository = Mockito.mock(UserRepository.class);
         pocRepository = Mockito.mock(PocRepository.class);
         assetFeedbackRepository = Mockito.mock(AssetFeedbackRepository.class);
@@ -87,7 +96,8 @@ class AssetLifecycleServiceTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<EmbeddingProvider> embeddingProvider = Mockito.mock(ObjectProvider.class);
         service = new AssetLifecycleService(assetRepository, assetRevisionRepository, assetSearchRepository,
-                tagRepository, userRepository, pocRepository, assetFeedbackRepository, assetEventRepository,
+                tagRepository, industryRepository, aiCapabilityRepository, technologyRepository,
+                userRepository, pocRepository, assetFeedbackRepository, assetEventRepository,
                 assetReviewRepository, assetSearchIndexer, assetSearchRankingService, embeddingProvider);
     }
 
@@ -419,12 +429,12 @@ class AssetLifecycleServiceTest {
 
     @Test
     void recordsAPrivacyMinimizedSearchEventForKeywordSearches() {
-        when(assetSearchRepository.findRankedAssetIds(eq("onboarding"), any(), any(), any(), eq(false),
+        when(assetSearchRepository.findRankedAssetIds(eq("onboarding"), any(), any(), any(), any(), any(), eq(false),
                 eq(20), eq(0))).thenReturn(List.of());
-        when(assetSearchRepository.countRankedAssets(eq("onboarding"), any(), any(), any(), eq(false)))
+        when(assetSearchRepository.countRankedAssets(eq("onboarding"), any(), any(), any(), any(), any(), eq(false)))
                 .thenReturn(0L);
 
-        AssetPageResponse response = service.listAssets("  onboarding  ", null, null, null,
+        AssetPageResponse response = service.listAssets("  onboarding  ", null, null, null, null, null,
                 false, 0, 20, "employee-1");
 
         ArgumentCaptor<AssetEvent> event = ArgumentCaptor.forClass(AssetEvent.class);

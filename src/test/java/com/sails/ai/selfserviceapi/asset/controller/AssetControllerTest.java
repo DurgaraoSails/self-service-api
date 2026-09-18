@@ -91,7 +91,7 @@ class AssetControllerTest {
     @Test
     void listAssetsReturns200WithThePageBody() throws Exception {
         authenticateAsInternal("employee-1");
-        when(assetLifecycleService.listAssets(any(), any(), any(), any(), any(), anyInt(), anyInt(), anyString()))
+        when(assetLifecycleService.listAssets(any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt(), anyString()))
                 .thenReturn(new AssetPageResponse(List.of(), 0, 20, 0L, 0));
 
         mockMvc.perform(get("/assets"))

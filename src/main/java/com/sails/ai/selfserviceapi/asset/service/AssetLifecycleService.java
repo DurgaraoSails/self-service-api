@@ -2,23 +2,29 @@ package com.sails.ai.selfserviceapi.asset.service;
 
 import com.sails.ai.selfserviceapi.asset.ai.EmbeddingProvider;
 import com.sails.ai.selfserviceapi.asset.ai.EmbeddingProviderException;
+import com.sails.ai.selfserviceapi.asset.entity.AiCapability;
 import com.sails.ai.selfserviceapi.asset.entity.Asset;
 import com.sails.ai.selfserviceapi.asset.entity.AssetEvent;
 import com.sails.ai.selfserviceapi.asset.entity.AssetFeedback;
 import com.sails.ai.selfserviceapi.asset.entity.AssetRevision;
+import com.sails.ai.selfserviceapi.asset.entity.Industry;
 import com.sails.ai.selfserviceapi.asset.entity.Tag;
+import com.sails.ai.selfserviceapi.asset.entity.Technology;
 import com.sails.ai.selfserviceapi.asset.exception.AssetNotFoundException;
 import com.sails.ai.selfserviceapi.asset.exception.AssetRevisionStaleException;
 import com.sails.ai.selfserviceapi.asset.exception.InvalidAssetTransitionException;
 import com.sails.ai.selfserviceapi.asset.exception.InvalidPocAssociationException;
 import com.sails.ai.selfserviceapi.asset.exception.WorkingRevisionExistsException;
+import com.sails.ai.selfserviceapi.asset.repository.AiCapabilityRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetEventRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetFeedbackRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetReviewRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetRevisionRepository;
 import com.sails.ai.selfserviceapi.asset.repository.AssetSearchRepository;
+import com.sails.ai.selfserviceapi.asset.repository.IndustryRepository;
 import com.sails.ai.selfserviceapi.asset.repository.TagRepository;
+import com.sails.ai.selfserviceapi.asset.repository.TechnologyRepository;
 import com.sails.ai.selfserviceapi.asset.search.AssetSearchIndexer;
 import com.sails.ai.selfserviceapi.asset.search.AssetSearchRankingService;
 import com.sails.ai.selfserviceapi.asset.search.VectorLiteral;
@@ -27,6 +33,8 @@ import com.sails.ai.selfserviceapi.generated.model.AssetDetailResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetEditorResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetEventRequest;
 import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponse;
+import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseAiCapabilitiesInner;
+import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseIndustriesInner;
 import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseOwnersInner;
 import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseTagsInner;
 import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseTypesInner;
@@ -37,6 +45,7 @@ import com.sails.ai.selfserviceapi.generated.model.AssetMineSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetPageResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetSummaryResponse;
 import com.sails.ai.selfserviceapi.generated.model.CreateAssetRequest;
+import com.sails.ai.selfserviceapi.generated.model.IndustryResponse;
 import com.sails.ai.selfserviceapi.generated.model.UpdateAssetRevisionRequest;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
@@ -76,6 +85,9 @@ public class AssetLifecycleService {
     private final AssetRevisionRepository assetRevisionRepository;
     private final AssetSearchRepository assetSearchRepository;
     private final TagRepository tagRepository;
+    private final IndustryRepository industryRepository;
+    private final AiCapabilityRepository aiCapabilityRepository;
+    private final TechnologyRepository technologyRepository;
     private final UserRepository userRepository;
     private final PocRepository pocRepository;
     private final AssetFeedbackRepository assetFeedbackRepository;
@@ -87,6 +99,8 @@ public class AssetLifecycleService {
 
     public AssetLifecycleService(AssetRepository assetRepository, AssetRevisionRepository assetRevisionRepository,
                                   AssetSearchRepository assetSearchRepository, TagRepository tagRepository,
+                                  IndustryRepository industryRepository, AiCapabilityRepository aiCapabilityRepository,
+                                  TechnologyRepository technologyRepository,
                                   UserRepository userRepository, PocRepository pocRepository,
                                   AssetFeedbackRepository assetFeedbackRepository, AssetEventRepository assetEventRepository,
                                   AssetReviewRepository assetReviewRepository, AssetSearchIndexer assetSearchIndexer,
@@ -96,6 +110,9 @@ public class AssetLifecycleService {
         this.assetRevisionRepository = assetRevisionRepository;
         this.assetSearchRepository = assetSearchRepository;
         this.tagRepository = tagRepository;
+        this.industryRepository = industryRepository;
+        this.aiCapabilityRepository = aiCapabilityRepository;
+        this.technologyRepository = technologyRepository;
         this.userRepository = userRepository;
         this.pocRepository = pocRepository;
         this.assetFeedbackRepository = assetFeedbackRepository;
@@ -135,6 +152,10 @@ public class AssetLifecycleService {
         revision.setSourceUrl(request.getSourceUrl());
         revision.setAuthoredByUserId(callerId);
         revision.setTags(resolveTags(request.getTags()));
+        revision.setIndustry(resolveIndustry(request.getIndustryId()));
+        revision.setAiCapabilities(resolveAiCapabilities(request.getAiCapabilities()));
+        revision.setTechnologies(resolveTechnologies(request.getTechnologies()));
+        revision.setAiArchitecture(request.getAiArchitecture());
         assetRevisionRepository.save(revision);
 
         asset.setWorkingRevisionId(revision.getId());
@@ -206,6 +227,10 @@ public class AssetLifecycleService {
         draft.setSourceUrl(source.getSourceUrl());
         draft.setAuthoredByUserId(callerId);
         draft.setTags(new HashSet<>(source.getTags()));
+        draft.setIndustry(source.getIndustry());
+        draft.setAiCapabilities(new HashSet<>(source.getAiCapabilities()));
+        draft.setTechnologies(new HashSet<>(source.getTechnologies()));
+        draft.setAiArchitecture(source.getAiArchitecture());
         assetRevisionRepository.save(draft);
 
         asset.setWorkingRevisionId(draft.getId());
@@ -266,6 +291,10 @@ public class AssetLifecycleService {
         working.setSolutionOverview(request.getSolutionOverview());
         working.setSourceUrl(request.getSourceUrl());
         working.setTags(resolveTags(request.getTags()));
+        working.setIndustry(resolveIndustry(request.getIndustryId()));
+        working.setAiCapabilities(resolveAiCapabilities(request.getAiCapabilities()));
+        working.setTechnologies(resolveTechnologies(request.getTechnologies()));
+        working.setAiArchitecture(request.getAiArchitecture());
         assetRepository.flush();
 
         AssetRevision lastApproved = asset.getApprovedRevisionId() != null
@@ -339,15 +368,19 @@ public class AssetLifecycleService {
     }
 
     @Transactional
-    public AssetPageResponse listAssets(String q, List<String> types, List<String> tags, String ownerId,
-                                         Boolean launchable, int page, int size, String callerId) {
+    public AssetPageResponse listAssets(String q, List<String> types, List<String> tags, Long industryId,
+                                         List<String> aiCapabilities, String ownerId, Boolean launchable,
+                                         int page, int size, String callerId) {
         String normalizedQ = normalizeQuery(q);
         String typesCsv = csv(types);
         String tagsCsv = csv(tags == null ? null : tags.stream().map(AssetLifecycleService::normalizeTagName).toList());
+        String aiCapabilitiesCsv = csv(aiCapabilities == null ? null
+                : aiCapabilities.stream().map(AssetLifecycleService::normalizeTagName).toList());
         boolean launchableOnly = Boolean.TRUE.equals(launchable);
 
         List<UUID> semanticIds = normalizedQ != null
-                ? findSemanticCandidates(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly) : List.of();
+                ? findSemanticCandidates(normalizedQ, typesCsv, tagsCsv, industryId, aiCapabilitiesCsv, ownerId, launchableOnly)
+                : List.of();
 
         List<UUID> ids;
         long total;
@@ -356,11 +389,13 @@ public class AssetLifecycleService {
             // failed, or nothing indexed has an embedding yet — pure lexical ranking. This is the
             // deterministic keyword fallback the Search Contract requires, and it keeps the same
             // response shape as the fused path.
-            ids = assetSearchRepository.findRankedAssetIds(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly, size, page * size);
-            total = assetSearchRepository.countRankedAssets(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly);
+            ids = assetSearchRepository.findRankedAssetIds(normalizedQ, typesCsv, tagsCsv, ownerId, industryId,
+                    aiCapabilitiesCsv, launchableOnly, size, page * size);
+            total = assetSearchRepository.countRankedAssets(normalizedQ, typesCsv, tagsCsv, ownerId, industryId,
+                    aiCapabilitiesCsv, launchableOnly);
         } else {
             List<UUID> lexicalIds = assetSearchRepository.findRankedAssetIds(
-                    normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly, CANDIDATE_POOL_SIZE, 0);
+                    normalizedQ, typesCsv, tagsCsv, ownerId, industryId, aiCapabilitiesCsv, launchableOnly, CANDIDATE_POOL_SIZE, 0);
             List<UUID> merged = assetSearchRankingService.merge(lexicalIds, semanticIds);
             total = merged.size();
             int from = Math.min(page * size, merged.size());
@@ -386,8 +421,8 @@ public class AssetLifecycleService {
      * or the embedding call itself failed. Either way {@link #listAssets} falls back to pure
      * lexical ranking, matching "AI failure never prevents manual submission or review" for search.
      */
-    private List<UUID> findSemanticCandidates(String normalizedQ, String typesCsv, String tagsCsv,
-                                               String ownerId, boolean launchableOnly) {
+    private List<UUID> findSemanticCandidates(String normalizedQ, String typesCsv, String tagsCsv, Long industryId,
+                                               String aiCapabilitiesCsv, String ownerId, boolean launchableOnly) {
         EmbeddingProvider provider = embeddingProvider.getIfAvailable();
         if (provider == null) {
             return List.of();
@@ -395,7 +430,7 @@ public class AssetLifecycleService {
         try {
             String vectorLiteral = VectorLiteral.of(provider.embed(normalizedQ));
             return assetSearchRepository.findSemanticCandidateIds(
-                    vectorLiteral, typesCsv, tagsCsv, ownerId, launchableOnly, CANDIDATE_POOL_SIZE);
+                    vectorLiteral, typesCsv, tagsCsv, ownerId, industryId, aiCapabilitiesCsv, launchableOnly, CANDIDATE_POOL_SIZE);
         } catch (EmbeddingProviderException e) {
             log.warn("Semantic search unavailable ({}); falling back to keyword search.", e.errorCode());
             return List.of();
@@ -403,23 +438,26 @@ public class AssetLifecycleService {
     }
 
     @Transactional(readOnly = true)
-    public AssetFacetsResponse getAssetFacets(String q, List<String> types, List<String> tags, String ownerId, Boolean launchable) {
+    public AssetFacetsResponse getAssetFacets(String q, List<String> types, List<String> tags, Long industryId,
+                                               List<String> aiCapabilities, String ownerId, Boolean launchable) {
         String normalizedQ = normalizeQuery(q);
         String typesCsv = csv(types);
         String tagsCsv = csv(tags == null ? null : tags.stream().map(AssetLifecycleService::normalizeTagName).toList());
+        String aiCapabilitiesCsv = csv(aiCapabilities == null ? null
+                : aiCapabilities.stream().map(AssetLifecycleService::normalizeTagName).toList());
         boolean launchableOnly = Boolean.TRUE.equals(launchable);
 
         List<AssetFacetsResponseTypesInner> typeCounts = assetSearchRepository
-                .countByType(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly).stream()
+                .countByType(normalizedQ, typesCsv, tagsCsv, ownerId, industryId, aiCapabilitiesCsv, launchableOnly).stream()
                 .map(row -> new AssetFacetsResponseTypesInner(
                         AssetFacetsResponseTypesInner.AssetTypeEnum.fromValue((String) row[0]), ((Number) row[1]).intValue()))
                 .toList();
         List<AssetFacetsResponseTagsInner> tagCounts = assetSearchRepository
-                .countByTag(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly).stream()
+                .countByTag(normalizedQ, typesCsv, tagsCsv, ownerId, industryId, aiCapabilitiesCsv, launchableOnly).stream()
                 .map(row -> new AssetFacetsResponseTagsInner((String) row[0], ((Number) row[1]).intValue()))
                 .toList();
         List<AssetFacetsResponseOwnersInner> ownerCounts = assetSearchRepository
-                .countByOwner(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly).stream()
+                .countByOwner(normalizedQ, typesCsv, tagsCsv, ownerId, industryId, aiCapabilitiesCsv, launchableOnly).stream()
                 .map(row -> {
                     String userId = (String) row[0];
                     AssetFacetsResponseOwnersInner inner = new AssetFacetsResponseOwnersInner(userId, ((Number) row[1]).intValue());
@@ -427,9 +465,19 @@ public class AssetLifecycleService {
                     return inner;
                 })
                 .toList();
-        long launchableCount = assetSearchRepository.countLaunchable(normalizedQ, typesCsv, tagsCsv, ownerId, launchableOnly);
+        long launchableCount = assetSearchRepository.countLaunchable(normalizedQ, typesCsv, tagsCsv, ownerId,
+                industryId, aiCapabilitiesCsv, launchableOnly);
+        List<AssetFacetsResponseIndustriesInner> industryCounts = assetSearchRepository
+                .countByIndustry(normalizedQ, typesCsv, tagsCsv, ownerId, aiCapabilitiesCsv, launchableOnly).stream()
+                .map(row -> new AssetFacetsResponseIndustriesInner((String) row[0], ((Number) row[1]).intValue()))
+                .toList();
+        List<AssetFacetsResponseAiCapabilitiesInner> aiCapabilityCounts = assetSearchRepository
+                .countByAiCapability(normalizedQ, typesCsv, tagsCsv, ownerId, industryId, aiCapabilitiesCsv, launchableOnly).stream()
+                .map(row -> new AssetFacetsResponseAiCapabilitiesInner((String) row[0], ((Number) row[1]).intValue()))
+                .toList();
 
-        return AssetResponseMapper.toFacetsResponse(typeCounts, tagCounts, ownerCounts, (int) launchableCount);
+        return AssetResponseMapper.toFacetsResponse(typeCounts, tagCounts, ownerCounts, (int) launchableCount,
+                industryCounts, aiCapabilityCounts);
     }
 
     @Transactional
@@ -515,6 +563,70 @@ public class AssetLifecycleService {
 
     private static String normalizeTagName(String name) {
         return name.trim().toLowerCase(Locale.ROOT).replace(",", "");
+    }
+
+    /** No create-on-write here, unlike {@link #resolveTags} — industries are admin-curated via {@link #listIndustries()}. */
+    private Industry resolveIndustry(Long industryId) {
+        return industryId == null ? null : industryRepository.findById(industryId).orElse(null);
+    }
+
+    private Set<AiCapability> resolveAiCapabilities(List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return new HashSet<>();
+        }
+        Map<String, String> displayNameByNormalized = new LinkedHashMap<>();
+        for (String name : names) {
+            String normalized = normalizeTagName(name);
+            if (!normalized.isBlank()) {
+                displayNameByNormalized.putIfAbsent(normalized, name.trim());
+            }
+        }
+
+        Set<AiCapability> resolved = new HashSet<>();
+        for (Map.Entry<String, String> entry : displayNameByNormalized.entrySet()) {
+            AiCapability capability = aiCapabilityRepository.findByNormalizedName(entry.getKey())
+                    .orElseGet(() -> {
+                        AiCapability c = new AiCapability();
+                        c.setName(entry.getValue());
+                        c.setNormalizedName(entry.getKey());
+                        return aiCapabilityRepository.save(c);
+                    });
+            resolved.add(capability);
+        }
+        return resolved;
+    }
+
+    private Set<Technology> resolveTechnologies(List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return new HashSet<>();
+        }
+        Map<String, String> displayNameByNormalized = new LinkedHashMap<>();
+        for (String name : names) {
+            String normalized = normalizeTagName(name);
+            if (!normalized.isBlank()) {
+                displayNameByNormalized.putIfAbsent(normalized, name.trim());
+            }
+        }
+
+        Set<Technology> resolved = new HashSet<>();
+        for (Map.Entry<String, String> entry : displayNameByNormalized.entrySet()) {
+            Technology technology = technologyRepository.findByNormalizedName(entry.getKey())
+                    .orElseGet(() -> {
+                        Technology t = new Technology();
+                        t.setName(entry.getValue());
+                        t.setNormalizedName(entry.getKey());
+                        return technologyRepository.save(t);
+                    });
+            resolved.add(technology);
+        }
+        return resolved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<IndustryResponse> listIndustries() {
+        return industryRepository.findAllByOrderByNameAsc().stream()
+                .map(AssetResponseMapper::toIndustryResponse)
+                .toList();
     }
 
     private static String normalizeQuery(String q) {

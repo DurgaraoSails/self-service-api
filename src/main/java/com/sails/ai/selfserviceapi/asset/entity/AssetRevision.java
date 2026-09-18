@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -76,6 +77,27 @@ public class AssetRevision {
             joinColumns = @JoinColumn(name = "revision_id"),
             inverseJoinColumns = @JoinColumn(name = "tag_id"))
     private Set<Tag> tags = new HashSet<>();
+
+    @ManyToOne
+    @JoinColumn(name = "industry_id")
+    private Industry industry;
+
+    @ManyToMany
+    @JoinTable(
+            name = "asset_revision_ai_capabilities",
+            joinColumns = @JoinColumn(name = "revision_id"),
+            inverseJoinColumns = @JoinColumn(name = "ai_capability_id"))
+    private Set<AiCapability> aiCapabilities = new HashSet<>();
+
+    @ManyToMany
+    @JoinTable(
+            name = "asset_revision_technologies",
+            joinColumns = @JoinColumn(name = "revision_id"),
+            inverseJoinColumns = @JoinColumn(name = "technology_id"))
+    private Set<Technology> technologies = new HashSet<>();
+
+    @Column(name = "ai_architecture", length = 200)
+    private String aiArchitecture;
 
     @Version
     @Column(name = "version", nullable = false)

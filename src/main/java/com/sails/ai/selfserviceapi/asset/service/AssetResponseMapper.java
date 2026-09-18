@@ -11,9 +11,12 @@ import com.sails.ai.selfserviceapi.generated.model.AssetEditorResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetEditorResponseAsset;
 import com.sails.ai.selfserviceapi.generated.model.AssetEditorResponseLastApprovedSummary;
 import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponse;
+import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseAiCapabilitiesInner;
+import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseIndustriesInner;
 import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseOwnersInner;
 import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseTagsInner;
 import com.sails.ai.selfserviceapi.generated.model.AssetFacetsResponseTypesInner;
+import com.sails.ai.selfserviceapi.generated.model.IndustryResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetFeedbackResponse;
 import com.sails.ai.selfserviceapi.generated.model.AssetLaunch;
 import com.sails.ai.selfserviceapi.generated.model.AssetMinePageResponse;
@@ -80,6 +83,8 @@ public final class AssetResponseMapper {
                 toOffsetDateTime(approved.getUpdatedAt()));
         response.ownerDisplayName(ownerDisplayName);
         response.launch(toLaunch(asset, poc));
+        response.industry(industryName(approved));
+        response.aiCapabilities(aiCapabilityNames(approved));
         return response;
     }
 
@@ -101,6 +106,10 @@ public final class AssetResponseMapper {
         response.problemStatement(approved.getProblemStatement());
         response.businessImpact(approved.getBusinessImpact());
         response.solutionOverview(approved.getSolutionOverview());
+        response.industry(industryName(approved));
+        response.aiCapabilities(aiCapabilityNames(approved));
+        response.technologies(technologyNames(approved));
+        response.aiArchitecture(approved.getAiArchitecture());
         return response;
     }
 
@@ -119,6 +128,11 @@ public final class AssetResponseMapper {
         fields.problemStatement(revision.getProblemStatement());
         fields.businessImpact(revision.getBusinessImpact());
         fields.solutionOverview(revision.getSolutionOverview());
+        fields.industry(industryName(revision));
+        fields.industryId(revision.getIndustry() != null ? revision.getIndustry().getId() : null);
+        fields.aiCapabilities(aiCapabilityNames(revision));
+        fields.technologies(technologyNames(revision));
+        fields.aiArchitecture(revision.getAiArchitecture());
         if (revision.getSubmittedAt() != null) {
             fields.submittedAt(toOffsetDateTime(revision.getSubmittedAt()));
         }
@@ -180,8 +194,17 @@ public final class AssetResponseMapper {
     public static AssetFacetsResponse toFacetsResponse(List<AssetFacetsResponseTypesInner> types,
                                                          List<AssetFacetsResponseTagsInner> tags,
                                                          List<AssetFacetsResponseOwnersInner> owners,
-                                                         int launchableCount) {
-        return new AssetFacetsResponse(types, tags, owners, launchableCount);
+                                                         int launchableCount,
+                                                         List<AssetFacetsResponseIndustriesInner> industries,
+                                                         List<AssetFacetsResponseAiCapabilitiesInner> aiCapabilities) {
+        AssetFacetsResponse response = new AssetFacetsResponse(types, tags, owners, launchableCount);
+        response.industries(industries);
+        response.aiCapabilities(aiCapabilities);
+        return response;
+    }
+
+    public static IndustryResponse toIndustryResponse(com.sails.ai.selfserviceapi.asset.entity.Industry industry) {
+        return new IndustryResponse(industry.getId(), industry.getName());
     }
 
     public static AssetFeedbackResponse toFeedbackResponse(AssetFeedback feedback) {
@@ -267,6 +290,21 @@ public final class AssetResponseMapper {
     private static List<String> tagNames(AssetRevision revision) {
         Set<com.sails.ai.selfserviceapi.asset.entity.Tag> tags = revision.getTags();
         return tags.stream().map(com.sails.ai.selfserviceapi.asset.entity.Tag::getName).sorted().toList();
+    }
+
+    private static String industryName(AssetRevision revision) {
+        com.sails.ai.selfserviceapi.asset.entity.Industry industry = revision.getIndustry();
+        return industry == null ? null : industry.getName();
+    }
+
+    private static List<String> aiCapabilityNames(AssetRevision revision) {
+        Set<com.sails.ai.selfserviceapi.asset.entity.AiCapability> capabilities = revision.getAiCapabilities();
+        return capabilities.stream().map(com.sails.ai.selfserviceapi.asset.entity.AiCapability::getName).sorted().toList();
+    }
+
+    private static List<String> technologyNames(AssetRevision revision) {
+        Set<com.sails.ai.selfserviceapi.asset.entity.Technology> technologies = revision.getTechnologies();
+        return technologies.stream().map(com.sails.ai.selfserviceapi.asset.entity.Technology::getName).sorted().toList();
     }
 
     private static OffsetDateTime toOffsetDateTime(Instant instant) {

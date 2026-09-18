@@ -39,6 +39,11 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                     select 1 from asset_revision_tags art
                     join tags t on t.id = art.tag_id
                     where art.revision_id = r.id and t.normalized_name = any(string_to_array(:tagsCsv, ','))))
+              and (cast(:industryId as bigint) is null or r.industry_id = :industryId)
+              and (cast(:aiCapabilitiesCsv as text) is null or exists (
+                    select 1 from asset_revision_ai_capabilities arac
+                    join ai_capabilities ac on ac.id = arac.ai_capability_id
+                    where arac.revision_id = r.id and ac.normalized_name = any(string_to_array(:aiCapabilitiesCsv, ','))))
               and (:launchableOnly = false or (a.poc_id is not null and exists (
                     select 1 from pocs p where p.id = a.poc_id and p.deleted_at is null
                       and p.visibility_status = 'ACTIVE' and p.app_url is not null and p.app_url <> '')))
@@ -52,6 +57,8 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                                    @Param("typesCsv") String typesCsv,
                                    @Param("tagsCsv") String tagsCsv,
                                    @Param("ownerId") String ownerId,
+                                   @Param("industryId") Long industryId,
+                                   @Param("aiCapabilitiesCsv") String aiCapabilitiesCsv,
                                    @Param("launchableOnly") boolean launchableOnly,
                                    @Param("limit") int limit,
                                    @Param("offset") int offset);
@@ -69,6 +76,11 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                     select 1 from asset_revision_tags art
                     join tags t on t.id = art.tag_id
                     where art.revision_id = r.id and t.normalized_name = any(string_to_array(:tagsCsv, ','))))
+              and (cast(:industryId as bigint) is null or r.industry_id = :industryId)
+              and (cast(:aiCapabilitiesCsv as text) is null or exists (
+                    select 1 from asset_revision_ai_capabilities arac
+                    join ai_capabilities ac on ac.id = arac.ai_capability_id
+                    where arac.revision_id = r.id and ac.normalized_name = any(string_to_array(:aiCapabilitiesCsv, ','))))
               and (:launchableOnly = false or (a.poc_id is not null and exists (
                     select 1 from pocs p where p.id = a.poc_id and p.deleted_at is null
                       and p.visibility_status = 'ACTIVE' and p.app_url is not null and p.app_url <> '')))
@@ -78,6 +90,8 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                             @Param("typesCsv") String typesCsv,
                             @Param("tagsCsv") String tagsCsv,
                             @Param("ownerId") String ownerId,
+                            @Param("industryId") Long industryId,
+                            @Param("aiCapabilitiesCsv") String aiCapabilitiesCsv,
                             @Param("launchableOnly") boolean launchableOnly);
 
     @Modifying
@@ -142,6 +156,11 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                     select 1 from asset_revision_tags art
                     join tags t on t.id = art.tag_id
                     where art.revision_id = r.id and t.normalized_name = any(string_to_array(:tagsCsv, ','))))
+              and (cast(:industryId as bigint) is null or r.industry_id = :industryId)
+              and (cast(:aiCapabilitiesCsv as text) is null or exists (
+                    select 1 from asset_revision_ai_capabilities arac
+                    join ai_capabilities ac on ac.id = arac.ai_capability_id
+                    where arac.revision_id = r.id and ac.normalized_name = any(string_to_array(:aiCapabilitiesCsv, ','))))
               and (:launchableOnly = false or (a.poc_id is not null and exists (
                     select 1 from pocs p where p.id = a.poc_id and p.deleted_at is null
                       and p.visibility_status = 'ACTIVE' and p.app_url is not null and p.app_url <> '')))
@@ -152,6 +171,8 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                                          @Param("typesCsv") String typesCsv,
                                          @Param("tagsCsv") String tagsCsv,
                                          @Param("ownerId") String ownerId,
+                                         @Param("industryId") Long industryId,
+                                         @Param("aiCapabilitiesCsv") String aiCapabilitiesCsv,
                                          @Param("launchableOnly") boolean launchableOnly,
                                          @Param("limit") int limit);
 
@@ -181,6 +202,11 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                     select 1 from asset_revision_tags art
                     join tags t on t.id = art.tag_id
                     where art.revision_id = r.id and t.normalized_name = any(string_to_array(:tagsCsv, ','))))
+              and (cast(:industryId as bigint) is null or r.industry_id = :industryId)
+              and (cast(:aiCapabilitiesCsv as text) is null or exists (
+                    select 1 from asset_revision_ai_capabilities arac
+                    join ai_capabilities ac on ac.id = arac.ai_capability_id
+                    where arac.revision_id = r.id and ac.normalized_name = any(string_to_array(:aiCapabilitiesCsv, ','))))
               and (:launchableOnly = false or (a.poc_id is not null and exists (
                     select 1 from pocs p where p.id = a.poc_id and p.deleted_at is null
                       and p.visibility_status = 'ACTIVE' and p.app_url is not null and p.app_url <> '')))
@@ -190,6 +216,7 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
     @Query(value = "select a.asset_type, count(*) " + FACET_BASE + " group by a.asset_type", nativeQuery = true)
     List<Object[]> countByType(@Param("q") String q, @Param("typesCsv") String typesCsv,
                                 @Param("tagsCsv") String tagsCsv, @Param("ownerId") String ownerId,
+                                @Param("industryId") Long industryId, @Param("aiCapabilitiesCsv") String aiCapabilitiesCsv,
                                 @Param("launchableOnly") boolean launchableOnly);
 
     /**
@@ -213,6 +240,11 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
                     select 1 from asset_revision_tags art2
                     join tags t2 on t2.id = art2.tag_id
                     where art2.revision_id = r.id and t2.normalized_name = any(string_to_array(:tagsCsv, ','))))
+              and (cast(:industryId as bigint) is null or r.industry_id = :industryId)
+              and (cast(:aiCapabilitiesCsv as text) is null or exists (
+                    select 1 from asset_revision_ai_capabilities arac
+                    join ai_capabilities ac on ac.id = arac.ai_capability_id
+                    where arac.revision_id = r.id and ac.normalized_name = any(string_to_array(:aiCapabilitiesCsv, ','))))
               and (:launchableOnly = false or (a.poc_id is not null and exists (
                     select 1 from pocs p where p.id = a.poc_id and p.deleted_at is null
                       and p.visibility_status = 'ACTIVE' and p.app_url is not null and p.app_url <> '')))
@@ -221,11 +253,75 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
             """, nativeQuery = true)
     List<Object[]> countByTag(@Param("q") String q, @Param("typesCsv") String typesCsv,
                                @Param("tagsCsv") String tagsCsv, @Param("ownerId") String ownerId,
+                               @Param("industryId") Long industryId, @Param("aiCapabilitiesCsv") String aiCapabilitiesCsv,
                                @Param("launchableOnly") boolean launchableOnly);
+
+    /** Self-contained for the same reason as {@link #countByTag} — grouping needs the join in the outer FROM. */
+    @Query(value = """
+            select ac.normalized_name, count(distinct a.id)
+            from assets a
+            join asset_revisions r on r.id = a.approved_revision_id
+            left join asset_search_documents sd on sd.asset_id = a.id
+            join asset_revision_ai_capabilities arac on arac.revision_id = r.id
+            join ai_capabilities ac on ac.id = arac.ai_capability_id
+            where a.archived_at is null
+              and a.approved_revision_id is not null
+              and (cast(:typesCsv as text) is null or a.asset_type = any(string_to_array(:typesCsv, ',')))
+              and (cast(:ownerId as text) is null or a.owner_user_id = :ownerId)
+              and (cast(:tagsCsv as text) is null or exists (
+                    select 1 from asset_revision_tags art
+                    join tags t on t.id = art.tag_id
+                    where art.revision_id = r.id and t.normalized_name = any(string_to_array(:tagsCsv, ','))))
+              and (cast(:industryId as bigint) is null or r.industry_id = :industryId)
+              and (cast(:aiCapabilitiesCsv as text) is null or exists (
+                    select 1 from asset_revision_ai_capabilities arac2
+                    join ai_capabilities ac2 on ac2.id = arac2.ai_capability_id
+                    where arac2.revision_id = r.id and ac2.normalized_name = any(string_to_array(:aiCapabilitiesCsv, ','))))
+              and (:launchableOnly = false or (a.poc_id is not null and exists (
+                    select 1 from pocs p where p.id = a.poc_id and p.deleted_at is null
+                      and p.visibility_status = 'ACTIVE' and p.app_url is not null and p.app_url <> '')))
+              and (cast(:q as text) is null or sd.search_vector @@ websearch_to_tsquery('english', :q))
+            group by ac.normalized_name
+            """, nativeQuery = true)
+    List<Object[]> countByAiCapability(@Param("q") String q, @Param("typesCsv") String typesCsv,
+                                        @Param("tagsCsv") String tagsCsv, @Param("ownerId") String ownerId,
+                                        @Param("industryId") Long industryId, @Param("aiCapabilitiesCsv") String aiCapabilitiesCsv,
+                                        @Param("launchableOnly") boolean launchableOnly);
+
+    /** Self-contained for the same reason as {@link #countByTag} — grouping needs the join in the outer FROM. */
+    @Query(value = """
+            select i.name, count(distinct a.id)
+            from assets a
+            join asset_revisions r on r.id = a.approved_revision_id
+            left join asset_search_documents sd on sd.asset_id = a.id
+            join industries i on i.id = r.industry_id
+            where a.archived_at is null
+              and a.approved_revision_id is not null
+              and (cast(:typesCsv as text) is null or a.asset_type = any(string_to_array(:typesCsv, ',')))
+              and (cast(:ownerId as text) is null or a.owner_user_id = :ownerId)
+              and (cast(:tagsCsv as text) is null or exists (
+                    select 1 from asset_revision_tags art
+                    join tags t on t.id = art.tag_id
+                    where art.revision_id = r.id and t.normalized_name = any(string_to_array(:tagsCsv, ','))))
+              and (cast(:aiCapabilitiesCsv as text) is null or exists (
+                    select 1 from asset_revision_ai_capabilities arac
+                    join ai_capabilities ac on ac.id = arac.ai_capability_id
+                    where arac.revision_id = r.id and ac.normalized_name = any(string_to_array(:aiCapabilitiesCsv, ','))))
+              and (:launchableOnly = false or (a.poc_id is not null and exists (
+                    select 1 from pocs p where p.id = a.poc_id and p.deleted_at is null
+                      and p.visibility_status = 'ACTIVE' and p.app_url is not null and p.app_url <> '')))
+              and (cast(:q as text) is null or sd.search_vector @@ websearch_to_tsquery('english', :q))
+            group by i.name
+            """, nativeQuery = true)
+    List<Object[]> countByIndustry(@Param("q") String q, @Param("typesCsv") String typesCsv,
+                                    @Param("tagsCsv") String tagsCsv, @Param("ownerId") String ownerId,
+                                    @Param("aiCapabilitiesCsv") String aiCapabilitiesCsv,
+                                    @Param("launchableOnly") boolean launchableOnly);
 
     @Query(value = "select a.owner_user_id, count(*) " + FACET_BASE + " group by a.owner_user_id", nativeQuery = true)
     List<Object[]> countByOwner(@Param("q") String q, @Param("typesCsv") String typesCsv,
                                  @Param("tagsCsv") String tagsCsv, @Param("ownerId") String ownerId,
+                                 @Param("industryId") Long industryId, @Param("aiCapabilitiesCsv") String aiCapabilitiesCsv,
                                  @Param("launchableOnly") boolean launchableOnly);
 
     @Query(value = "select count(*) " + FACET_BASE
@@ -234,5 +330,6 @@ public interface AssetSearchRepository extends JpaRepository<AssetSearchDocument
             nativeQuery = true)
     long countLaunchable(@Param("q") String q, @Param("typesCsv") String typesCsv,
                           @Param("tagsCsv") String tagsCsv, @Param("ownerId") String ownerId,
+                          @Param("industryId") Long industryId, @Param("aiCapabilitiesCsv") String aiCapabilitiesCsv,
                           @Param("launchableOnly") boolean launchableOnly);
 }

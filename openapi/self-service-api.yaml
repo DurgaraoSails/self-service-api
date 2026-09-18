@@ -1955,6 +1955,21 @@ paths:
             items:
               type: string
           description: Repeatable. Filters to assets carrying any of the given tags.
+        - name: industryId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+          description: Filters to assets classified under this industry (id from GET /assets/industries).
+        - name: aiCapability
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          description: Repeatable. Filters to assets carrying any of the given AI capabilities.
         - name: ownerId
           in: query
           required: false
@@ -2053,6 +2068,19 @@ paths:
             type: array
             items:
               type: string
+        - name: industryId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: aiCapability
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
         - name: ownerId
           in: query
           required: false
@@ -2072,6 +2100,28 @@ paths:
                 $ref: './components/schemas/asset.yaml#/AssetFacetsResponse'
         '400':
           $ref: './components/responses.yaml#/BadRequest'
+        '401':
+          $ref: './components/responses.yaml#/Unauthorized'
+        '403':
+          $ref: './components/responses.yaml#/Forbidden'
+        '500':
+          $ref: './components/responses.yaml#/InternalServerError'
+
+  /assets/industries:
+    get:
+      summary: List available industries, for the submission form's dropdown and the Asset Hub sidebar filter
+      operationId: getAssetIndustries
+      tags:
+        - Asset
+      responses:
+        '200':
+          description: List of industries, alphabetical
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/schemas/asset.yaml#/IndustryResponse'
         '401':
           $ref: './components/responses.yaml#/Unauthorized'
         '403':

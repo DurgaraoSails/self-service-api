@@ -19,6 +19,24 @@ AssetLaunch:
       example: true
 
 
+IndustryResponse:
+  type: object
+  description: An industry assets can be classified under, for the submission form's dropdown and the Asset Hub sidebar filter.
+  required:
+    - id
+    - name
+  properties:
+    id:
+      type: integer
+      format: int64
+      example: 1
+
+    name:
+      type: string
+      maxLength: 100
+      example: "Healthcare & Life Sciences"
+
+
 AssetSummaryResponse:
   type: object
   description: >
@@ -70,6 +88,21 @@ AssetSummaryResponse:
         - "Healthcare"
         - "Computer Vision"
 
+    industry:
+      type: string
+      nullable: true
+      description: Name of the industry this asset belongs to, from the admin-managed industries list.
+      example: "Healthcare & Life Sciences"
+
+    aiCapabilities:
+      type: array
+      items:
+        type: string
+      description: Free-text AI capability labels, same shape as tags.
+      example:
+        - "Summarization"
+        - "Document Q&A"
+
     updatedAt:
       type: string
       format: date-time
@@ -108,6 +141,22 @@ AssetDetailResponse:
           maxLength: 8000
           nullable: true
           example: "A prioritization model ranks incoming studies."
+
+        technologies:
+          type: array
+          items:
+            type: string
+          description: Free-text technology labels, same shape as tags.
+          example:
+            - "React"
+            - "LangChain"
+
+        aiArchitecture:
+          type: string
+          maxLength: 200
+          nullable: true
+          description: Free-text description of the AI architecture used (e.g. "RAG", "Agentic workflow").
+          example: "RAG"
 
         sourceUrl:
           type: string
@@ -230,6 +279,28 @@ AssetFacetsResponse:
       description: Number of matching assets with a currently launchable linked POC.
       example: 4
 
+    industries:
+      type: array
+      items:
+        type: object
+        required: [name, count]
+        properties:
+          name:
+            type: string
+          count:
+            type: integer
+
+    aiCapabilities:
+      type: array
+      items:
+        type: object
+        required: [capability, count]
+        properties:
+          capability:
+            type: string
+          count:
+            type: integer
+
 
 AssetRevisionFields:
   type: object
@@ -300,6 +371,44 @@ AssetRevisionFields:
       example:
         - "Healthcare"
         - "Computer Vision"
+
+    industry:
+      type: string
+      nullable: true
+      description: Name of the industry this asset belongs to, from the admin-managed industries list.
+      example: "Healthcare & Life Sciences"
+
+    industryId:
+      type: integer
+      format: int64
+      nullable: true
+      description: Id of the entry in GET /assets/industries, so the editor can pre-select it. Mirrors `industry`, which is the display name.
+      example: 1
+
+    aiCapabilities:
+      type: array
+      items:
+        type: string
+      description: Free-text AI capability labels, same shape as tags.
+      example:
+        - "Summarization"
+        - "Document Q&A"
+
+    technologies:
+      type: array
+      items:
+        type: string
+      description: Free-text technology labels, same shape as tags.
+      example:
+        - "React"
+        - "LangChain"
+
+    aiArchitecture:
+      type: string
+      maxLength: 200
+      nullable: true
+      description: Free-text description of the AI architecture used (e.g. "RAG", "Agentic workflow").
+      example: "RAG"
 
     version:
       type: integer
@@ -532,6 +641,38 @@ CreateAssetRequest:
         - "Healthcare"
         - "Computer Vision"
 
+    industryId:
+      type: integer
+      format: int64
+      nullable: true
+      description: Id of an entry from GET /assets/industries. Omit or null for no industry.
+      example: 1
+
+    aiCapabilities:
+      type: array
+      items:
+        type: string
+      description: Free-text AI capability labels, same shape as tags.
+      example:
+        - "Summarization"
+        - "Document Q&A"
+
+    technologies:
+      type: array
+      items:
+        type: string
+      description: Free-text technology labels, same shape as tags.
+      example:
+        - "React"
+        - "LangChain"
+
+    aiArchitecture:
+      type: string
+      maxLength: 200
+      nullable: true
+      description: Free-text description of the AI architecture used (e.g. "RAG", "Agentic workflow").
+      example: "RAG"
+
     pocId:
       type: string
       format: uuid
@@ -608,6 +749,38 @@ UpdateAssetRevisionRequest:
       example:
         - "Healthcare"
         - "Computer Vision"
+
+    industryId:
+      type: integer
+      format: int64
+      nullable: true
+      description: Id of an entry from GET /assets/industries. Omit or null for no industry.
+      example: 1
+
+    aiCapabilities:
+      type: array
+      items:
+        type: string
+      description: Free-text AI capability labels, same shape as tags.
+      example:
+        - "Summarization"
+        - "Document Q&A"
+
+    technologies:
+      type: array
+      items:
+        type: string
+      description: Free-text technology labels, same shape as tags.
+      example:
+        - "React"
+        - "LangChain"
+
+    aiArchitecture:
+      type: string
+      maxLength: 200
+      nullable: true
+      description: Free-text description of the AI architecture used (e.g. "RAG", "Agentic workflow").
+      example: "RAG"
 
     pocId:
       type: string
