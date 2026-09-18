@@ -32,7 +32,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
@@ -40,7 +39,6 @@ import tools.jackson.databind.ObjectMapper;
 @WebMvcTest(controllers = EmployeeController.class)
 @AutoConfigureMockMvc(addFilters = false)
 @Import(GlobalExceptionHandler.class)
-@TestPropertySource(properties = "asset-hub.enabled=true")
 class EmployeeControllerTest {
 
     @Autowired

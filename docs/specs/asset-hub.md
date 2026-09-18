@@ -18,12 +18,9 @@ source of truth and enforces its own permissions.
 
 The initial asset types are:
 
-- `AI_USE_CASE`
 - `POC`
 - `BLOG`
-- `ARTICLE`
 - `HACKATHON_IDEA`
-- `DOCUMENT`
 
 ## Explicit Non-goals
 
@@ -31,9 +28,9 @@ The initial asset types are:
   permission replication, or source-content extraction.
 - No uploads, previews, copied binaries, source proxy, or URL crawler.
 - No reuse workflow, reuse count, reuse telemetry, or “reused” terminology.
-- No automatic reviewer assignment, email/in-app notification system, weekly digest, or follower
-  model.
-- No BLOG/ARTICLE template fields or validation score until the templates and rubrics are supplied.
+- No automatic reviewer assignment, in-app notification system, weekly digest, or follower model —
+  submission does send a plain email to reviewers (see "Review and revision behavior" below).
+- No BLOG template fields or validation score until the templates and rubrics are supplied.
 - No portal redesign or second design system.
 
 ## Requirements
@@ -80,6 +77,9 @@ The initial asset types are:
 - Review decisions are append-only records associated with an exact revision.
 - Submitting a draft freezes that revision for review. Further edits create or update a working
   revision rather than modifying an approved revision.
+- Submitting a revision for review sends a plain email (submitter, title, asset type, summary) to
+  every active internal employee holding `ASSET_REVIEWER`. Best-effort: a failed send does not fail
+  or roll back the submission.
 - An approved asset can have one approved revision and a different working revision.
 - While a new working revision is pending, the last approved revision stays visible and searchable.
 - Approving the working revision atomically promotes it to the approved revision.
@@ -108,10 +108,9 @@ The initial asset types are:
 - Search supports filters for asset type, tags, owner, and launchable POCs.
 - Search does not expose unapproved revisions, AI proposals, review feedback, or source content.
 
-### Blog/article template validation
+### Blog template validation
 
-- Template validation is deferred until the BLOG and ARTICLE templates and scoring rubrics are
-  provided.
+- Template validation is deferred until the BLOG template and scoring rubric are provided.
 - The first implementation leaves an extension seam for versioned templates, deterministic required
   field checks, and AI rubric results.
 - A future validation score is advisory and cannot approve or reject an asset automatically.
@@ -493,7 +492,6 @@ separate and components must stay focused.
 
 ## Configuration and Safe Defaults
 
-- `ASSET_HUB_ENABLED=false` by default until migrations and both applications are deployed.
 - `ASSET_HUB_AI_ENABLED=false` and `ASSET_HUB_SEMANTIC_SEARCH_ENABLED=false` independently control optional
   intelligence; keyword search and manual review must work when both are false.
 - Provider secrets come from the existing deployment secret mechanism and are never committed or
@@ -563,7 +561,7 @@ reuse metric, or a redundant `Published` state.
 
 ## Open Questions / Future Work
 
-- BLOG and ARTICLE template fields, versions, and scoring rubrics.
+- BLOG template fields, versions, and scoring rubrics.
 - Provider and model selection for metadata suggestions and embeddings — resolved 2026-09-11, see
   "AI metadata suggestion provider: Gemini on Vertex AI" and "Semantic search embeddings: Voyage AI
   (scaffolded, migration still pending)" under Architecture Decisions. §8 is fully implemented; §7

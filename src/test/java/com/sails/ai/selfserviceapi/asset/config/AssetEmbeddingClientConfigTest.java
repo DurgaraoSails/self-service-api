@@ -16,7 +16,7 @@ class AssetEmbeddingClientConfigTest {
     private final AssetEmbeddingClientConfig config = new AssetEmbeddingClientConfig();
 
     private static AssetHubProperties properties(AssetHubProperties.Embedding embedding) {
-        return new AssetHubProperties(true, false, true,
+        return new AssetHubProperties(false, true,
                 new AssetHubProperties.Ai(AssetAiTransport.VERTEX_AI, "sync-folio", "us-central1", null,
                         "gemini-2.5-flash", 20),
                 embedding);

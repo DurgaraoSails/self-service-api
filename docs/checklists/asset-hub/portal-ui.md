@@ -145,7 +145,7 @@ matching could otherwise treat them as asset IDs.
       manual work.
 - [x] Do not imply automatic reviewer assignment, notifications, duplicate certainty, or source
       inspection unless later implemented.
-- [x] Leave BLOG/ARTICLE validation score UI behind a disabled extension boundary until templates
+- [x] Leave BLOG validation score UI behind a disabled extension boundary until templates
       and rubrics are supplied.
 
 ## 8. Reviewer queue and review detail
@@ -241,7 +241,7 @@ Deferred items:
   - Component-level Asset Hub test generation — next agreed phase (§11 open checkboxes).
   - AXE, keyboard-only, narrow-layout, and light/dark accessibility verification.
   - Semantic retrieval and real AI provider behavior — deliberately deferred with backend Phase 3.
-  - BLOG/ARTICLE template scoring — deliberately disabled until templates/rubrics are supplied.
+  - BLOG template scoring — deliberately disabled until templates/rubrics are supplied.
 
 Known risks:
   - The current API error envelope has no field path, so backend validation is shown at form level.
