@@ -64,7 +64,7 @@ class DraftModelPropertiesBindingTest {
 
         assertThat(properties.vertex().project()).isNullOrEmpty();
         assertThat(properties.vertex().location()).isEqualTo("us-central1");
-        assertThat(properties.vertex().model()).isEqualTo("gemini-2.0-flash-001");
+        assertThat(properties.vertex().model()).isEqualTo("gemini-3.1-flash-lite");
 
         assertThat(properties.maxDockerfileModelCalls()).isEqualTo(2);
     }
