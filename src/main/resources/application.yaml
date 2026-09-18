@@ -129,6 +129,14 @@ deployment:
   # Unused by the in-process trigger; kept for the (still-wired, still-working) manual status
   # callback and the source-repository/upstream-commit endpoints, none of which this needs.
   webhook-secret: ${DEPLOYMENT_WEBHOOK_SECRET:local-dev-deployment-webhook-secret-change-me}
+  reconciliation:
+    # Recovers a deployment left stuck in PENDING/BUILDING/DEPLOYING by a self-service-api crash
+    # mid-deployment — see StaleDeploymentReconciler.
+    enabled: ${DEPLOYMENT_RECONCILIATION_ENABLED:true}
+    # Comfortably above 2x pipeline.build-timeout (build stage + deploy stage), so a slow but
+    # healthy deployment is never mistaken for a stuck one.
+    stale-after: ${DEPLOYMENT_RECONCILIATION_STALE_AFTER:1h}
+    poll-interval-ms: ${DEPLOYMENT_RECONCILIATION_POLL_INTERVAL_MS:300000}
 
 gcp:
   project-id: ${GCP_PROJECT_ID:}

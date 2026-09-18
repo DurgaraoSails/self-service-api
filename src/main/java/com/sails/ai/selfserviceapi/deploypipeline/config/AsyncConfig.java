@@ -4,11 +4,15 @@ import java.util.concurrent.Executor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
  * Backs every {@code @Async} method in the deploy pipeline — {@code PipelineRunner}
  * (deploy/redeploy/retry) and {@code PocRepoStatusService.refresh} (repository-snapshot refresh).
+ * Also turns on {@code @Scheduled}, currently only {@code StaleDeploymentReconciler}'s sweep —
+ * grouped here rather than its own config class since both are "background execution" for the
+ * same deploy pipeline.
  *
  * <p>Bare {@code @EnableAsync} with no {@link Executor} bean falls back to
  * {@code SimpleAsyncTaskExecutor}: a new unbounded thread per call, no pool, no queue. That was
@@ -19,6 +23,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  */
 @Configuration
 @EnableAsync
+@EnableScheduling
 public class AsyncConfig {
 
     public static final String PIPELINE_EXECUTOR = "pipelineExecutor";

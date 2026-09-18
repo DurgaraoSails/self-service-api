@@ -189,8 +189,22 @@ automatic now, no manual entry.
   trigger call within the same `@Transactional` method, not strictly after commit. Harmless with
   today's synchronous no-op stub; worth revisiting (e.g. firing the trigger from an
   after-commit hook) once a real, networked `DeploymentTrigger` implementation exists.
+  **Partially mitigated** by `StaleDeploymentReconciler` (2026-09-18, below) — the ordering gap
+  itself is unchanged, but a row it leaves stranded no longer stays stranded forever.
 
 ## Changelog
+
+- 2026-09-18 — **A deployment stuck mid-flight by a self-service-api crash no longer blocks that
+  POC forever.** `StaleDeploymentReconciler` (`@Scheduled`, `deployment.reconciliation.*`) sweeps
+  for deployments still PENDING/BUILDING/DEPLOYING with no `updated_at` change past
+  `deployment.reconciliation.stale-after` (default 1h, comfortably above `pipeline.build-timeout`
+  applied twice) and marks them FAILED with an explanatory `error_message`, which makes
+  `retryDeployment` reachable again — until now nothing ever revisited such a row (see "Open
+  Questions" above), and `requireNoActiveDeployment`/`retryDeployment`'s FAILED-only guard meant an
+  admin had no way to unstick one short of a direct DB edit. Runs every
+  `deployment.reconciliation.poll-interval-ms` (default 5m); `deployment.reconciliation.enabled`
+  turns it off entirely. Deliberately a timeout, not a resumption — nothing durable records which
+  Cloud Build job (if any) a stuck row was waiting on, so a fresh retry is the only recovery path.
 
 - 2026-09-09 — **The deploy branch is chosen from the repository's real branches, not typed.**
   `GET /pocs/branches?githubUrl=` (admin only) proxies GitHub's branch list with the platform's own
