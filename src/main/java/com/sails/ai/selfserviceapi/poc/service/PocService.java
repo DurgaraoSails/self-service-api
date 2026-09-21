@@ -4,6 +4,8 @@ import com.sails.ai.selfserviceapi.deploypipeline.github.GitBranchNames;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import com.sails.ai.selfserviceapi.poc.exception.InvalidDeployBranchException;
+import com.sails.ai.selfserviceapi.poc.exception.MissingCloudRunUrlException;
+import com.sails.ai.selfserviceapi.poc.exception.MissingGithubUrlException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotLaunchableException;
 import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
@@ -159,6 +161,8 @@ public class PocService {
         poc.setIconUrl(fields.iconUrl());
         poc.setAppUrl(fields.appUrl());
         poc.setGithubUrl(fields.githubUrl());
+        poc.setDeploymentMode(normalizeDeploymentMode(fields));
+        poc.setPocType(fields.pocType() != null && !fields.pocType().isBlank() ? fields.pocType() : Poc.POC_TYPE_INTERNAL);
         poc.setDeployBranch(normalizeDeployBranch(fields.deployBranch()));
         poc.setOwner(fields.owner());
         poc.setCategory(fields.category());
@@ -167,6 +171,37 @@ public class PocService {
         poc.setVisibilityStatus(fields.visibilityStatus() != null ? fields.visibilityStatus() : DEFAULT_STATUS);
         poc.setDetails(fields.details());
         poc.setGuideSteps(fields.guideSteps() != null ? fields.guideSteps() : new ArrayList<>());
+    }
+
+    /**
+     * Which field is actually required — githubUrl or appUrl — depends on deploymentMode, a
+     * cross-field rule the generated request DTOs' bean validation cannot express (OpenAPI's own
+     * {@code required} list is unconditional), so it is checked here instead, the one place both
+     * create and update funnel through.
+     *
+     * <p>AUTOMATIC (the default) needs githubUrl: nothing else will ever trigger a build, so a POC
+     * saved without one is inert exactly as {@code docs/specs/poc-deployment-pipeline.md} already
+     * described before this mode existed — checked here rather than left to
+     * {@code PocDeploymentService}'s own, later check, so the admin who typed a blank githubUrl
+     * finds out on the form that created the POC, not on the first deploy attempt.
+     *
+     * <p>SELF needs appUrl: it trades the whole pipeline for one admin-supplied URL, and unlike
+     * AUTOMATIC there is no later point that would ever fill it in — a SELF-mode POC saved without
+     * one would have nothing to launch, permanently.
+     */
+    private String normalizeDeploymentMode(PocFields fields) {
+        String mode = fields.deploymentMode();
+        if (mode == null || mode.isBlank()) {
+            mode = Poc.DEPLOYMENT_MODE_AUTOMATIC;
+        }
+        if (Poc.DEPLOYMENT_MODE_SELF.equals(mode)) {
+            if (fields.appUrl() == null || fields.appUrl().isBlank()) {
+                throw new MissingCloudRunUrlException();
+            }
+        } else if (fields.githubUrl() == null || fields.githubUrl().isBlank()) {
+            throw new MissingGithubUrlException();
+        }
+        return mode;
     }
 
     /**

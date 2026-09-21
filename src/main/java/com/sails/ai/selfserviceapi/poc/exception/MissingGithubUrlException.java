@@ -9,4 +9,9 @@ public class MissingGithubUrlException extends ApiException {
     public MissingGithubUrlException(UUID pocId) {
         super(HttpStatus.BAD_REQUEST, "MISSING_GITHUB_URL", "POC " + pocId + " has no githubUrl to build from.");
     }
+
+    /** Create/update time, before a POC id exists — deploymentMode is AUTOMATIC (the default) and githubUrl is blank. */
+    public MissingGithubUrlException() {
+        super(HttpStatus.BAD_REQUEST, "MISSING_GITHUB_URL", "githubUrl is required when deploymentMode is AUTOMATIC.");
+    }
 }

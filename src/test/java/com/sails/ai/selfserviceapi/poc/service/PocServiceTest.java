@@ -10,6 +10,7 @@ import com.sails.ai.selfserviceapi.common.exception.ApiException;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
 import com.sails.ai.selfserviceapi.poc.exception.InvalidDeployBranchException;
 import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
+import com.sails.ai.selfserviceapi.poc.exception.MissingCloudRunUrlException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotLaunchableException;
 import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
@@ -244,8 +245,9 @@ class PocServiceTest {
     }
 
     private static PocFields fieldsDeployingFrom(String deployBranch) {
-        return new PocFields("Contract Agent", "Review & generate contracts.", null, null, null, null,
-                deployBranch, null, null, null, null, null, null, null);
+        return new PocFields("Contract Agent", "Review & generate contracts.", null, null, null,
+                "https://github.com/example-org/contract-agent",
+                deployBranch, null, null, null, null, null, null, null, null, null);
     }
 
     private static PocFields fullFields() {
@@ -263,7 +265,9 @@ class PocServiceTest {
                 "interactive",
                 "ACTIVE",
                 "Longer-form details shown on the public details page.",
-                List.of("Step one.", "Step two.")
+                List.of("Step one.", "Step two."),
+                null,
+                null
         );
     }
 
@@ -285,6 +289,30 @@ class PocServiceTest {
         assertThat(created.getVisibilityStatus()).isEqualTo("ACTIVE");
         assertThat(created.getDetails()).isEqualTo("Longer-form details shown on the public details page.");
         assertThat(created.getGuideSteps()).containsExactly("Step one.", "Step two.");
+        assertThat(created.getDeploymentMode()).isEqualTo("AUTOMATIC");
+        assertThat(created.getPocType()).isEqualTo("INTERNAL");
+    }
+
+    // --- pocType ---------------------------------------------------------------------------------
+
+    @Test
+    void createDefaultsPocTypeToInternalWhenOmitted() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(pocService.create(fullFields()).getPocType()).isEqualTo("INTERNAL");
+    }
+
+    @Test
+    void createStoresAnExplicitClientSpecificPocType() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Poc created = pocService.create(new PocFields(
+                "Contract Agent", "Review & generate contracts.", null, null, null,
+                "https://github.com/example-org/contract-agent",
+                null, null, null, null, null, null, null, null, null, "CLIENT_SPECIFIC"
+        ));
+
+        assertThat(created.getPocType()).isEqualTo("CLIENT_SPECIFIC");
     }
 
     @Test
@@ -292,13 +320,79 @@ class PocServiceTest {
         when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Poc created = pocService.create(new PocFields(
-                "Contract Agent", "Review & generate contracts.", null, null, null, null,
-                null, null, null, null, null, null, null, null
+                "Contract Agent", "Review & generate contracts.", null, null, null,
+                "https://github.com/example-org/contract-agent",
+                null, null, null, null, null, null, null, null, null, null
         ));
 
         assertThat(created.getVisibilityStatus()).isEqualTo("ACTIVE");
         assertThat(created.getTechnologies()).isEmpty();
         assertThat(created.getGuideSteps()).isEmpty();
+    }
+
+    // --- deploymentMode ------------------------------------------------------------------------
+
+    @Test
+    void createDefaultsDeploymentModeToAutomaticWhenOmitted() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(pocService.create(fullFields()).getDeploymentMode()).isEqualTo("AUTOMATIC");
+    }
+
+    @Test
+    void createInSelfModeStoresTheAdminSuppliedAppUrl() {
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Poc created = pocService.create(new PocFields(
+                "Contract Agent", "Review & generate contracts.", "contract-agent", null,
+                "https://contract-agent-abc123-uc.a.run.app", null, null, null, null, null, null, null, null, null,
+                "SELF", null
+        ));
+
+        assertThat(created.getDeploymentMode()).isEqualTo("SELF");
+        assertThat(created.getAppUrl()).isEqualTo("https://contract-agent-abc123-uc.a.run.app");
+        assertThat(created.getGithubUrl()).isNull();
+    }
+
+    /**
+     * SELF skips the pipeline entirely, so appUrl is the only way a SELF-mode POC ever becomes
+     * launchable — unlike AUTOMATIC, nothing will fill it in later.
+     */
+    @Test
+    void createInSelfModeWithoutAnAppUrlThrows() {
+        assertThatThrownBy(() -> pocService.create(new PocFields(
+                "Contract Agent", "Review & generate contracts.", "contract-agent", null, null, null,
+                null, null, null, null, null, null, null, null, "SELF", null)))
+                .isInstanceOf(MissingCloudRunUrlException.class)
+                .extracting(ex -> ((ApiException) ex).getStatus())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+
+        verify(pocRepository, Mockito.never()).save(any(Poc.class));
+    }
+
+    @Test
+    void createInSelfModeWithABlankAppUrlThrows() {
+        assertThatThrownBy(() -> pocService.create(new PocFields(
+                "Contract Agent", "Review & generate contracts.", "contract-agent", null, "   ", null,
+                null, null, null, null, null, null, null, null, "SELF", null)))
+                .isInstanceOf(MissingCloudRunUrlException.class);
+    }
+
+    @Test
+    void updateCanSwitchAnExistingPocFromAutomaticToSelfMode() {
+        Poc existing = pocWithId(ID_1);
+        existing.setSlug("contract-agent");
+        existing.setGithubUrl("https://github.com/example-org/contract-agent");
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(existing));
+        when(pocRepository.save(any(Poc.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Poc updated = pocService.update(ID_1, new PocFields(
+                "Contract Agent", "Review & generate contracts.", "contract-agent", null,
+                "https://contract-agent-abc123-uc.a.run.app", "https://github.com/example-org/contract-agent",
+                null, null, null, null, null, null, null, null, "SELF", null));
+
+        assertThat(updated.getDeploymentMode()).isEqualTo("SELF");
+        assertThat(updated.getAppUrl()).isEqualTo("https://contract-agent-abc123-uc.a.run.app");
     }
 
     @Test
@@ -321,7 +415,9 @@ class PocServiceTest {
                 "video",
                 "INACTIVE",
                 "Updated details.",
-                List.of("Only step.")
+                List.of("Only step."),
+                null,
+                null
         ));
 
         assertThat(updated.getName()).isEqualTo("Renamed Agent");
@@ -344,7 +440,7 @@ class PocServiceTest {
         when(pocRepository.findById(ID_99)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> pocService.update(ID_99, new PocFields(
-                "n", "d", null, null, null, null, null, null, null, null, null, null, null, null)))
+                "n", "d", null, null, null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(PocNotFoundException.class);
     }
 

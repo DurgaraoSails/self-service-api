@@ -47,6 +47,9 @@ class PocResponseMapperTest {
         assertThat(response.getGithubUrl()).isEqualTo("https://github.com/example-org/contract-agent");
         assertThat(response.getActiveVersionId()).isEqualTo(ACTIVE_VERSION_ID);
         assertThat(response.getSlug()).isEqualTo("contract-agent");
+        assertThat(response.getDeploymentMode().getValue()).isEqualTo("AUTOMATIC");
+        assertThat(response.getHasActiveUrl()).isTrue();
+        assertThat(response.getPocType().getValue()).isEqualTo("INTERNAL");
     }
 
     @Test
@@ -55,11 +58,41 @@ class PocResponseMapperTest {
 
         PocSummaryResponse response = PocResponseMapper.toSummaryResponse(poc, "1.2.4", "SUCCEEDED");
 
-        // PocSummaryResponse has no appUrl/githubUrl/slug getters at all -- if one of these fields
-        // is ever added to that schema, this test needs a new assertion, not a passing one.
+        // PocSummaryResponse has no appUrl/githubUrl/slug/deploymentMode getters at all -- if one of
+        // these fields is ever added to that schema, this test needs a new assertion, not a passing
+        // one. hasActiveUrl is the one exception: it's derived from appUrl but deliberately public,
+        // since it's the only way an unauthenticated caller can tell a POC is launchable.
         assertThat(response.getId()).isEqualTo(POC_ID);
         assertThat(response.getVisibilityStatus().getValue()).isEqualTo("ACTIVE");
         assertThat(response.getDetails()).isEqualTo("Longer description.");
+        assertThat(response.getHasActiveUrl()).isTrue();
+        assertThat(response.getPocType().getValue()).isEqualTo("INTERNAL");
+    }
+
+    /**
+     * The exact case that motivated hasActiveUrl: a SELF-mode POC never gets an activeVersion (it
+     * allocates no version at all), so activeVersion staying null must not read as "not launchable"
+     * once appUrl is actually set.
+     */
+    @Test
+    void hasActiveUrlIsTrueForASelfModePocWithNoActiveVersion() {
+        Poc poc = fullyPopulatedPoc();
+        poc.setActiveVersionId(null);
+        poc.setDeploymentMode(Poc.DEPLOYMENT_MODE_SELF);
+
+        PocSummaryResponse response = PocResponseMapper.toSummaryResponse(poc, null, null);
+
+        assertThat(response.getHasActiveUrl()).isTrue();
+    }
+
+    @Test
+    void hasActiveUrlIsFalseWhenAppUrlIsBlank() {
+        Poc poc = fullyPopulatedPoc();
+        poc.setAppUrl(null);
+
+        PocSummaryResponse response = PocResponseMapper.toSummaryResponse(poc, null, null);
+
+        assertThat(response.getHasActiveUrl()).isFalse();
     }
 
     private static Poc fullyPopulatedPoc() {

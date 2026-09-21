@@ -8,6 +8,7 @@ PocSummaryResponse:
     - name
     - description
     - visibilityStatus
+    - hasActiveUrl
   properties:
     id:
       type: string
@@ -49,6 +50,20 @@ PocSummaryResponse:
         Not to be confused with visibilityStatus below, which is an unrelated admin toggle —
         this reflects whether the pipeline actually succeeded, not whether the POC is shown.
       example: null
+
+    hasActiveUrl:
+      type: boolean
+      description: >
+        Whether this POC has a live, launchable appUrl right now — true for a SELF-mode POC the
+        moment its Cloud Run URL is saved, and for an AUTOMATIC-mode POC once a deploy has actually
+        succeeded. The public summary excludes appUrl itself (see this schema's own description),
+        so this is the only way an unauthenticated dashboard viewer can tell a POC is launchable —
+        checking activeVersion alone used to be that signal, but it stays null forever for SELF
+        mode, which never allocates a version.
+      example: false
+
+    pocType:
+      $ref: '#/PocType'
 
     owner:
       type: string
@@ -203,20 +218,47 @@ PocResponse:
           description: URL-safe identifier — Cloud Run service name, image path segment, and deployment-pipeline key.
           example: "contract-agent"
 
+        deploymentMode:
+          $ref: '#/DeploymentMode'
+
+
+DeploymentMode:
+  type: string
+  enum: [SELF, AUTOMATIC]
+  description: >
+    How this POC's appUrl gets populated. AUTOMATIC (the default) is the existing build/deploy
+    pipeline: githubUrl and slug feed it, and it writes appUrl itself once a build succeeds — appUrl
+    is not admin-editable input in this mode. SELF skips the pipeline entirely: an admin who already
+    has a running Cloud Run service (deployed by hand, or by anything outside this platform) supplies
+    its URL directly as appUrl, and that is used for launch as-is. A POC's mode can be changed later
+    (see UpdatePocRequest) — switching to SELF does not touch any existing githubUrl/deployBranch,
+    it just stops the pipeline fields from being required and starts requiring appUrl instead.
+  example: "AUTOMATIC"
+
+
+PocType:
+  type: string
+  enum: [INTERNAL, CLIENT_SPECIFIC]
+  description: >
+    A general internal tool (INTERNAL, the default — every POC predating this field) versus one
+    built for a specific named client (CLIENT_SPECIFIC). Purely a catalog label/filter, alongside
+    the existing freeform category — nothing else on the platform branches on it.
+  example: "INTERNAL"
+
 
 CreatePocRequest:
   type: object
   description: >
     Request to create a new POC. Creating a POC records metadata only — deploying is a separate,
-    explicit action (POST /pocs/{id}/deploy) — but slug and githubUrl are required at creation
-    all the same. A POC missing either is inert: it cannot be deployed, so it never gets an appUrl,
-    so it can never be launched. Requiring them here turns that into a validation error on the form
-    that created the POC, rather than a 409 at deploy time or a POC that quietly never goes live.
+    explicit action (POST /pocs/{id}/deploy) — but slug is required at creation all the same,
+    since it is how POST /pocs/{slug}/launch addresses the POC regardless of deploymentMode.
+    Whether githubUrl or appUrl is the field that actually has to be filled in depends on
+    deploymentMode (see DeploymentMode) — enforced once the mode is known, not by this schema's own
+    required list, so it is a 400 either way rather than a POC that quietly never goes live.
   required:
     - name
     - description
     - slug
-    - githubUrl
   properties:
     name:
       type: string
@@ -243,12 +285,20 @@ CreatePocRequest:
     appUrl:
       type: string
       maxLength: 500
+      description: >
+        The deployed POC application's URL. Required input when deploymentMode is SELF — that is
+        the only place this value ever comes from in that mode. Ignored as input when deploymentMode
+        is AUTOMATIC (or omitted): the pipeline writes it once a build actually succeeds, so sending
+        it here has no effect and it is not read back until then.
       example: "https://contract-agent.example.com"
 
     githubUrl:
       type: string
       maxLength: 500
-      description: Repository the pipeline clones and tags. Required — this is what triggers the deploy.
+      description: >
+        Repository the pipeline clones and tags — required when deploymentMode is AUTOMATIC (the
+        default), since that is what triggers the deploy. Not required, and not used for anything,
+        when deploymentMode is SELF.
       example: "https://github.com/example-org/contract-agent"
 
     deployBranch:
@@ -260,7 +310,7 @@ CreatePocRequest:
         Optional: omit it, or send null or an empty string, to follow the repository's own default
         branch. Must be a name git accepts as a ref (no spaces, no "..", none of the characters git
         forbids); anything else is rejected with 400 INVALID_DEPLOY_BRANCH rather than stored and
-        discovered later by a failed deployment.
+        discovered later by a failed deployment. Only meaningful when deploymentMode is AUTOMATIC.
       example: "main"
 
     owner:
@@ -306,20 +356,25 @@ CreatePocRequest:
         - "Click Launch to open the assistant in your session."
         - "Describe the process or task you need help with in plain language."
 
+    deploymentMode:
+      $ref: '#/DeploymentMode'
+
+    pocType:
+      $ref: '#/PocType'
+
 
 UpdatePocRequest:
   type: object
   description: >
-    Request to replace an existing POC's fields. slug and githubUrl are required for the same
-    reason they are on create, and because this endpoint replaces rather than merges: an update
-    omitting githubUrl would otherwise null it out and silently make a working POC undeployable.
-    Sending slug for a POC that already has one is harmless — it is assigned once and then ignored,
-    since it names a live Cloud Run service.
+    Request to replace an existing POC's fields. slug is required for the same reason it is on
+    create, and because this endpoint replaces rather than merges. Sending slug for a POC that
+    already has one is harmless — it is assigned once and then ignored, since it names a live Cloud
+    Run service. Whether githubUrl or appUrl must be non-blank depends on deploymentMode; see
+    DeploymentMode and CreatePocRequest.
   required:
     - name
     - description
     - slug
-    - githubUrl
   properties:
     name:
       type: string
@@ -349,11 +404,17 @@ UpdatePocRequest:
     appUrl:
       type: string
       maxLength: 500
+      description: >
+        The deployed POC application's URL. Required input when deploymentMode is SELF; ignored as
+        input (pipeline-written) when deploymentMode is AUTOMATIC — see CreatePocRequest.appUrl.
       example: "https://contract-agent.example.com"
 
     githubUrl:
       type: string
       maxLength: 500
+      description: >
+        Repository the pipeline clones and tags — required when deploymentMode is AUTOMATIC. Not
+        required when deploymentMode is SELF — see CreatePocRequest.githubUrl.
       example: "https://github.com/example-org/contract-agent"
 
     deployBranch:
@@ -365,7 +426,7 @@ UpdatePocRequest:
         Optional: omit it, or send null or an empty string, to follow the repository's own default
         branch. Must be a name git accepts as a ref (no spaces, no "..", none of the characters git
         forbids); anything else is rejected with 400 INVALID_DEPLOY_BRANCH rather than stored and
-        discovered later by a failed deployment.
+        discovered later by a failed deployment. Only meaningful when deploymentMode is AUTOMATIC.
       example: "main"
 
     owner:
@@ -410,6 +471,12 @@ UpdatePocRequest:
       example:
         - "Click Launch to open the assistant in your session."
         - "Describe the process or task you need help with in plain language."
+
+    deploymentMode:
+      $ref: '#/DeploymentMode'
+
+    pocType:
+      $ref: '#/PocType'
 
 
 PocLaunchResponse:

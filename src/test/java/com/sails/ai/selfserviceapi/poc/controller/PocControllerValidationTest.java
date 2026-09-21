@@ -8,9 +8,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.sails.ai.selfserviceapi.common.exception.GlobalExceptionHandler;
 import com.sails.ai.selfserviceapi.deploypipeline.github.GitHubService;
 import com.sails.ai.selfserviceapi.poc.entity.Poc;
+import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
+import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import com.sails.ai.selfserviceapi.poc.service.PocDeploymentService;
 import com.sails.ai.selfserviceapi.poc.service.PocRepoStatusService;
 import com.sails.ai.selfserviceapi.poc.service.PocService;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
@@ -24,17 +27,23 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * That slug and githubUrl are actually rejected when missing, rather than merely documented as
- * required. The distinction is not theoretical here: this repo has already shipped a schema that
- * declared something OpenAPI-side while the runtime did the opposite, so "the spec says required"
- * is not evidence that a request without it fails.
+ * That slug is actually rejected when missing, and that githubUrl/appUrl are actually rejected
+ * when missing for the deploymentMode that needs them, rather than merely documented as required.
+ * The distinction is not theoretical here: this repo has already shipped a schema that declared
+ * something OpenAPI-side while the runtime did the opposite, so "the spec says required" is not
+ * evidence that a request without it fails.
+ *
+ * <p>{@code PocService} is real here, not mocked — which field is actually required depends on
+ * deploymentMode, a cross-field rule bean validation on the generated request DTOs cannot express,
+ * so {@link PocService} enforces it. Only its own collaborators (the repositories) are mocked, so
+ * that rule runs for real through the full controller-to-service path this test is named for.
  *
  * <p>Security filters are off — authorization is covered by SecurityConfigTest, and leaving them on
  * would mean every case below returned 401 before validation ever ran.
  */
 @WebMvcTest(controllers = PocController.class)
 @AutoConfigureMockMvc(addFilters = false)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, PocService.class})
 class PocControllerValidationTest {
 
     private static final UUID POC_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -43,7 +52,10 @@ class PocControllerValidationTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private PocService pocService;
+    private PocRepository pocRepository;
+
+    @MockitoBean
+    private PocCategoryRepository pocCategoryRepository;
 
     /** Only here to satisfy PocController's constructor — the branch picker is not what this tests. */
     @MockitoBean
@@ -75,13 +87,21 @@ class PocControllerValidationTest {
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("githubUrl")));
     }
 
-    /** PUT replaces rather than merges, so an omitted githubUrl used to null a working POC's repo. */
+    /**
+     * PUT replaces rather than merges, so an omitted githubUrl used to null a working POC's repo —
+     * still true for a POC left in the default AUTOMATIC mode, which this update doesn't change.
+     */
     @Test
     void rejectsUpdateWithoutAGithubUrl() throws Exception {
+        Poc existing = new Poc();
+        existing.setId(POC_ID);
+        Mockito.when(pocRepository.findById(POC_ID)).thenReturn(Optional.of(existing));
+
         mockMvc.perform(put("/pocs/" + POC_ID).contentType(MediaType.APPLICATION_JSON).content("""
                         {"name": "Contract Agent", "description": "Review contracts.",
                          "slug": "contract-agent"}"""))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("githubUrl")));
     }
 
     @Test
@@ -95,9 +115,13 @@ class PocControllerValidationTest {
 
     @Test
     void acceptsACreateCarryingBoth() throws Exception {
-        Poc created = new Poc();
-        created.setId(POC_ID);
-        Mockito.when(pocService.create(ArgumentMatchers.any())).thenReturn(created);
+        // Mimics the real @GeneratedValue: the mocked repository would otherwise hand back a POC
+        // whose id is still null, which the controller's own deployment-info lookup cannot key on.
+        Mockito.when(pocRepository.save(ArgumentMatchers.any(Poc.class))).thenAnswer(invocation -> {
+            Poc poc = invocation.getArgument(0);
+            poc.setId(POC_ID);
+            return poc;
+        });
         Mockito.when(pocDeploymentService.latestDeploymentStatuses(ArgumentMatchers.any()))
                 .thenReturn(java.util.Map.of());
 

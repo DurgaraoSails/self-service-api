@@ -26,6 +26,18 @@ public class Poc {
     /** Visible on the dashboard. The other value, HIDDEN, withdraws a POC without deleting it. */
     public static final String VISIBILITY_ACTIVE = "ACTIVE";
 
+    /** appUrl is admin-supplied directly — the build/deploy pipeline is never involved. */
+    public static final String DEPLOYMENT_MODE_SELF = "SELF";
+
+    /** appUrl is written only by the pipeline, once a deploy actually succeeds. The default. */
+    public static final String DEPLOYMENT_MODE_AUTOMATIC = "AUTOMATIC";
+
+    /** A general internal tool, not built for any one client. The default. */
+    public static final String POC_TYPE_INTERNAL = "INTERNAL";
+
+    /** Built for a specific named client. */
+    public static final String POC_TYPE_CLIENT_SPECIFIC = "CLIENT_SPECIFIC";
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", nullable = false, updatable = false)
@@ -91,6 +103,14 @@ public class Poc {
     /** Addressable name for the deploy target — Cloud Run service name and image path segment. */
     @Column(name = "slug")
     private String slug;
+
+    /** SELF or AUTOMATIC — see the constants above. Never null; defaults to AUTOMATIC in the DB. */
+    @Column(name = "deployment_mode", nullable = false, length = 20)
+    private String deploymentMode = DEPLOYMENT_MODE_AUTOMATIC;
+
+    /** INTERNAL or CLIENT_SPECIFIC — see the constants above. Never null; defaults to INTERNAL in the DB. */
+    @Column(name = "poc_type", nullable = false, length = 20)
+    private String pocType = POC_TYPE_INTERNAL;
 
     // Written by the deploy pipeline, which holds the GitHub credential — never by this service.
     // Compared against the active version's commitSha to answer "is main ahead of what's live?".
