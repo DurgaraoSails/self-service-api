@@ -107,7 +107,9 @@ public class PocController implements PocApi {
                 createPocRequest.getDemoType(),
                 createPocRequest.getVisibilityStatus() != null ? createPocRequest.getVisibilityStatus().getValue() : null,
                 createPocRequest.getDetails(),
-                createPocRequest.getGuideSteps()
+                createPocRequest.getGuideSteps(),
+                createPocRequest.getDeploymentMode() != null ? createPocRequest.getDeploymentMode().getValue() : null,
+                createPocRequest.getPocType() != null ? createPocRequest.getPocType().getValue() : null
         );
         Poc poc = pocService.create(fields);
         // Fired after create() returns, i.e. after its own transaction has committed — triggering
@@ -136,7 +138,9 @@ public class PocController implements PocApi {
                 updatePocRequest.getDemoType(),
                 updatePocRequest.getVisibilityStatus() != null ? updatePocRequest.getVisibilityStatus().getValue() : null,
                 updatePocRequest.getDetails(),
-                updatePocRequest.getGuideSteps()
+                updatePocRequest.getGuideSteps(),
+                updatePocRequest.getDeploymentMode() != null ? updatePocRequest.getDeploymentMode().getValue() : null,
+                updatePocRequest.getPocType() != null ? updatePocRequest.getPocType().getValue() : null
         );
         return ResponseEntity.ok(toResponseWithDeploymentInfo(pocService.update(id, fields)));
     }

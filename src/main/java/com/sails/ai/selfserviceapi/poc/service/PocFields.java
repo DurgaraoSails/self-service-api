@@ -23,6 +23,10 @@ public record PocFields(
         String demoType,
         String visibilityStatus,
         String details,
-        List<String> guideSteps
+        List<String> guideSteps,
+        /** SELF or AUTOMATIC. Null/blank defaults to AUTOMATIC — see {@link com.sails.ai.selfserviceapi.poc.entity.Poc}. */
+        String deploymentMode,
+        /** INTERNAL or CLIENT_SPECIFIC. Null/blank defaults to INTERNAL — see {@link com.sails.ai.selfserviceapi.poc.entity.Poc}. */
+        String pocType
 ) {
 }
