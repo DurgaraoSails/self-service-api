@@ -15,6 +15,13 @@ public interface PocRepository extends JpaRepository<Poc, UUID> {
     /** Looked up by slug for POST /pocs/{slug}/launch — slugs, not ids, name POCs externally. */
     Optional<Poc> findBySlugAndDeletedAtIsNull(String slug);
 
+    /**
+     * Pre-checks the DB's own {@code UNIQUE} constraint before an insert/update reaches it — that
+     * constraint has no partial index excluding soft-deleted rows, so a slug stays taken even after
+     * its POC is deleted, and this check is deliberately just as strict.
+     */
+    boolean existsBySlug(String slug);
+
     /** The repositories the deploy pipeline polls for upstream changes. */
     List<Poc> findByGithubUrlIsNotNullAndDeletedAtIsNull();
 

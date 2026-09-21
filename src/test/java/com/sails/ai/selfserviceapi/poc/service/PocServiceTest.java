@@ -13,6 +13,7 @@ import com.sails.ai.selfserviceapi.poc.entity.PocCategory;
 import com.sails.ai.selfserviceapi.poc.exception.MissingCloudRunUrlException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotLaunchableException;
+import com.sails.ai.selfserviceapi.poc.exception.PocSlugAlreadyExistsException;
 import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.util.List;
@@ -291,6 +292,36 @@ class PocServiceTest {
         assertThat(created.getGuideSteps()).containsExactly("Step one.", "Step two.");
         assertThat(created.getDeploymentMode()).isEqualTo("AUTOMATIC");
         assertThat(created.getPocType()).isEqualTo("INTERNAL");
+    }
+
+    // --- slug uniqueness -------------------------------------------------------------------------
+
+    /**
+     * Pre-checked so a collision reads as "this slug is taken", not the database's own UNIQUE
+     * constraint surfacing as a generic, misleading "references a value that does not exist".
+     */
+    @Test
+    void createRejectsASlugAlreadyUsedByAnotherPoc() {
+        when(pocRepository.existsBySlug("rag-assistant")).thenReturn(true);
+
+        assertThatThrownBy(() -> pocService.create(fullFields()))
+                .isInstanceOf(PocSlugAlreadyExistsException.class)
+                .extracting(ex -> ((ApiException) ex).getStatus())
+                .isEqualTo(HttpStatus.CONFLICT);
+
+        verify(pocRepository, Mockito.never()).save(any(Poc.class));
+    }
+
+    @Test
+    void updateRejectsAdoptingASlugAlreadyUsedByAnotherPoc() {
+        Poc existing = pocWithId(ID_1);
+        when(pocRepository.findById(ID_1)).thenReturn(Optional.of(existing));
+        when(pocRepository.existsBySlug("rag-assistant")).thenReturn(true);
+
+        assertThatThrownBy(() -> pocService.update(ID_1, fullFields()))
+                .isInstanceOf(PocSlugAlreadyExistsException.class);
+
+        verify(pocRepository, Mockito.never()).save(any(Poc.class));
     }
 
     // --- pocType ---------------------------------------------------------------------------------

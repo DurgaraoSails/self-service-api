@@ -8,6 +8,7 @@ import com.sails.ai.selfserviceapi.poc.exception.MissingCloudRunUrlException;
 import com.sails.ai.selfserviceapi.poc.exception.MissingGithubUrlException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotFoundException;
 import com.sails.ai.selfserviceapi.poc.exception.PocNotLaunchableException;
+import com.sails.ai.selfserviceapi.poc.exception.PocSlugAlreadyExistsException;
 import com.sails.ai.selfserviceapi.poc.repository.PocCategoryRepository;
 import com.sails.ai.selfserviceapi.poc.repository.PocRepository;
 import java.time.Instant;
@@ -156,6 +157,12 @@ public class PocService {
         // Registry path; editing it would orphan both and leave the POC pointing at nothing.
         // Still settable on update while null, so POCs predating the pipeline can be adopted.
         if (poc.getSlug() == null && fields.slug() != null && !fields.slug().isBlank()) {
+            // Pre-checked here rather than left to the DB's own UNIQUE constraint: that surfaces as
+            // a generic, unhelpful 400 (see GlobalExceptionHandler.handleDataIntegrityViolation),
+            // which reads as "something doesn't exist" for what is actually the opposite problem.
+            if (pocRepository.existsBySlug(fields.slug())) {
+                throw new PocSlugAlreadyExistsException(fields.slug());
+            }
             poc.setSlug(fields.slug());
         }
         poc.setIconUrl(fields.iconUrl());
